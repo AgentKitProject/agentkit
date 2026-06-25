@@ -1,0 +1,12 @@
+{
+  "entitlementId": "ent_01HXYZ",
+  "kitId": "kit_01ABC",
+  "userId": "user_01DEF",
+  "status": "active",
+  "source": "admin_grant",
+  "licenseVersion": "default-v1",
+  "licenseAcceptedAt": "2026-06-15T00:00:00.000Z",
+  "licenseTextSnapshot": "AgentKitMarket Default Kit License (v1) ...",
+  "grantedAt": "2026-06-15T00:00:00.000Z",
+  "stripeSubscriptionId": null
+}

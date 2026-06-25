@@ -1,0 +1,19 @@
+{
+  "id": "sched_01HXYZ",
+  "userId": "user_01ABC",
+  "kitRef": { "source": "market", "marketKitId": "kit_01DEF" },
+  "cron": "0 9 * * 1",
+  "timezone": "America/New_York",
+  "input": { "prompt": "Weekly digest." },
+  "budgetCents": 300,
+  "model": "claude-sonnet-4-6",
+  "approvalId": "appr_01HXYZ",
+  "inferenceMode": "managed",
+  "enabled": true,
+  "createdAt": "2026-06-20T00:00:00.000Z",
+  "updatedAt": "2026-06-20T00:00:00.000Z",
+  "lastRunAt": null,
+  "lastRunId": null,
+  "nextRunAt": "2026-06-22T13:00:00.000Z",
+  "lastError": null
+}

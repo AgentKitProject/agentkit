@@ -1,0 +1,323 @@
+"use client";
+
+import * as React from "react";
+import { brandVars } from "../brand.js";
+import { SiteShell, type SiteShellProps } from "./SiteShell.js";
+
+/**
+ * A sidebar nav entry. `icon` is an optional leading node (e.g. a lucide
+ * icon at 18px). Provide `href` for link navigation, or `onClick` for
+ * button navigation (SPA / Tauri). `active` highlights the current item.
+ */
+export type SidebarNavItem = {
+  label: string;
+  href?: string;
+  onClick?: (event: React.MouseEvent) => void;
+  icon?: React.ReactNode;
+  active?: boolean;
+  external?: boolean;
+};
+
+export type AppShellProps = {
+  /**
+   * Layout family. Defaults to `"app"` — the desktop-Forge-derived sidebar
+   * layout (nav rail + topbar + content). Pass `"site"` to render the
+   * marketing/catalog web chrome instead (sticky Header + Footer); in that
+   * mode the site-only props below are forwarded to `SiteShell`.
+   */
+  layout?: "app" | "site";
+
+  /** Brand mark (logo image / svg) shown at the top of the rail. */
+  logo?: React.ReactNode;
+  /** Brand wordmark (e.g. "Forge"). */
+  brand?: React.ReactNode;
+  /** Small uppercase line under the wordmark (e.g. "Desktop Forge"). */
+  brandSubtitle?: React.ReactNode;
+  /** Click/href for the brand block (home). */
+  brandHref?: string;
+  onBrandClick?: (event: React.MouseEvent) => void;
+
+  /** Sidebar nav, declarative. Or pass custom nodes via `navChildren`. */
+  nav?: SidebarNavItem[];
+  /** Custom sidebar nav nodes (alternative to `nav`). */
+  navChildren?: React.ReactNode;
+
+  /** Account block / extra controls pinned to the bottom of the rail. */
+  account?: React.ReactNode;
+  /** Extra footer slot under the account block (help links, version, …). */
+  sidebarFooter?: React.ReactNode;
+
+  /** Topbar eyebrow (uppercase, above the title). */
+  eyebrow?: React.ReactNode;
+  /** Topbar page title (large). */
+  title?: React.ReactNode;
+  /** Topbar right-aligned actions. */
+  actions?: React.ReactNode;
+  /** Replace the whole topbar with a custom node. */
+  topbar?: React.ReactNode;
+
+  /**
+   * One-prop rebrand: sets --ak-brand / --ak-brand-strong / --ak-brand-soft
+   * on the shell root. Pass just an accent, or full control via the object.
+   */
+  brandAccent?: string;
+  brandAccentStrong?: string;
+  brandAccentSoft?: string;
+
+  /** Main-content id for the skip link target. */
+  contentId?: string;
+  className?: string;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+
+  /* ---- site-layout passthroughs (only used when layout="site") ---- */
+  footer?: SiteShellProps["footer"];
+};
+
+export type SidebarAccountProps = {
+  /** Display name / primary line. */
+  name: React.ReactNode;
+  /** Secondary line (status, email, handle). */
+  status?: React.ReactNode;
+  /** Avatar node; falls back to `initials` in a brand-tinted circle. */
+  avatar?: React.ReactNode;
+  initials?: string;
+  href?: string;
+  onClick?: (event: React.MouseEvent) => void;
+  className?: string;
+};
+
+/**
+ * SidebarAccount — the desktop-Forge account block (avatar + name + status)
+ * pinned at the bottom of the rail. Pass to AppShell's `account` slot.
+ */
+export function SidebarAccount({
+  name,
+  status,
+  avatar,
+  initials,
+  href,
+  onClick,
+  className,
+}: SidebarAccountProps) {
+  const inner = (
+    <>
+      <span className="ak-sidebar__account-avatar" aria-hidden="true">
+        {avatar ?? initials ?? ""}
+      </span>
+      <span className="ak-sidebar__account-text">
+        <span className="ak-sidebar__account-name">{name}</span>
+        {status ? (
+          <span className="ak-sidebar__account-status">{status}</span>
+        ) : null}
+      </span>
+    </>
+  );
+  const cls = ["ak-sidebar__account", className].filter(Boolean).join(" ");
+  if (href !== undefined) {
+    return (
+      <a className={cls} href={href} onClick={onClick}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <button type="button" className={cls} onClick={onClick}>
+      {inner}
+    </button>
+  );
+}
+
+function SidebarItem({ item }: { item: SidebarNavItem }) {
+  const cls = [
+    "ak-nav-item",
+    item.active ? "ak-nav-item--active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const body = (
+    <>
+      {item.icon ? (
+        <span className="ak-nav-item__icon" aria-hidden="true">
+          {item.icon}
+        </span>
+      ) : null}
+      <span className="ak-nav-item__label">{item.label}</span>
+    </>
+  );
+
+  if (item.href !== undefined) {
+    return (
+      <a
+        className={cls}
+        href={item.href}
+        aria-current={item.active ? "page" : undefined}
+        onClick={item.onClick}
+        {...(item.external
+          ? { target: "_blank", rel: "noreferrer noopener" }
+          : {})}
+      >
+        {body}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={cls}
+      aria-current={item.active ? "page" : undefined}
+      onClick={item.onClick}
+    >
+      {body}
+    </button>
+  );
+}
+
+/**
+ * AppShell — the recommended layout for application surfaces (Forge, Auto,
+ * account dashboards). Models the desktop Forge app: a sticky left nav rail
+ * (brand + nav tabs + account) and a main column (topbar + content).
+ *
+ * Themeable via `brandAccent` (one prop) and slotted: `logo`, `brand`,
+ * `nav`/`navChildren`, `account`, `sidebarFooter`, `eyebrow`/`title`/`actions`.
+ *
+ * Pass `layout="site"` to fall back to the marketing Header/Footer chrome
+ * (delegates to `SiteShell`) — back-compat with the original AppShell.
+ */
+export function AppShell(props: AppShellProps) {
+  const {
+    layout = "app",
+    logo,
+    brand,
+    brandSubtitle,
+    brandHref,
+    onBrandClick,
+    nav,
+    navChildren,
+    account,
+    sidebarFooter,
+    eyebrow,
+    title,
+    actions,
+    topbar,
+    brandAccent,
+    brandAccentStrong,
+    brandAccentSoft,
+    contentId = "ak-main-content",
+    className,
+    style,
+    children,
+    footer,
+  } = props;
+
+  const accentStyle = brandAccent
+    ? brandVars(brandAccent, brandAccentStrong, brandAccentSoft)
+    : undefined;
+
+  if (layout === "site") {
+    return (
+      <SiteShell
+        logo={logo}
+        brand={typeof brand === "string" ? brand : undefined}
+        nav={nav as SiteShellProps["nav"]}
+        navChildren={navChildren}
+        account={account}
+        footer={footer}
+        brandAccent={brandAccent}
+        brandAccentStrong={brandAccentStrong}
+        brandAccentSoft={brandAccentSoft}
+        contentId={contentId}
+        className={className}
+        style={style}
+      >
+        {children}
+      </SiteShell>
+    );
+  }
+
+  const navNodes = nav
+    ? nav.map((item) => (
+        <SidebarItem key={(item.href ?? "") + item.label} item={item} />
+      ))
+    : navChildren;
+
+  const brandInner = (
+    <>
+      {logo ? (
+        <span className="ak-sidebar__brand-mark" aria-hidden="true">
+          {logo}
+        </span>
+      ) : null}
+      {brand || brandSubtitle ? (
+        <span className="ak-sidebar__brand-text">
+          {brand ? (
+            <span className="ak-sidebar__brand-name">{brand}</span>
+          ) : null}
+          {brandSubtitle ? (
+            <span className="ak-sidebar__brand-sub">{brandSubtitle}</span>
+          ) : null}
+        </span>
+      ) : null}
+    </>
+  );
+
+  const brandBlock =
+    brandHref !== undefined ? (
+      <a className="ak-sidebar__brand" href={brandHref} onClick={onBrandClick}>
+        {brandInner}
+      </a>
+    ) : (
+      <div className="ak-sidebar__brand">{brandInner}</div>
+    );
+
+  const topbarNode =
+    topbar ??
+    (eyebrow || title || actions ? (
+      <header className="ak-topbar">
+        <div className="ak-topbar__titles">
+          {eyebrow ? (
+            <span className="ak-topbar__eyebrow">{eyebrow}</span>
+          ) : null}
+          {title ? <h1 className="ak-topbar__title">{title}</h1> : null}
+        </div>
+        {actions ? (
+          <div className="ak-topbar__actions">{actions}</div>
+        ) : null}
+      </header>
+    ) : null);
+
+  return (
+    <div
+      className={["ak-app", className].filter(Boolean).join(" ")}
+      style={{ ...accentStyle, ...style }}
+    >
+      <a className="ak-skip-link" href={`#${contentId}`}>
+        Skip to content
+      </a>
+
+      <aside className="ak-sidebar">
+        {brandBlock}
+        <nav className="ak-sidebar__nav" aria-label="Primary">
+          {navNodes}
+        </nav>
+        {account || sidebarFooter ? (
+          <div className="ak-sidebar__foot">
+            {account ? (
+              <div className="ak-sidebar__account-slot">{account}</div>
+            ) : null}
+            {sidebarFooter}
+          </div>
+        ) : null}
+      </aside>
+
+      <div className="ak-app__main">
+        {topbarNode}
+        <main id={contentId} className="ak-app__content">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

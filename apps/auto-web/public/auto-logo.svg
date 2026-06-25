@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AgentKitAuto">
+  <title>AgentKitAuto</title>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="#ffffff"/>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="none" stroke="#3538CD" stroke-width="5"/>
+  <path d="M 26.2 16.0 A 17 17 0 1 1 16.0 26.2" fill="none" stroke="#3B5BF6" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 21.2 14.6 L 26.2 16.0 L 24.8 21.0" fill="none" stroke="#3B5BF6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="20.0" cy="20.0" r="3.4" fill="#22C55E"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" fill="#1E2150" d="M 32 20.5 L 43.1 26.9 L 43.1 39.8 L 32 46.2 L 20.9 39.8 L 20.9 26.9 Z M 32 28.0 L 38.0 31.4 L 38.0 38.3 L 32 41.7 L 26.0 38.3 L 26.0 31.4 Z"/>
+</svg>

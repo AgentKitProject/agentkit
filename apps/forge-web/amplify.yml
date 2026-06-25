@@ -1,0 +1,123 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        # Fail fast on missing required runtime config (hosted/aws backend).
+        - 'test -n "$WORKOS_API_KEY" || (echo "Missing required env var: WORKOS_API_KEY" && exit 1)'
+        - 'test -n "$WORKOS_CLIENT_ID" || (echo "Missing required env var: WORKOS_CLIENT_ID" && exit 1)'
+        - 'test -n "$WORKOS_COOKIE_PASSWORD" || (echo "Missing required env var: WORKOS_COOKIE_PASSWORD" && exit 1)'
+        - 'test -n "$APP_URL" || (echo "Missing required env var: APP_URL" && exit 1)'
+        - 'test -n "$WORKOS_REDIRECT_URI" || (echo "Missing required env var: WORKOS_REDIRECT_URI" && exit 1)'
+        - 'case "$APP_URL" in *localhost*) echo "APP_URL must not use localhost for production hosting" && exit 1;; esac'
+        - 'test -n "$KITSTORE_BACKEND" || (echo "Missing required env var: KITSTORE_BACKEND" && exit 1)'
+        - 'test "$KITSTORE_BACKEND" != "aws" || test -n "$DYNAMODB_KITS_TABLE" || (echo "aws backend requires DYNAMODB_KITS_TABLE" && exit 1)'
+        - 'test "$KITSTORE_BACKEND" != "aws" || test -n "$DYNAMODB_SETTINGS_TABLE" || (echo "aws backend requires DYNAMODB_SETTINGS_TABLE" && exit 1)'
+        - 'test "$KITSTORE_BACKEND" != "aws" || test -n "$S3_BUCKET" || (echo "aws backend requires S3_BUCKET" && exit 1)'
+        - 'test -n "$AGENTKITFORGE_WEB_SECRET" || (echo "Missing required env var: AGENTKITFORGE_WEB_SECRET" && exit 1)'
+        - 'test -n "$AGENTKITMARKET_BASE_URL" || (echo "Missing required env var: AGENTKITMARKET_BASE_URL" && exit 1)'
+        # Bake server config into .env.production so the SSR runtime reliably
+        # sees it (mirrors agentkitmarket-app; avoids a Bridge-4-style silent
+        # null-env failure). Values written to a file, never echoed to logs.
+        - 'printf "WORKOS_API_KEY=%s\n" "$WORKOS_API_KEY" > .env.production'
+        - 'printf "WORKOS_CLIENT_ID=%s\n" "$WORKOS_CLIENT_ID" >> .env.production'
+        - 'printf "WORKOS_COOKIE_PASSWORD=%s\n" "$WORKOS_COOKIE_PASSWORD" >> .env.production'
+        - 'printf "WORKOS_COOKIE_DOMAIN=%s\n" "$WORKOS_COOKIE_DOMAIN" >> .env.production'
+        - 'printf "WORKOS_REDIRECT_URI=%s\n" "$WORKOS_REDIRECT_URI" >> .env.production'
+        - 'printf "APP_URL=%s\n" "$APP_URL" >> .env.production'
+        - 'printf "KITSTORE_BACKEND=%s\n" "$KITSTORE_BACKEND" >> .env.production'
+        - 'printf "DYNAMODB_KITS_TABLE=%s\n" "$DYNAMODB_KITS_TABLE" >> .env.production'
+        - 'printf "DYNAMODB_SETTINGS_TABLE=%s\n" "$DYNAMODB_SETTINGS_TABLE" >> .env.production'
+        - 'printf "S3_BUCKET=%s\n" "$S3_BUCKET" >> .env.production'
+        - 'printf "S3_PREFIX=%s\n" "$S3_PREFIX" >> .env.production'
+        # AWS_* env names are reserved by Amplify; the SSR aws KitStore adapter
+        # reads these FORGE_AWS_* vars instead (see server/store/index.ts).
+        - 'printf "FORGE_AWS_REGION=%s\n" "$FORGE_AWS_REGION" >> .env.production'
+        - 'printf "FORGE_AWS_ACCESS_KEY_ID=%s\n" "$FORGE_AWS_ACCESS_KEY_ID" >> .env.production'
+        - 'printf "FORGE_AWS_SECRET_ACCESS_KEY=%s\n" "$FORGE_AWS_SECRET_ACCESS_KEY" >> .env.production'
+        - 'printf "AGENTKITFORGE_WEB_SECRET=%s\n" "$AGENTKITFORGE_WEB_SECRET" >> .env.production'
+        - 'printf "AGENTKITMARKET_BASE_URL=%s\n" "$AGENTKITMARKET_BASE_URL" >> .env.production'
+        - 'printf "AGENTKITFORGE_AI_PROVIDER_CONFIG=%s\n" "$AGENTKITFORGE_AI_PROVIDER_CONFIG" >> .env.production'
+        - 'printf "AGENTKITPROJECT_WORKOS_CLIENT_ID=%s\n" "$AGENTKITPROJECT_WORKOS_CLIENT_ID" >> .env.production'
+        # Gateway managed prepaid-credit inference (Gateway 1b). The 4 DynamoDB
+        # tables are reached by the same FORGE_AWS_* IAM user as the KitStore.
+        # ANTHROPIC_API_KEY is the PLATFORM key for managed turns — until it is
+        # set, managed inference errors inertly (BYO providers are unaffected).
+        # ADMIN_EMAILS gates the dev credit-grant route (pre-Stripe testing).
+        - 'printf "GATEWAY_CREDIT_ACCOUNTS_TABLE=%s\n" "$GATEWAY_CREDIT_ACCOUNTS_TABLE" >> .env.production'
+        - 'printf "GATEWAY_CREDIT_TXNS_TABLE=%s\n" "$GATEWAY_CREDIT_TXNS_TABLE" >> .env.production'
+        - 'printf "GATEWAY_CREDIT_HOLDS_TABLE=%s\n" "$GATEWAY_CREDIT_HOLDS_TABLE" >> .env.production'
+        - 'printf "GATEWAY_SESSIONS_TABLE=%s\n" "$GATEWAY_SESSIONS_TABLE" >> .env.production'
+        - 'printf "ANTHROPIC_API_KEY=%s\n" "$ANTHROPIC_API_KEY" >> .env.production'
+        - 'printf "ADMIN_EMAILS=%s\n" "$ADMIN_EMAILS" >> .env.production'
+        # AgentKitAuto (Phase A) — standing-approval + run tables, reached by the
+        # same FORGE_AWS_* IAM user. Optional/defaulted (AutoRuns/AutoApprovals in
+        # server/core/auto.ts) so a missing value never breaks the build — NO
+        # preBuild required-var check. Auto reuses ANTHROPIC_API_KEY + the
+        # GatewayCredit* ledger tables above for managed billing. NOTE: the in-
+        # process run dispatcher is dev/self-host only; hosted long-running runs
+        # require the deferred Fargate / k8s-Job worker.
+        - 'printf "AUTO_RUNS_TABLE=%s\n" "$AUTO_RUNS_TABLE" >> .env.production'
+        - 'printf "AUTO_APPROVALS_TABLE=%s\n" "$AUTO_APPROVALS_TABLE" >> .env.production'
+        # AUTO_SCHEDULES_TABLE (Phase B) — OPTIONAL, baked, no preBuild gate (code
+        # defaults to AutoSchedules in server/core/auto.ts).
+        - 'printf "AUTO_SCHEDULES_TABLE=%s\n" "$AUTO_SCHEDULES_TABLE" >> .env.production'
+        # AUTO_WEBHOOKS_TABLE / AUTO_INPUTS_BUCKET / AUTO_INPUTS_PREFIX (Phase C) —
+        # OPTIONAL, baked, no preBuild gate. Code defaults: AutoWebhooks for the
+        # table; AUTO_INPUTS_BUCKET falls back to S3_BUCKET (input uploads return 503
+        # only if NEITHER is set); auto-inputs/ for the prefix.
+        - 'printf "AUTO_WEBHOOKS_TABLE=%s\n" "$AUTO_WEBHOOKS_TABLE" >> .env.production'
+        - 'printf "AUTO_INPUTS_BUCKET=%s\n" "$AUTO_INPUTS_BUCKET" >> .env.production'
+        - 'printf "AUTO_INPUTS_PREFIX=%s\n" "$AUTO_INPUTS_PREFIX" >> .env.production'
+        # Auto BILLING MODEL — both OPTIONAL with code defaults (server/core/auto.ts:
+        # AUTO_MARKUP_BPS=2500 / 25% on MANAGED Auto inference, separate from the
+        # gateway's 15%; AUTO_CLOUD_RUN_CENTS_PER_MIN=1 per-minute compute fee on
+        # BYO + CLOUD runs only). A missing value never breaks the build — NO
+        # preBuild required-var check. Markup is server-chosen by code path.
+        - 'printf "AUTO_MARKUP_BPS=%s\n" "$AUTO_MARKUP_BPS" >> .env.production'
+        - 'printf "AUTO_CLOUD_RUN_CENTS_PER_MIN=%s\n" "$AUTO_CLOUD_RUN_CENTS_PER_MIN" >> .env.production'
+        # AgentKitAuto HOSTED execution (Fargate per-run worker). All OPTIONAL —
+        # when AUTO_DISPATCH != "fargate" (or unset) the app uses the in-process
+        # dispatcher (dev/self-host). NO preBuild required-var check. The ECS ids
+        # come from the infra/ CDK CfnOutputs; AUTO_WORKER_SERVICE_KEY is a
+        # generated server-only secret shared with the worker (never echoed,
+        # never sent to the browser/Forge). WEB_FORGE_INTERNAL_URL is this app''s
+        # public origin (consumed by the worker; baked here for parity).
+        - 'printf "AUTO_DISPATCH=%s\n" "$AUTO_DISPATCH" >> .env.production'
+        - 'printf "AUTO_ECS_CLUSTER=%s\n" "$AUTO_ECS_CLUSTER" >> .env.production'
+        - 'printf "AUTO_ECS_TASK_DEF=%s\n" "$AUTO_ECS_TASK_DEF" >> .env.production'
+        - 'printf "AUTO_ECS_SUBNET_IDS=%s\n" "$AUTO_ECS_SUBNET_IDS" >> .env.production'
+        - 'printf "AUTO_ECS_SECURITY_GROUP_ID=%s\n" "$AUTO_ECS_SECURITY_GROUP_ID" >> .env.production'
+        - 'printf "AUTO_ECS_CONTAINER_NAME=%s\n" "$AUTO_ECS_CONTAINER_NAME" >> .env.production'
+        - 'printf "AUTO_WORKER_SERVICE_KEY=%s\n" "$AUTO_WORKER_SERVICE_KEY" >> .env.production'
+        - 'printf "WEB_FORGE_INTERNAL_URL=%s\n" "$WEB_FORGE_INTERNAL_URL" >> .env.production'
+        # PROTECTED/paid Market kit resolution over the hosted Auto worker path:
+        # web-forge → market-app service licensed-package endpoint. OPTIONAL — when
+        # unset, protected Market kits cannot run over the worker (run refused);
+        # local + free kits unaffected. NO preBuild required-var check. Must EQUAL
+        # the MARKET_SERVICE_KEY set on agentkitmarket-app. Distinct from
+        # AUTO_WORKER_SERVICE_KEY. Never echoed to logs; never sent to the browser.
+        - 'printf "MARKET_SERVICE_KEY=%s\n" "$MARKET_SERVICE_KEY" >> .env.production'
+        # AUTO Phase D — result-delivery SES sender. OPTIONAL, baked (no preBuild
+        # gate). The hosted worker reads SES_SENDER off its ECS task def; baked here
+        # for parity / self-host SSR sends. Must be a (subdomain of the) verified
+        # SES domain identity (agentkitproject.com).
+        - 'printf "SES_SENDER=%s\n" "$SES_SENDER" >> .env.production'
+        # Stripe prepaid credit top-up (Gateway 1b-ii). Both vars are optional —
+        # the checkout and webhook routes return 503 "payments not configured"
+        # when either is absent. Set in Amplify env once keys are provisioned;
+        # never hardcode values here.
+        - 'printf "STRIPE_SECRET_KEY=%s\n" "$STRIPE_SECRET_KEY" >> .env.production'
+        - 'printf "STRIPE_WEBHOOK_SECRET=%s\n" "$STRIPE_WEBHOOK_SECRET" >> .env.production'
+        - 'npm ci'
+    build:
+      commands:
+        - 'npm run build'
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - 'node_modules/**/*'
+      - '.next/cache/**/*'

@@ -1,0 +1,31 @@
+# ===========================================================================
+# CoreDNS rewrite — let in-cluster PODS resolve the Dex OIDC issuer hostname
+# (a Tailscale MagicDNS *.ts.net name) to the in-cluster Dex Service.
+#
+# Why this is needed:
+#   The OIDC issuer string must be byte-identical for the browser AND the app
+#   server (openid-client validates `iss` and fetches discovery/token endpoints
+#   server-side). The browser reaches https://dex.<tailnet>.ts.net via Tailscale
+#   MagicDNS + the operator ingress; but app PODS get NXDOMAIN for *.ts.net.
+#   This rewrite resolves that one hostname to the Dex ClusterIP Service so pods
+#   hit Dex directly — over VALID TLS, because Dex serves the same operator cert
+#   (see ../bootstrap/cert-sync.yaml). No hardcoded ClusterIP: the rewrite
+#   targets the Service DNS name, resolved dynamically by the kubernetes plugin.
+#
+# Mechanism: k3s CoreDNS imports `/etc/coredns/custom/*.override` into its
+# default `.:53` server block. This ConfigMap key lands there.
+#
+# ServerSideApply: ArgoCD owns ONLY the `agentkit-dex.override` field, so it
+# will NOT prune other keys already in a shared `coredns-custom` ConfigMap.
+# Change the FQDN + target Service if you use a different Dex host/namespace.
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+data:
+  agentkit-dex.override: |
+    rewrite name exact dex.tailf14b5e.ts.net dex.agentkit.svc.cluster.local

@@ -1,0 +1,20 @@
+{
+  "fileName": "example-kit.agentkit.zip",
+  "version": "1.0.0",
+  "publisherId": "Example Publisher",
+  "listingDraft": {
+    "name": "Example Kit",
+    "summary": "An example Agent Kit.",
+    "description": "Longer description of the example Agent Kit.",
+    "categories": ["productivity"],
+    "tags": ["example"]
+  },
+  "submittedByUserId": "user_01EXAMPLEEXAMPLEEXAMPLEEX",
+  "submittedByEmail": "publisher@example.com",
+  "publisherSnapshot": {
+    "displayName": "Example Publisher",
+    "handle": "example-publisher",
+    "avatarInitials": "EP",
+    "verified": false
+  }
+}

@@ -1,0 +1,1069 @@
+:root {
+  --market-cyan: #0ed8d2;
+  --market-teal: #11bfb5;
+  --market-mint: #8df5df;
+  --market-navy: #0b153b;
+  --market-indigo: #2c289f;
+  --market-ink: #111827;
+  --market-muted: #5b6478;
+  --market-line: #dce7ee;
+  --market-soft: #f4fbfb;
+  --market-card: #ffffff;
+  --shadow: 0 18px 45px rgba(11, 21, 59, 0.11);
+}
+
+/* Global chrome (header, footer, skip link, page background reset, base focus
+   ring) is now provided by the shared @agentkitforge/ui SiteShell + styles.css.
+   App-specific surface styling below layers on top of the framework tokens. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--market-ink);
+  background:
+    radial-gradient(circle at top left, rgba(14, 216, 210, 0.18), transparent 34rem),
+    linear-gradient(180deg, #f9ffff 0%, #f7f9fc 42%, #ffffff 100%);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+body {
+  min-width: 0;
+}
+
+/* Let the Market gradient body background show through the framework shell. */
+.ak-shell {
+  background: transparent;
+}
+
+/* Signed-in account control rendered into the SiteShell header account slot. */
+.account-pill {
+  display: inline-flex;
+  max-width: 320px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--market-navy);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.account-pill span {
+  overflow: hidden;
+  color: var(--market-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-pill a {
+  color: var(--market-indigo);
+  white-space: nowrap;
+}
+
+/* Account dropdown — personal/account-scoped items (My Submissions, My Purchases,
+   Admin, Account profile, Sign out) rendered in the SiteShell header account slot.
+   Replaces the old flat account-pill when signed in. */
+.account-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.account-dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  color: var(--market-navy);
+  font: inherit;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.account-dropdown__trigger:hover {
+  border-color: var(--ak-brand);
+  color: var(--ak-brand);
+}
+
+.account-dropdown__label {
+  color: var(--market-navy);
+}
+
+.account-dropdown__chevron {
+  font-size: 0.6rem;
+  color: var(--market-muted);
+}
+
+.account-dropdown__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid var(--market-line);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 6px 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+
+.account-dropdown__item {
+  display: block;
+  padding: 9px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--market-navy);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.account-dropdown__item:hover {
+  background: var(--ak-brand-soft, #ecfeff);
+  color: var(--ak-brand);
+}
+
+.account-dropdown__item--admin {
+  color: var(--market-indigo);
+}
+
+.account-dropdown__item--signout {
+  color: var(--market-muted);
+}
+
+.account-dropdown__item--signout:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.account-dropdown__divider {
+  height: 1px;
+  background: var(--market-line);
+  margin: 5px 0;
+}
+
+/* Legacy button classes, retained for `next/link` <Link> elements styled as
+   buttons (preserving client-side routing/prefetch). Re-skinned to render off
+   the shared @agentkitforge/ui tokens so they match framework <Button>s.
+   The app brand accent (--ak-brand) is Market cyan, set on the SiteShell. */
+.primary-button,
+.ghost-button,
+.secondary-button,
+.danger-button,
+.mini-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border-radius: var(--ak-radius-control, 10px);
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: var(--ak-transition, all 0.16s ease);
+}
+
+.primary-button {
+  background: var(--ak-brand);
+  color: #fff;
+  border-color: var(--ak-brand);
+}
+
+.primary-button:visited {
+  color: #fff;
+}
+
+.primary-button:hover {
+  background: var(--ak-brand-strong);
+  border-color: var(--ak-brand-strong);
+  color: #fff;
+}
+
+.ghost-button,
+.secondary-button {
+  background: var(--ak-surface, #fff);
+  color: var(--ak-text, var(--market-navy));
+  border-color: var(--ak-border, var(--market-line));
+}
+
+.ghost-button:hover,
+.secondary-button:hover {
+  border-color: var(--ak-brand);
+  color: var(--ak-brand);
+}
+
+.mini-button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.85em;
+  background: var(--ak-surface, #fff);
+  color: var(--ak-text, var(--market-navy));
+  border-color: var(--ak-border, var(--market-line));
+}
+
+.mini-button:hover {
+  border-color: var(--ak-brand);
+}
+
+.danger-button {
+  background: var(--ak-surface, #fff);
+  color: var(--ak-error, #9b1c1c);
+  border-color: color-mix(in srgb, var(--ak-error, #9b1c1c) 35%, transparent);
+}
+
+.danger-button:hover {
+  border-color: var(--ak-error, #9b1c1c);
+  background: color-mix(in srgb, var(--ak-error, #9b1c1c) 8%, transparent);
+}
+
+.primary-button:disabled,
+.ghost-button:disabled,
+.secondary-button:disabled,
+.danger-button:disabled,
+.mini-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.7fr);
+  gap: 42px;
+  max-width: 1180px;
+  margin: 42px auto 32px;
+  align-items: center;
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.hero-copy img {
+  width: 250px;
+  height: auto;
+  margin-bottom: 16px;
+  mix-blend-mode: multiply;
+}
+
+.eyebrow,
+.section-label {
+  margin: 0;
+  color: var(--market-teal);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 880px;
+  color: var(--market-navy);
+  font-size: clamp(2.4rem, 6vw, 5.8rem);
+  line-height: 0.96;
+  letter-spacing: 0;
+}
+
+h2 {
+  color: var(--market-navy);
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
+h3 {
+  color: var(--market-navy);
+  font-size: 1.1rem;
+  letter-spacing: 0;
+}
+
+p {
+  color: var(--market-muted);
+  line-height: 1.65;
+}
+
+.hero-copy > p:not(.eyebrow) {
+  max-width: 720px;
+  font-size: 1.14rem;
+}
+
+.hero-actions,
+.page-actions,
+.chip-row,
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.market-preview {
+  border: 1px solid rgba(14, 216, 210, 0.32);
+  border-radius: 8px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(238, 255, 253, 0.92));
+  box-shadow: var(--shadow);
+}
+
+.preview-header,
+.kit-card-topline,
+.kit-card-footer,
+.table-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.preview-header {
+  border-bottom: 1px solid var(--market-line);
+  padding-bottom: 14px;
+}
+
+.preview-header span,
+.kit-card-meta,
+.kit-card-footer,
+.privacy-note,
+.table-row span {
+  color: var(--market-muted);
+  font-size: 0.9rem;
+}
+
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.signal-grid span,
+.summary-list span {
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+  color: var(--market-navy);
+  font-weight: 800;
+}
+
+.preview-card,
+.rule-callout,
+.publisher-hero,
+.entrypoint-panel,
+.doc-panel,
+.empty-state {
+  border: 1px solid rgba(14, 216, 210, 0.26);
+  border-radius: 8px;
+  background: var(--market-soft);
+  padding: 18px;
+}
+
+.entrypoint-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.content-band,
+.page-shell,
+.detail-layout {
+  max-width: 1180px;
+  margin: 42px auto 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.kit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.kit-card,
+.flow-card,
+.detail-panel,
+.sidebar-card,
+.table-panel,
+.form-panel {
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  background: var(--market-card);
+  box-shadow: 0 12px 28px rgba(11, 21, 59, 0.07);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kit-card {
+  display: flex;
+  min-height: 430px;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px;
+}
+
+.kit-card h3 {
+  margin-bottom: 8px;
+}
+
+.kit-card h3 a:hover {
+  color: var(--market-teal);
+}
+
+.kit-card p {
+  margin-bottom: 0;
+}
+
+.kit-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--market-cyan), var(--market-indigo));
+  color: #fff;
+  font-weight: 900;
+}
+
+.kit-card-meta {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  text-align: right;
+}
+
+.kit-card-meta a {
+  color: var(--market-navy);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kit-card-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--market-line);
+  padding-top: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.badge-teal {
+  background: rgba(14, 216, 210, 0.16);
+  color: #067a77;
+}
+
+.badge-blue {
+  background: rgba(56, 53, 244, 0.1);
+  color: var(--market-indigo);
+}
+
+.badge-navy {
+  background: rgba(11, 21, 59, 0.1);
+  color: var(--market-navy);
+}
+
+.badge-featured {
+  background: #e9fff8;
+  color: #087353;
+}
+
+.badge-muted {
+  background: #f0f4f8;
+  color: #41506a;
+}
+
+.badge-success {
+  background: rgba(14, 216, 210, 0.16);
+  color: #067a77;
+}
+
+.badge-warning {
+  background: #fff7d8;
+  color: #806000;
+}
+
+.badge-danger {
+  background: #fff0f0;
+  color: #9b1c1c;
+}
+
+.card-section {
+  border-top: 1px solid var(--market-line);
+  padding-top: 14px;
+}
+
+.compact-card-section {
+  display: grid;
+  gap: 8px;
+}
+
+.page-shell {
+  display: grid;
+  gap: 20px;
+}
+
+.page-shell h1 {
+  margin-bottom: 0;
+  font-size: clamp(2.2rem, 5vw, 4.2rem);
+}
+
+.page-body {
+  display: grid;
+  gap: 20px;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, 1fr));
+  gap: 14px;
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.catalog-explorer {
+  display: grid;
+  gap: 18px;
+}
+
+.catalog-results-summary {
+  color: var(--market-muted);
+  font-size: 0.94rem;
+  font-weight: 800;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  color: var(--market-navy);
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fff;
+  color: var(--market-navy);
+}
+
+textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.checkbox-row {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.rule-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--market-muted);
+}
+
+.rule-callout strong {
+  color: var(--market-navy);
+}
+
+.filter-chip {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid var(--market-line);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: #fff;
+  color: var(--market-navy);
+  font-size: 0.86rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.filter-chip:hover {
+  border-color: var(--market-cyan);
+  color: var(--market-teal);
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 24px;
+  align-items: start;
+}
+
+.detail-summary {
+  max-width: 760px;
+  font-size: 1.08rem;
+}
+
+.detail-main,
+.detail-sidebar,
+.two-column,
+.form-panel,
+.doc-panel {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.detail-panel,
+.sidebar-card,
+.flow-card,
+.form-panel {
+  padding: 18px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.detail-panel ul,
+.sidebar-card ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--market-muted);
+  line-height: 1.8;
+}
+
+.summary-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-sidebar {
+  position: sticky;
+  top: 90px;
+}
+
+.sidebar-card {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.sidebar-card a,
+.secondary-link {
+  color: var(--market-indigo);
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.publisher-lockup {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.publisher-lockup a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-control {
+  display: grid;
+  gap: 8px;
+}
+
+.download-panel h2 {
+  margin: 4px 0 0;
+  color: var(--market-navy);
+  font-size: 1.08rem;
+}
+
+.download-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.forge-panel p {
+  margin: 0;
+}
+
+.checksum-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.checksum-row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--market-navy);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.flow-card {
+  min-height: 180px;
+}
+
+.action-card {
+  background: var(--market-soft);
+}
+
+.step-number {
+  color: var(--market-teal);
+  font-weight: 900;
+}
+
+.table-panel {
+  overflow: hidden;
+}
+
+.table-row {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--market-line);
+}
+
+.table-row:last-child {
+  border-bottom: 0;
+}
+
+.table-head {
+  background: var(--market-soft);
+  color: var(--market-navy);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-table .table-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.7fr) minmax(140px, 1.3fr) minmax(72px, 0.7fr) repeat(3, minmax(92px, 0.8fr)) repeat(2, minmax(100px, 0.9fr));
+  align-items: center;
+}
+
+.table-link:hover {
+  background: #f7ffff;
+}
+
+.publisher-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 260px);
+  gap: 18px;
+  align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trust-meter {
+  display: grid;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+  color: var(--market-navy);
+}
+
+.trust-meter span {
+  color: var(--market-muted);
+}
+
+.doc-panel {
+  max-width: 840px;
+  background: #fff;
+}
+
+.empty-state {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+  color: var(--market-muted);
+}
+
+.empty-state strong {
+  color: var(--market-navy);
+  font-size: 1.2rem;
+}
+
+.danger-state {
+  border-color: rgba(178, 48, 48, 0.25);
+  background: #fff7f7;
+}
+
+.metadata-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.metadata-list div {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  border-bottom: 1px solid var(--market-line);
+  padding-bottom: 10px;
+}
+
+.metadata-list dt {
+  color: var(--market-navy);
+  font-weight: 900;
+}
+
+.metadata-list dd {
+  margin: 0;
+  color: var(--market-muted);
+}
+
+.compact-metadata {
+  gap: 8px;
+}
+
+.compact-metadata div {
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.compact-metadata dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 920px) {
+  .hero,
+  .detail-layout,
+  .publisher-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .kit-grid,
+  .filter-bar,
+  .info-grid,
+  .summary-list,
+  .two-column,
+  .form-grid,
+  .metadata-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-sidebar {
+    position: static;
+  }
+
+  .admin-table {
+    overflow-x: auto;
+  }
+
+  .admin-table .table-row {
+    min-width: 980px;
+  }
+}
+
+@media (max-width: 560px) {
+  .account-dropdown__menu {
+    right: auto;
+    left: 0;
+  }
+
+  h1 {
+    font-size: 2.35rem;
+  }
+
+  .signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tier-2 paid/licensed kits — pricing, license acceptance, purchases */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.form-field > label:first-child {
+  font-size: 0.82rem;
+  font-weight: 900;
+  color: var(--market-navy);
+}
+
+.license-agree {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.license-agree input[type="checkbox"],
+.license-agree input[type="radio"] {
+  width: auto;
+}
+
+.license-text {
+  margin-top: 12px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f7f8fb;
+  border: 1px solid var(--market-line);
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--market-navy);
+}
+
+.license-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 20, 40, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.license-modal {
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--market-line);
+  padding: 24px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 24px 60px rgba(12, 20, 40, 0.3);
+}
+
+.license-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.license-modal-actions .primary-button,
+.license-modal-actions .secondary-button {
+  width: auto;
+}
+
+.purchases-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.purchase-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.purchase-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.purchase-row-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.purchase-row-action .secondary-button {
+  width: auto;
+}

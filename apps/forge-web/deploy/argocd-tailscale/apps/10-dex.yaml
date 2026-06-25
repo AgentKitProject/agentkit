@@ -1,0 +1,51 @@
+# ===========================================================================
+# 10-dex (sync-wave 1) — the in-cluster Dex test IdP.
+#
+# MULTI-SOURCE Application:
+#   - Source A: the Dex Helm chart from the dexidp chart repo, rendered with our
+#     values file pulled from THIS git repo via the `$values` ref.
+#   - Source B (ref `values`): this git repo, providing the values file path.
+#
+# The 3 OIDC client secrets are NOT in the values file (placeholders there). You
+# supply them as a documented values override — add them to your own values file
+# in the $values repo, or set them with `--set` / a values overlay. See
+# ../secrets.example.yaml and ../README.md. Each client secret MUST equal the
+# OIDC_CLIENT_SECRET the corresponding app reads from its Secret.
+# ===========================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentkit-dex
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  sources:
+    # Source A — the Dex chart, rendered with our values from the $values ref.
+    - repoURL: https://charts.dexidp.io
+      chart: dex
+      targetRevision: 0.24.1
+      helm:
+        # Pin the release name to `dex` so the Dex Service is `dex` — the
+        # bootstrap CoreDNS rewrite (-> dex.<ns>.svc.cluster.local) and the
+        # dex-ingress backend (dex:5556) reference that exact name. Without this
+        # the release name defaults to the Application name and those break.
+        releaseName: dex
+        ignoreMissingValueFiles: false
+        valueFiles:
+          - $values/deploy/argocd-tailscale/values/values-dex.yaml
+    # Source B — the `$values` ref: this repo, providing the values file path.
+    - repoURL: https://github.com/AgentKitProject/agentkitforge-web.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentkit
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

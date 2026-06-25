@@ -1,0 +1,12 @@
+apiVersion: v2
+name: agentkitforge-web
+description: Self-hosted AgentKitForge WebApp (Next.js standalone server, KITSTORE_BACKEND=selfhost, bundled Postgres + MinIO)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agentkit
+  - forge
+home: https://agentkitproject.com
+sources:
+  - https://github.com/AgentKitProject/agentkitforge-web

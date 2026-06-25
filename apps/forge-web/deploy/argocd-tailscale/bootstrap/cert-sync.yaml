@@ -1,0 +1,166 @@
+# ===========================================================================
+# cert-sync — copy the Tailscale-operator-minted Let's Encrypt cert for the Dex
+# host out of the `tailscale` namespace into the app namespace, where Dex mounts
+# it to serve HTTPS in-cluster on the SAME issuer hostname the browser uses.
+#
+# Why this exists:
+#   - The Tailscale operator mints a per-host cert as a `kubernetes.io/tls`
+#     Secret in its OWN namespace (`tailscale`), named after the FQDN, only
+#     AFTER an Ingress with ingressClassName=tailscale for that host exists.
+#   - Dex must serve that exact cert in-cluster so app PODS (which resolve the
+#     ts.net issuer to the in-cluster Dex via the CoreDNS rewrite) get VALID TLS.
+#   - There is no built-in cross-namespace Secret sync, and the operator-owned
+#     Secret can't carry reflector annotations. So a tiny RBAC-scoped Job copies
+#     it, and a CronJob keeps it fresh across the operator's ~90d renewals.
+#
+# Idempotent + safe: only get on the source, only apply a name/namespace/type/
+# data-stripped copy on the destination. No cluster-wide permissions.
+# Adjust SRC_FQDN / namespaces below if you change the Dex host or namespace.
+# ===========================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dex-cert-sync
+  namespace: agentkit
+---
+# Read the operator-minted cert in the tailscale namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dex-cert-sync-src
+  namespace: tailscale
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dex-cert-sync-src
+  namespace: tailscale
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dex-cert-sync-src
+subjects:
+  - kind: ServiceAccount
+    name: dex-cert-sync
+    namespace: agentkit
+---
+# Write the copy in the app namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dex-cert-sync-dst
+  namespace: agentkit
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dex-cert-sync-dst
+  namespace: agentkit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dex-cert-sync-dst
+subjects:
+  - kind: ServiceAccount
+    name: dex-cert-sync
+    namespace: agentkit
+---
+# Shared script, parameterised by env. Used by both the one-shot Job and CronJob.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-cert-sync-script
+  namespace: agentkit
+data:
+  sync.sh: |
+    set -eu
+    echo "cert-sync: copying ${SRC_NS}/${SRC_NAME} -> ${DST_NS}/${DST_NAME}"
+    # Wait for the operator to mint the source cert (first stand-up: the ingress
+    # may have just been created). Up to ~5 min.
+    # Wait for the cert to exist AND carry non-empty PEM data: on first stand-up
+    # (or when the Ingress is recreated) the operator may create the Secret empty
+    # and populate it moments later — copying it empty makes Dex crash-loop with
+    # "failed to find any PEM data in certificate input".
+    i=0
+    until [ -n "$(kubectl -n "$SRC_NS" get secret "$SRC_NAME" -o jsonpath='{.data.tls\.crt}' 2>/dev/null)" ]; do
+      i=$((i+1)); [ "$i" -ge 60 ] && { echo "source cert not populated after 5m"; exit 1; }
+      echo "waiting for ${SRC_NS}/${SRC_NAME} to carry PEM data ($i)..."; sleep 5
+    done
+    kubectl -n "$SRC_NS" get secret "$SRC_NAME" -o json \
+      | jq --arg n "$DST_NAME" --arg ns "$DST_NS" \
+          '{apiVersion, kind, type, metadata: {name: $n, namespace: $ns}, data}' \
+      | kubectl -n "$DST_NS" apply -f -
+    echo "cert-sync: done"
+---
+# One-shot copy at install time (Argo PreSync-friendly).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dex-cert-sync-init
+  namespace: agentkit
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      serviceAccountName: dex-cert-sync
+      restartPolicy: Never
+      containers:
+        - name: sync
+          image: alpine/k8s:1.31.1
+          command: ["sh", "/scripts/sync.sh"]
+          env:
+            - { name: SRC_NS, value: tailscale }
+            - { name: SRC_NAME, value: dex.tailf14b5e.ts.net }
+            - { name: DST_NS, value: agentkit }
+            - { name: DST_NAME, value: dex-tls }
+          volumeMounts:
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: script
+          configMap: { name: dex-cert-sync-script }
+---
+# Keep the copy fresh across operator cert renewals.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dex-cert-sync
+  namespace: agentkit
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      ttlSecondsAfterFinished: 600
+      template:
+        spec:
+          serviceAccountName: dex-cert-sync
+          restartPolicy: Never
+          containers:
+            - name: sync
+              image: alpine/k8s:1.31.1
+              command: ["sh", "/scripts/sync.sh"]
+              env:
+                - { name: SRC_NS, value: tailscale }
+                - { name: SRC_NAME, value: dex.tailf14b5e.ts.net }
+                - { name: DST_NS, value: agentkit }
+                - { name: DST_NAME, value: dex-tls }
+              volumeMounts:
+                - { name: script, mountPath: /scripts }
+          volumes:
+            - name: script
+              configMap: { name: dex-cert-sync-script }

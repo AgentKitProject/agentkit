@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# values-k3s.yaml — turnkey self-host preset for k3s (or any vanilla k8s).
+#
+# Generic OIDC auth, plain Kubernetes Secrets (no Infisical), BYO LLM key only,
+# Market OFF (no phone-home to the hosted ecosystem), bundled Postgres + MinIO on
+# the local-path StorageClass that ships with k3s, and the in-cluster Kubernetes
+# Job-per-run Auto worker (AUTO_DISPATCH=k8s) + per-minute schedule sweep.
+#
+# Install:
+#   helm install agentkitauto ./charts/agentkitauto -f values-k3s.yaml \
+#     --set web.config.appUrl=https://auto.example.com \
+#     --set web.auth.oidc.issuer=https://idp.example.com/realms/main \
+#     --set web.auth.oidc.clientId=agentkitauto \
+#     --set web.secrets.oidcClientSecret=<client-secret> \
+#     --set auto.anthropicApiKey=sk-ant-...
+#
+# Everything else (SESSION_SECRET, AGENTKITFORGE_WEB_SECRET, the Postgres + MinIO
+# passwords, the Auto worker service key) is Helm-generated and preserved across
+# `helm upgrade`. Register {APP_URL}/auth/callback as a redirect URI in your IdP.
+# ---------------------------------------------------------------------------
+
+web:
+  auth:
+    # Generic OIDC also flips the instance into self-host mode (Market OFF, BYO
+    # LLM only, ecosystem links hidden unless explicitly set).
+    provider: "oidc"
+    oidc:
+      # REQUIRED — set via --set or by editing this file:
+      issuer: ""           # e.g. https://idp.example.com/realms/main
+      clientId: ""         # e.g. agentkitauto
+      scopes: "openid profile email"
+      allowInsecure: false # dev only — never true with a real IdP
+
+  config:
+    kitstoreBackend: "selfhost"
+    # REQUIRED — your public origin. OIDC_REDIRECT_URI defaults to
+    # {appUrl}/auth/callback.
+    appUrl: ""
+    # Market OFF on self-host. Point at your OWN Market (e.g. the in-cluster
+    # Market) to enable kit import/favorites, else leave empty.
+    marketBaseUrl: ""
+
+  secrets:
+    # REQUIRED — the OIDC client secret from your IdP.
+    oidcClientSecret: ""
+    # sessionSecret + forgeWebSecret are GENERATED when empty (recommended).
+
+  # k3s bundles a Traefik IngressClass. Set enabled=true + a host to expose it,
+  # or front it with your own ingress / LoadBalancer / Tailscale.
+  ingress:
+    enabled: false
+    className: "traefik"
+    host: ""        # e.g. auto.example.com
+    tls: []
+
+# AgentKitAuto autonomous runs are ON for this chart. Supply ANTHROPIC_API_KEY
+# (BYO LLM key) — the worker image defaults to the public GHCR Auto worker.
+#   --set auto.anthropicApiKey=sk-ant-...
+auto:
+  enabled: true
+  # anthropicApiKey REQUIRED at install; serviceKey is GENERATED when empty.
+  anthropicApiKey: ""
+
+# Bundled data services on k3s' default local-path StorageClass.
+postgres:
+  enabled: true
+  storage:
+    storageClassName: local-path
+minio:
+  enabled: true
+  storage:
+    storageClassName: local-path

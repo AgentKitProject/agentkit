@@ -1,0 +1,66 @@
+name: Publish npm Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 0.1.1"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    # npm provenance requires a GitHub-hosted runner (self-hosted is rejected with E422);
+    # also keeps NPM_TOKEN off the homelab runners. Free for public repos.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Print tool versions
+        run: |
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Smoke test
+        run: npm run smoke --if-present
+
+      - name: Dry-run package
+        run: npm pack --dry-run --json > pack.json
+
+      - name: Verify package contents
+        run: |
+          node -e "const fs=require('node:fs'); const pack=JSON.parse(fs.readFileSync('pack.json','utf8'))[0]; const files=new Set(pack.files.map((file)=>file.path)); const hasDist=[...files].some((file)=>file.startsWith('dist/')); const required=['dist/index.js','dist/index.d.ts','README.md','LICENSE']; const missing=required.filter((file)=>!files.has(file)); if (!hasDist) missing.push('dist/'); if (missing.length) { console.error('Missing required package files: '+missing.join(', ')); process.exit(1); } console.log('Package: '+pack.name); console.log('Version: '+pack.version); console.log('Publish source: manual fallback');"
+
+      - name: Verify requested version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$PACKAGE_VERSION" != "${{ inputs.version }}" ]; then
+            echo "Requested version ${{ inputs.version }} does not match package.json version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

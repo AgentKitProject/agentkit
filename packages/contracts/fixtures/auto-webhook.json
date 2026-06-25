@@ -1,0 +1,16 @@
+{
+  "id": "wh_01HXYZ",
+  "userId": "user_01ABC",
+  "kitRef": { "source": "market", "marketKitId": "kit_01DEF" },
+  "approvalId": "appr_01HXYZ",
+  "budgetCents": 200,
+  "model": "claude-sonnet-4-6",
+  "inferenceMode": "managed",
+  "enabled": true,
+  "ingestUrl": "https://forge.agentkitproject.com/api/hooks/auto/wh_01HXYZ",
+  "createdAt": "2026-06-20T00:00:00.000Z",
+  "lastFiredAt": null,
+  "lastRunId": null,
+  "lastError": null,
+  "fireCount": 0
+}

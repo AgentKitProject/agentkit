@@ -1,0 +1,9 @@
+{
+  "userId": "user_123",
+  "kitId": "kit_abc",
+  "slug": "my-cool-kit",
+  "addedAt": "2026-06-15T00:00:00.000Z",
+  "displayName": "My Cool Kit",
+  "summary": "A handy kit for cool things.",
+  "publisherName": "Jane Publisher"
+}

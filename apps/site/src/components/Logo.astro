@@ -1,0 +1,30 @@
+---
+const { compact = false } = Astro.props;
+const src = compact ? '/brand/agentkitproject-icon.svg' : '/brand/agentkitproject-wordmark.png';
+---
+<a class={`logo ${compact ? 'compact' : ''}`} href="/" aria-label="AgentKitProject home">
+  <img src={src} alt="" aria-hidden="true" />
+</a>
+
+<style>
+  .logo {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 auto;
+    line-height: 0;
+    text-decoration: none;
+  }
+
+  .logo img {
+    display: block;
+    height: 3rem;
+    object-fit: contain;
+    object-position: left center;
+    width: auto;
+  }
+
+  .logo.compact img {
+    height: 2.4rem;
+    width: 2.4rem;
+  }
+</style>

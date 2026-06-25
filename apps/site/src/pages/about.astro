@@ -1,0 +1,47 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeUrl, githubOrgUrl, profileUrl, roadmapUrl } from '../data/products';
+---
+<BaseLayout
+  title="About"
+  description="About AgentKitProject, the open ecosystem for portable Agent Kits."
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">About</p>
+      <h1>AgentKitProject is building open tools for portable Agent Kits.</h1>
+      <p class="lead">
+        The project exists to make repeatable AI work easier to create, move, inspect, share, and
+        automate. The open-source core and app foundation are centered on portable kit artifacts
+        rather than a single locked-in destination.
+      </p>
+      <div class="button-row">
+        <a class="button" href={githubOrgUrl}>View GitHub organization</a>
+        <a class="button secondary" href={forgeUrl}>Start with Forge</a>
+        <a class="button secondary" href={roadmapUrl}>View roadmap</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid two">
+      <article class="content-panel">
+        <h2>Why Agent Kits?</h2>
+        <p>
+          Teams and individuals repeat the same AI workflows every day. Agent Kits package the
+          instructions, inputs, guardrails, examples, and output expectations that make those
+          workflows reusable.
+        </p>
+      </article>
+      <article class="content-panel">
+        <h2>Why an ecosystem?</h2>
+        <p>
+          Building a kit is only the first step. AgentKitProject separates the lifecycle into clear
+          products: Profile for shared identity, Forge for creation and local runs, Market for
+          distribution, and Auto for future execution.
+        </p>
+        <p><a href={profileUrl}>Open AgentKitProfile account</a></p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,103 @@
+{
+  "$comment": "Canonical route table. Non-TS consumers (Forge Rust) assert their request paths against these patterns. {param} segments are URL-encoded by callers.",
+  "profileApi": {
+    "publicByUserId": "/profiles/{userId}",
+    "publicByHandle": "/profiles/handle/{handle}",
+    "me": "/me"
+  },
+  "forgeMarket": {
+    "download": "/api/forge/kits/{slug}/download",
+    "kitDetail": "/api/forge/kits/{slug}",
+    "submissionUploadUrl": "/api/forge/submissions/upload-url",
+    "submissionValidate": "/api/forge/submissions/{submissionId}/validate",
+    "publisherProfile": "/api/forge/publisher-profile"
+  },
+  "forgeOrgs": {
+    "listMyOrgs": "/api/forge/orgs",
+    "createOrg": "/api/forge/orgs",
+    "listOrgKits": "/api/forge/orgs/{orgId}/kits",
+    "deleteOrg": "/api/forge/orgs/{orgId}",
+    "orgMembers": "/api/forge/orgs/{orgId}/members",
+    "orgMember": "/api/forge/orgs/{orgId}/members/{userId}",
+    "myOrgInvites": "/api/forge/orgs/invites",
+    "acceptOrgInvite": "/api/forge/orgs/{orgId}/invites/accept",
+    "transferKit": "/api/forge/kits/{kitId}/transfer",
+    "setKitVisibility": "/api/forge/kits/{kitId}/visibility"
+  },
+  "marketBackendOrgs": {
+    "adminListUserOrgs": "/admin/users/{userId}/orgs",
+    "adminCreateOrg": "/admin/orgs",
+    "adminDeleteOrg": "/admin/orgs/{orgId}",
+    "adminListOrgKits": "/admin/orgs/{orgId}/kits",
+    "adminOrgMembers": "/admin/orgs/{orgId}/members",
+    "adminOrgMember": "/admin/orgs/{orgId}/members/{userId}",
+    "adminListUserInvites": "/admin/users/{userId}/invites",
+    "adminAcceptInvite": "/admin/orgs/{orgId}/invites/{userId}/accept",
+    "adminTransferKit": "/admin/kits/{kitId}/transfer",
+    "adminSetKitVisibility": "/admin/kits/{kitId}/visibility"
+  },
+  "marketBackendPricing": {
+    "adminSetKitPricing": "/admin/kits/{kitId}/pricing",
+    "adminListUserEntitlements": "/admin/users/{userId}/entitlements",
+    "adminGetEntitlement": "/admin/kits/{kitId}/entitlements/{userId}",
+    "adminGrantEntitlement": "/admin/kits/{kitId}/entitlements",
+    "adminLicensedPackage": "/admin/kits/{kitId}/licensed-package"
+  },
+  "forgePricing": {
+    "myEntitlements": "/api/forge/me/entitlements",
+    "licensedPackage": "/api/forge/kits/{slug}/licensed-package"
+  },
+  "marketService": {
+    "licensedPackage": "/api/forge/service/kits/{slug}/licensed-package"
+  },
+  "marketBackendFavorites": {
+    "adminListUserFavorites": "/admin/users/{userId}/favorites",
+    "adminAddUserFavorite": "/admin/users/{userId}/favorites",
+    "adminRemoveUserFavorite": "/admin/users/{userId}/favorites/{kitId}"
+  },
+  "forgeFavorites": {
+    "favorites": "/api/forge/favorites",
+    "favorite": "/api/forge/favorites/{kitId}"
+  },
+  "browserFavorites": {
+    "favorites": "/api/favorites",
+    "favorite": "/api/favorites/{kitId}"
+  },
+  "marketBackendAudit": {
+    "adminListAuditLogs": "/admin/audit-logs"
+  },
+  "browserAudit": {
+    "auditLogs": "/api/admin/audit-logs"
+  },
+  "auto": {
+    "approvals": "/api/auto/approvals",
+    "revokeApproval": "/api/auto/approvals/{id}/revoke",
+    "runs": "/api/auto/runs",
+    "run": "/api/auto/runs/{id}",
+    "cancelRun": "/api/auto/runs/{id}/cancel",
+    "runInputsUploadUrl": "/api/auto/runs/inputs/upload-url",
+    "schedules": "/api/auto/schedules",
+    "schedule": "/api/auto/schedules/{id}",
+    "webhooks": "/api/auto/webhooks",
+    "webhook": "/api/auto/webhooks/{id}"
+  },
+  "forgeAuto": {
+    "approvals": "/api/forge/auto/approvals",
+    "revokeApproval": "/api/forge/auto/approvals/{id}/revoke",
+    "runs": "/api/forge/auto/runs",
+    "run": "/api/forge/auto/runs/{id}",
+    "cancelRun": "/api/forge/auto/runs/{id}/cancel",
+    "runInputsUploadUrl": "/api/forge/auto/runs/inputs/upload-url",
+    "schedules": "/api/forge/auto/schedules",
+    "schedule": "/api/forge/auto/schedules/{id}",
+    "webhooks": "/api/forge/auto/webhooks",
+    "webhook": "/api/forge/auto/webhooks/{id}"
+  },
+  "autoHooks": {
+    "ingest": "/api/hooks/auto/{webhookId}"
+  },
+  "autoInternal": {
+    "resolveContext": "/api/internal/auto/resolve-context",
+    "sweep": "/api/internal/auto/sweep"
+  }
+}

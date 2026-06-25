@@ -1,0 +1,86 @@
+# ===========================================================================
+# values-auto.yaml — ts.net real-TLS self-host overlay for AgentKitAuto.
+#
+# AgentKitAuto is a SEPARATE self-host app; its chart lives in the sibling
+# agentkitauto-app repo. Rendered by ArgoCD against that chart's
+# charts/agentkitauto (../apps/40-auto.yaml). Carries ONLY non-secret config.
+# The OIDC client secret + SESSION_SECRET + AGENTKITFORGE_WEB_SECRET + the Auto
+# worker service key are chart-generated or supplied via a plain Secret YOU
+# create (see ../secrets.example.yaml).
+#
+# Browser-facing URL is the real https://auto.tailf14b5e.ts.net name with an
+# operator-minted Let's Encrypt cert → allowInsecure stays false, NO
+# NODE_TLS_REJECT_UNAUTHORIZED, NO hostAliases.
+#
+# Replace `tailf14b5e.ts.net` with YOUR tailnet suffix first (see ../README.md → sed).
+# ===========================================================================
+
+web:
+  image:
+    repository: ghcr.io/agentkitproject/agentkitauto-app
+    tag: "latest"
+  auth:
+    provider: "oidc"
+    oidc:
+      issuer: "https://dex.tailf14b5e.ts.net/dex"
+      clientId: "agentkitauto"
+      scopes: "openid profile email"
+      # Issuer serves a real Let's Encrypt cert in-cluster (dex-tls), so
+      # allowInsecure stays false.
+      allowInsecure: false
+
+  # Reference the plain Secret you create with OIDC_CLIENT_SECRET (and optionally
+  # ANTHROPIC_API_KEY, SESSION_SECRET, AGENTKITFORGE_WEB_SECRET). The
+  # OIDC_CLIENT_SECRET MUST equal the agentkitauto Dex staticClient secret. See
+  # ../secrets.example.yaml.
+  secrets:
+    existingSecret: "agentkitauto-web-secret"
+
+  config:
+    kitstoreBackend: "selfhost"
+    # Public origin → OIDC_REDIRECT_URI auto-derives {appUrl}/auth/callback,
+    # which must match the Dex staticClient redirect for agentkitauto.
+    appUrl: "https://auto.tailf14b5e.ts.net"
+    # Integrate Auto WITH the self-hosted Market so the kit selector resolves
+    # kits against our own in-cluster Market. This is a SERVER-SIDE call → use
+    # the in-cluster Market web Service, NOT the ts.net name.
+    marketBaseUrl: "http://agentkitmarket-web.agentkit.svc.cluster.local:80"
+    # Link back to the in-cluster Forge app.
+    ecosystemLinks:
+      forgeUrl: "https://forge.tailf14b5e.ts.net"
+
+  # Tailscale operator ingress. host EMPTY → defaultBackend path; served name
+  # from tls.hosts SHORTNAME. Operator mints cert Secret auto.tailf14b5e.ts.net
+  # in the tailscale namespace.
+  ingress:
+    enabled: true
+    className: "tailscale"
+    host: ""
+    annotations:
+      tailscale.com/proxy-group: admin-ingress
+    tls:
+      - hosts:
+          - auto
+
+# AgentKitAuto worker dispatch is ON (chart default). Each run becomes a
+# one-shot Kubernetes Job in this namespace (AUTO_DISPATCH=k8s); a per-minute
+# CronJob sweeps due schedules. workerImage is defaulted by the chart.
+auto:
+  enabled: true
+  # Self-host billing: free = BYO key, no metering.
+  billing: "free"
+  # ANTHROPIC_API_KEY for inference — REQUIRED, BYO. Left EMPTY here on purpose:
+  # a real key means real spend, so YOU supply it. Provide it via the plain
+  # Secret referenced by web.secrets.existingSecret (key ANTHROPIC_API_KEY), or
+  # pin it here. Do NOT commit a real key.
+  anthropicApiKey: ""
+
+# Bundled data services on local-path (k3s).
+postgres:
+  enabled: true
+  storage:
+    storageClassName: local-path
+minio:
+  enabled: true
+  storage:
+    storageClassName: local-path

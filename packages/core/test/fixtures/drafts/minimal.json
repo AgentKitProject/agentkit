@@ -1,0 +1,17 @@
+{
+  "id": "minimal-draft",
+  "name": "Minimal Draft",
+  "description": "A minimal Agent Kit draft.",
+  "skills": [
+    {
+      "id": "summarize",
+      "name": "Summarize",
+      "description": "Summarize provided text.",
+      "triggers": ["summarize text"],
+      "riskLevel": "low",
+      "useWhen": "Use this skill when a user asks for a concise summary.",
+      "procedure": "Read the input and produce a short summary.",
+      "output": "Return Markdown."
+    }
+  ]
+}

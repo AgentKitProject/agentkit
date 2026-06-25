@@ -1,0 +1,407 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeUrl, marketUrl, profileUrl } from '../data/products';
+
+const doneItems = [
+  'AgentKitForge desktop app — cross-platform, signed, auto-update (v0.6.x)',
+  'Web Forge (hosted + self-hostable)',
+  'AgentKitProfile auth/profile — shared account, display name, handle',
+  'AgentKitMarket public catalog — browse, submit, admin review, download',
+  'Forge → Market submit flow (device auth, validation queue, admin review)',
+  'AgentKitAuto — on-demand, scheduled, and webhook runs (hosted + self-host)',
+  '@agentkitforge/contracts shared contracts package (public npm)',
+  '@agentkitforge/ui shared design system (tokens + components + AppShell)',
+  'Central docs at docs.agentkitproject.com',
+  'Sequential kit versioning (v1 → v2, duplicate sha256 protection)',
+  'Session keep-alive (WorkOS token refresh, persists across restarts)',
+  'Bridge 5: installed kit metadata + update-check foundation'
+];
+
+const sections = [
+  {
+    id: 'agentkitmarket-phase-2',
+    badge: 'Next',
+    tone: 'next',
+    title: 'AgentKitMarket Phase 2',
+    subtitle: 'Organizations, private catalogs, self-hosted Market',
+    body:
+      'Phase 2 expands beyond public and personal sharing into team, company, and self-hosted distribution. Self-hosted Market (same codebase as the hosted webapp, AWS coupling abstracted behind swappable implementations) is the first priority.',
+    items: [
+      'organization accounts',
+      'team roles',
+      'private catalogs',
+      'self-hosted Market on k8s',
+      'audit logs',
+      'paid / licensed kits (later, post self-hosted)'
+    ]
+  },
+  {
+    id: 'agentkitauto-deeper',
+    badge: 'Planned',
+    tone: 'bridge',
+    title: 'Deeper AgentKitAuto integration',
+    subtitle: 'Market + Forge + Auto convergence',
+    body:
+      'AgentKitAuto is live. The next integration layer connects Auto more tightly with Market kits and Forge workflows — install-from-Market, trigger from Forge, team automation support.',
+    items: [
+      'install Market kits directly into Auto',
+      'trigger Auto runs from Forge',
+      'team and private automation support',
+      'Auto API surface for external triggers',
+      'deeper Forge + Market + Auto observability'
+    ]
+  },
+  {
+    id: 'agentkitprofile',
+    badge: 'Done + later',
+    tone: 'done',
+    title: 'AgentKitProfile',
+    subtitle: 'Shared account and profile identity',
+    body:
+      'Profile is the shared AgentKitProject account layer today — handle, display name, and public profile page. Future work extends it for organizations, developer API tokens, and account management.',
+    items: [
+      'shared AgentKitProject account',
+      'public display profile',
+      'handle / display name',
+      'product access overview',
+      'future: org membership',
+      'future: API tokens'
+    ]
+  },
+  {
+    id: 'agentkitmarket',
+    badge: 'Done',
+    tone: 'done',
+    title: 'AgentKitMarket Phase 1',
+    subtitle: 'Public marketplace foundation — shipped',
+    body:
+      'Market Phase 1 is complete and live: public catalog, signed-in submissions via Forge device auth, admin validation and review queue, signed-in downloads, and the contracts/shared-UI foundations.',
+    items: [
+      'public catalog — browse without sign-in',
+      'Forge device auth → submit from desktop',
+      'server validation queue + admin review',
+      'signed-in downloads',
+      'publisher snapshot (display name, handle)',
+      'sha256 duplicate protection + sequential versioning'
+    ]
+  },
+  {
+    id: 'agentkitforge',
+    badge: 'Done',
+    tone: 'done',
+    title: 'AgentKitForge bridges',
+    subtitle: 'Desktop + Web Forge + Market integration — shipped',
+    body:
+      'All Forge bridges are complete: device auth, Market submit/download/import, installed kit metadata, update-check, Web Forge, and the core parity migration (all Market logic now in @agentkitforge/core with CLI).',
+    items: [
+      'sign in with AgentKitProject account',
+      'submit kits to Market from Forge',
+      'import .agentkit.zip from Market',
+      'installed kit metadata + update-check',
+      'Web Forge (hosted + self-hostable)',
+      'CLI: agentkitforge market login|submit|import'
+    ]
+  }
+];
+
+const principles = [
+  'public browsing is open',
+  'downloads require an AgentKitProject account',
+  'emails are private',
+  'raw user IDs are not public display names',
+  'packages are reviewed before publication',
+  'packages are stored privately'
+];
+---
+<BaseLayout
+  title="AgentKitProject Roadmap"
+  description="Roadmap for AgentKitForge, AgentKitMarket, AgentKitProfile, and AgentKitAuto."
+>
+  <section class="section roadmap-hero">
+    <div class="container">
+      <p class="eyebrow">Ecosystem roadmap</p>
+      <h1>AgentKitProject Roadmap</h1>
+      <p class="lead">
+        AgentKitProject is building an open ecosystem for creating, sharing, and automating
+        portable Agent Kits. Forge, Market, Profile, and Auto are all live. This is the public
+        roadmap for what's shipped and what's next.
+      </p>
+      <div class="button-row">
+        <a class="button" href={marketUrl}>Open Market</a>
+        <a class="button secondary" href={profileUrl}>Open Profile</a>
+        <a class="button secondary" href={forgeUrl}>Open Forge</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">Definitions</p>
+      <h2>How the pieces fit together.</h2>
+      <div class="definition-grid">
+        <article class="card accent-project">
+          <h3>AgentKitProject</h3>
+          <p>The parent ecosystem for portable Agent Kits, product direction, docs, and shared principles.</p>
+        </article>
+        <article class="card accent-profile">
+          <h3>AgentKitProfile</h3>
+          <p>Shared account/profile identity across the ecosystem — handle, display name, public profile.</p>
+        </article>
+        <article class="card accent-market">
+          <h3>AgentKitMarket</h3>
+          <p>Discover, share, download, validate, review, and publish Agent Kits. Public catalog live.</p>
+        </article>
+        <article class="card accent-forge">
+          <h3>AgentKitForge</h3>
+          <p>Build, edit, run, package, export, and install Agent Kits. Desktop + Web Forge, both live.</p>
+        </article>
+        <article class="card accent-auto">
+          <h3>AgentKitAuto</h3>
+          <p>Run Agent Kits on-demand, on schedules, and via webhooks. Hosted and self-hostable, live now.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container status-panel">
+      <div>
+        <span class="roadmap-badge done">Done</span>
+        <h2>What's shipped</h2>
+        <p>
+          The full foundation is live across all five products. Market Phase 2 (orgs, private
+          catalogs, self-hosted) is next.
+        </p>
+      </div>
+      <ul class="check-grid">
+        {doneItems.map((item) => <li>{item}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Roadmap</p>
+      <h2>Public product direction.</h2>
+      <div class="timeline">
+        {sections.map((section) => (
+          <article id={section.id} class="timeline-card">
+            <span class={`roadmap-badge ${section.tone}`}>{section.badge}</span>
+            <h3>{section.title}</h3>
+            <p class="subtitle">{section.subtitle}</p>
+            <p>{section.body}</p>
+            <ul class="feature-list">
+              {section.items.map((item) => <li>{item}</li>)}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container principles-panel">
+      <div>
+        <p class="eyebrow">Principles</p>
+        <h2>Public boundaries stay clear.</h2>
+        <p>
+          AgentKitProject keeps browsing open while protecting identity, package access, and
+          publication trust boundaries.
+        </p>
+      </div>
+      <ul class="principles-list">
+        {principles.map((item) => <li>{item}</li>)}
+      </ul>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .roadmap-hero {
+    background:
+      linear-gradient(135deg, rgba(44, 119, 241, 0.12), transparent 34rem),
+      linear-gradient(245deg, rgba(109, 70, 233, 0.09), transparent 28rem);
+  }
+
+  .definition-grid,
+  .check-grid,
+  .principles-list,
+  .feature-list {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .definition-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-top: 2rem;
+  }
+
+  .definition-grid .card {
+    border-top: 4px solid var(--definition-accent, var(--project-blue));
+  }
+
+  .accent-project {
+    --definition-accent: var(--project-blue);
+  }
+
+  .accent-profile,
+  .accent-market {
+    --definition-accent: var(--market);
+  }
+
+  .accent-forge {
+    --definition-accent: var(--forge);
+  }
+
+  .accent-auto {
+    --definition-accent: var(--auto);
+  }
+
+  .status-panel,
+  .principles-panel {
+    background:
+      linear-gradient(135deg, rgba(9, 18, 39, 0.97), rgba(17, 27, 53, 0.94)),
+      var(--project-navy);
+    border: 1px solid color-mix(in srgb, var(--project-blue) 34%, var(--project-navy));
+    border-radius: 8px;
+    box-shadow: 0 22px 58px rgba(9, 18, 39, 0.18);
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    padding: clamp(1.3rem, 4vw, 2.3rem);
+  }
+
+  .status-panel h2,
+  .principles-panel h2,
+  .status-panel p,
+  .principles-panel p {
+    color: white;
+  }
+
+  .status-panel .eyebrow,
+  .principles-panel .eyebrow {
+    color: var(--project-cyan);
+  }
+
+  .check-grid,
+  .principles-list,
+  .feature-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .check-grid,
+  .principles-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .check-grid li,
+  .principles-list li {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 720;
+    padding: 0.85rem 0.95rem;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  .timeline-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--project-blue);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: clamp(1.2rem, 3vw, 1.75rem);
+    scroll-margin-top: 6rem;
+  }
+
+  .timeline-card p {
+    margin-bottom: 0;
+  }
+
+  .subtitle {
+    color: var(--text);
+    font-weight: 800;
+    margin: 0.35rem 0 0.8rem;
+  }
+
+  .roadmap-badge {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.76rem;
+    font-weight: 850;
+    line-height: 1;
+    margin-bottom: 0.8rem;
+    padding: 0.42rem 0.62rem;
+  }
+
+  .roadmap-badge.done {
+    background: color-mix(in srgb, var(--success) 12%, white);
+    border-color: color-mix(in srgb, var(--success) 32%, white);
+    color: #15803d;
+  }
+
+  .roadmap-badge.next {
+    background: color-mix(in srgb, var(--market) 12%, white);
+    border-color: color-mix(in srgb, var(--market) 35%, white);
+    color: #087a8f;
+  }
+
+  .roadmap-badge.bridge {
+    background: color-mix(in srgb, var(--forge) 12%, white);
+    border-color: color-mix(in srgb, var(--forge) 35%, white);
+    color: #4338ca;
+  }
+
+  .roadmap-badge.later {
+    background: color-mix(in srgb, var(--project-blue) 12%, white);
+    border-color: color-mix(in srgb, var(--project-blue) 32%, white);
+    color: #1d5fd1;
+  }
+
+  .roadmap-badge.exploring {
+    background: color-mix(in srgb, var(--project-purple) 12%, white);
+    border-color: color-mix(in srgb, var(--project-purple) 32%, white);
+    color: #5b21b6;
+  }
+
+  .feature-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 1.2rem;
+  }
+
+  .feature-list li {
+    background: var(--muted-surface);
+    border: 1px solid color-mix(in srgb, var(--project-blue) 12%, var(--border));
+    border-radius: 8px;
+    color: var(--text);
+    font-weight: 700;
+    padding: 0.75rem 0.85rem;
+  }
+
+  @media (max-width: 1060px) {
+    .definition-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .definition-grid,
+    .status-panel,
+    .principles-panel,
+    .check-grid,
+    .principles-list,
+    .feature-list {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

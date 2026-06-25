@@ -1,0 +1,149 @@
+{{- if .Values.minio.enabled -}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-minio-data
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.minio.storage.size }}
+  {{- if .Values.minio.storage.storageClassName }}
+  storageClassName: {{ .Values.minio.storage.storageClassName }}
+  {{- end }}
+{{- if not .Values.secrets.existingSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-minio-secret
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+type: Opaque
+data:
+  MINIO_ROOT_USER: {{ .Values.minio.rootUser | b64enc | quote }}
+  MINIO_ROOT_PASSWORD: {{ include "agentkitmarket.effectiveMinioPassword" . | b64enc | quote }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-minio
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "agentkitmarket.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "agentkitmarket.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: minio
+    spec:
+      containers:
+        - name: minio
+          image: {{ .Values.minio.image }}
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              {{- if .Values.secrets.existingSecret }}
+              value: {{ .Values.minio.rootUser | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentkitmarket.fullname" . }}-minio-secret
+                  key: MINIO_ROOT_USER
+              {{- end }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "agentkitmarket.fullname" . }}-minio-secret{{ end }}
+                  key: MINIO_ROOT_PASSWORD
+          ports:
+            - name: api
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "agentkitmarket.fullname" . }}-minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-minio
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  selector:
+    app.kubernetes.io/name: {{ include "agentkitmarket.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: api
+    - name: console
+      port: 9001
+      targetPort: console
+{{- if .Values.minio.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-minio
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+  {{- with .Values.minio.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.minio.ingress.className }}
+  ingressClassName: {{ .Values.minio.ingress.className }}
+  {{- end }}
+  {{- if .Values.minio.ingress.tls }}
+  tls:
+    {{- toYaml .Values.minio.ingress.tls | nindent 4 }}
+  {{- end }}
+  {{- if .Values.minio.ingress.host }}
+  rules:
+    - host: {{ .Values.minio.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentkitmarket.fullname" . }}-minio
+                port:
+                  number: 9000
+  {{- else }}
+  # No host → catch-all defaultBackend. Required for tailscale ingress, where the
+  # real Host is the full tailnet FQDN; the served name comes from tls.hosts.
+  defaultBackend:
+    service:
+      name: {{ include "agentkitmarket.fullname" . }}-minio
+      port:
+        number: 9000
+  {{- end }}
+{{- end }}
+{{- end }}

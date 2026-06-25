@@ -1,0 +1,236 @@
+---
+import ProductCard from '../components/ProductCard.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeUrl, githubOrgUrl, marketUrl, products, profileUrl, roadmapUrl, webForgeUrl } from '../data/products';
+
+const flow = [
+  ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits on your computer in AgentKitForge, using prompts, skills, policies, templates, examples, and context.'],
+  ['Share & Browse', 'var(--market)', 'Publish, discover, and browse validated kits through AgentKitMarket as the sharing layer comes online.'],
+  ['Schedule & Automate', 'var(--auto)', 'Schedule and trigger trusted kits with AgentKitAuto when the automation layer ships.']
+];
+---
+<BaseLayout title="AgentKitProject">
+  <section class="section hero">
+    <div class="container hero-inner">
+      <img class="hero-logo" src="/brand/agentkitproject-logo.svg" alt="AgentKitProject" />
+      <p class="eyebrow">Portable Agent Kit ecosystem</p>
+      <h1>Create, share, and automate Agent Kits.</h1>
+      <p class="lead">
+        AgentKitProject is the ecosystem for repeatable AI work: build Agent Kits locally,
+        prepare them for trusted distribution, and eventually automate them across schedules,
+        events, and workflows.
+      </p>
+      <div class="button-row">
+        <a class="button" href={forgeUrl}>Download Forge</a>
+        <a class="button secondary" href={webForgeUrl}>Open Web Forge</a>
+        <a class="button secondary" href={marketUrl}>Browse Market</a>
+        <a class="button secondary" href={profileUrl}>Sign in</a>
+      </div>
+      <div class="ecosystem-strip" aria-label="AgentKitProject ecosystem flow">
+        <span class="forge">AgentKitForge</span>
+        <b style="--strip-accent: #5b4cf0;">Build &amp; Run</b>
+        <span class="market">AgentKitMarket</span>
+        <b style="--strip-accent: #0fb3d1;">Share &amp; Browse</b>
+        <span class="auto">AgentKitAuto</span>
+        <b style="--strip-accent: #16a34a;">Schedule &amp; Automate</b>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">Products</p>
+      <h2>One ecosystem, three focused layers.</h2>
+      <div class="grid three product-grid">
+        {products.map((product) => <ProductCard {...product} />)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Flow</p>
+      <h2>Build & Run -> Share & Browse -> Schedule & Automate</h2>
+      <div class="flow-grid">
+        {flow.map(([title, accent, body], index) => (
+          <article class="flow-step" style={`--flow-accent: ${accent};`}>
+            <span>{index + 1}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid two">
+      <div>
+        <p class="eyebrow">Open foundation</p>
+        <h2>Portable kits should not be trapped in one app.</h2>
+      </div>
+      <div class="content-panel">
+        <p>
+          AgentKitProject is designed around portable kit artifacts and open-source core tooling.
+          Forge is the current desktop product; Market and Auto are being shaped as separate
+          ecosystem layers rather than hidden backend features.
+        </p>
+        <p><a href={roadmapUrl}>See the ecosystem roadmap</a></p>
+        <p><a href={githubOrgUrl}>Follow the project on GitHub</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight self-host-section">
+    <div class="container self-host-inner">
+      <div class="self-host-badge">Self-hostable</div>
+      <h2 class="self-host-heading">Run AgentKitProject on your own infrastructure.</h2>
+      <p class="self-host-body">
+        AgentKitProject is designed to be self-hosted: local-first, open ecosystem, no vendor
+        lock-in. AgentKitAuto is available for self-hosting today. Self-hosted AgentKitMarket
+        is on the roadmap — same codebase, your own infrastructure.
+      </p>
+      <a class="button self-host-cta" href="https://docs.agentkitproject.com/self-host-overview/">
+        Self-host overview &rarr;
+      </a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding-top: 4.5rem;
+  }
+
+  .hero-inner {
+    min-height: min(720px, calc(100vh - 4.6rem));
+  }
+
+  .hero-logo {
+    display: block;
+    height: clamp(4rem, 10vw, 7rem);
+    margin-bottom: 1.5rem;
+    object-fit: contain;
+    object-position: left center;
+    width: min(100%, 28rem);
+  }
+
+  .ecosystem-strip {
+    align-items: center;
+    background:
+      linear-gradient(135deg, rgba(9, 18, 39, 0.96), rgba(17, 27, 53, 0.94)),
+      var(--project-navy);
+    border: 1px solid color-mix(in srgb, var(--project-blue) 36%, var(--project-navy));
+    border-radius: 8px;
+    box-shadow: 0 18px 54px rgba(9, 18, 39, 0.18);
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(6, auto);
+    margin-top: 4rem;
+    max-width: 890px;
+    padding: 1rem;
+  }
+
+  .ecosystem-strip span {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    color: white;
+    font-weight: 850;
+    padding: 0.85rem 1rem;
+  }
+
+  .ecosystem-strip span.forge {
+    box-shadow: inset 3px 0 0 var(--forge);
+  }
+
+  .ecosystem-strip span.market {
+    box-shadow: inset 3px 0 0 var(--market);
+  }
+
+  .ecosystem-strip span.auto {
+    box-shadow: inset 3px 0 0 var(--auto);
+  }
+
+  .ecosystem-strip b {
+    color: var(--strip-accent);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+  }
+
+  .product-grid {
+    margin-top: 2rem;
+  }
+
+  .flow-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 2rem;
+  }
+
+  .flow-step {
+    background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--flow-accent, var(--project-blue)) 16%, var(--border));
+    border-left: 3px solid var(--flow-accent, var(--project-blue));
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 0.35rem 1rem 0.35rem 1.25rem;
+  }
+
+  .flow-step span {
+    color: var(--flow-accent, var(--project-cyan));
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 900;
+    margin-bottom: 0.5rem;
+  }
+
+  .self-host-section {
+    border-top: 1px solid var(--border);
+  }
+
+  .self-host-inner {
+    align-items: flex-start;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 680px;
+  }
+
+  .self-host-badge {
+    background: color-mix(in srgb, var(--auto) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--auto) 30%, transparent);
+    border-radius: 999px;
+    color: var(--auto);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 0.25rem 0.75rem;
+    text-transform: uppercase;
+  }
+
+  .self-host-heading {
+    margin: 0;
+  }
+
+  .self-host-body {
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .self-host-cta {
+    margin-top: 0.25rem;
+  }
+
+  @media (max-width: 860px) {
+    .hero-inner {
+      min-height: auto;
+    }
+
+    .ecosystem-strip,
+    .flow-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

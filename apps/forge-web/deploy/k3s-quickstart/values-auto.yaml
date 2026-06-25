@@ -1,0 +1,89 @@
+# ===========================================================================
+# values-auto.yaml — k3s quickstart overlay for AgentKitAuto.
+#
+# AgentKitAuto is a SEPARATE self-host app. Its chart lives in the sibling
+# agentkitauto-app repo (NOT this repo). Layered ON TOP of that chart's
+# own values-k3s.yaml preset:
+#
+#   helm install agentkitauto \
+#     ../../../agentkitauto-app/charts/agentkitauto \
+#     -f ../../../agentkitauto-app/charts/agentkitauto/values-k3s.yaml \
+#     -f values-auto.yaml \
+#     -f secrets.auto.generated.yaml \   # produced by ./gen-secrets.sh
+#     --set auto.anthropicApiKey=sk-ant-... \   # BYO LLM key (operator-supplied)
+#     --namespace agentkit
+#
+# Carries ONLY non-secret config. The OIDC client secret lives in
+# secrets.auto.generated.yaml; SESSION_SECRET, AGENTKITFORGE_WEB_SECRET, the
+# Auto worker service key, and the DB/MinIO passwords are chart-generated.
+# ANTHROPIC_API_KEY is BYO — supply it via --set auto.anthropicApiKey=... (or
+# add it to the secrets overlay).
+#
+# Replace <NODE_IP> everywhere first (see ../README.md → `sed`).
+# ===========================================================================
+
+web:
+  image:
+    repository: ghcr.io/agentkitproject/agentkitauto-app
+    tag: "latest"
+  auth:
+    provider: "oidc"
+    oidc:
+      issuer: "https://dex.<NODE_IP>.nip.io/dex"
+      clientId: "agentkitauto"
+      scopes: "openid profile email"
+      # Issuer is HTTPS (Traefik default cert), so allowInsecure stays false.
+      allowInsecure: false
+
+  config:
+    kitstoreBackend: "selfhost"
+    # Public origin → OIDC_REDIRECT_URI auto-derives {appUrl}/auth/callback,
+    # which must match the Dex staticClient redirect for agentkitauto.
+    appUrl: "https://auto.<NODE_IP>.nip.io"
+    # Integrate Auto WITH the self-hosted Market so the kit selector resolves
+    # kits against our own in-cluster Market (NO phone-home to the hosted
+    # *.agentkitproject.com ecosystem).
+    marketBaseUrl: "https://market.<NODE_IP>.nip.io"
+    # Link back to the in-cluster Forge app.
+    ecosystemLinks:
+      forgeUrl: "https://forge.<NODE_IP>.nip.io"
+
+  ingress:
+    enabled: true
+    className: "traefik"
+    host: "auto.<NODE_IP>.nip.io"
+    # No tls: → Traefik's default self-signed cert (see README TLS note).
+    tls: []
+
+  # DEV/SMOKE-TEST ONLY — disables TLS verification; do NOT use in production
+  # (see TLS section). Traefik serves a self-signed cert on the nip.io hosts, so
+  # the Node process would reject Dex's HTTPS issuer during OIDC discovery/token
+  # calls. This blunt flag makes Node accept it for the smoke test. The
+  # production path is cert-manager + dropping this var (README → Self-signed TLS).
+  extraEnv:
+    - name: NODE_TLS_REJECT_UNAUTHORIZED
+      value: "0"
+
+  # Resolve the ingress hosts straight to the node IP from inside the pod, so
+  # pod→ingress OIDC calls don't depend on CNI hairpin NAT (README → Hairpin).
+  hostAliases:
+    - ip: "<NODE_IP>"
+      hostnames:
+        - "dex.<NODE_IP>.nip.io"
+        - "forge.<NODE_IP>.nip.io"
+        - "market.<NODE_IP>.nip.io"
+        - "auto.<NODE_IP>.nip.io"
+
+# AgentKitAuto worker dispatch is ON in the chart's values-k3s preset. Each run
+# becomes a one-shot Kubernetes Job in this namespace (AUTO_DISPATCH=k8s); a
+# per-minute CronJob sweeps due schedules. Supply ANTHROPIC_API_KEY at install
+# (--set auto.anthropicApiKey=sk-ant-...); the worker service key is generated.
+auto:
+  enabled: true
+
+# Bundled data services on local-path (inherited from the chart's values-k3s;
+# restated for clarity).
+postgres:
+  enabled: true
+minio:
+  enabled: true

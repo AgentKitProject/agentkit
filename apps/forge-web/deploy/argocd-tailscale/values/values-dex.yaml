@@ -1,0 +1,134 @@
+# ===========================================================================
+# values-dex.yaml — in-cluster Dex test IdP for the ts.net real-TLS self-host.
+#
+# This is NOT a production IdP. It exists so you can test the full OIDC login
+# flow (Forge WebApp + Market + Auto) on an isolated cluster with a single
+# static test user and ZERO external identity provider. Swap it for a real IdP
+# by pointing each app's issuer/clientId/secret at your company IdP (see
+# ../README.md → "Setting up the org / first admin").
+#
+# Chart: dex/dex v0.24.1  (https://charts.dexidp.io)
+#
+# ---------------------------------------------------------------------------
+# THE ISSUER-IDENTITY CONSTRAINT (read this):
+#   The OIDC `issuer` below is the PUBLIC ts.net URL. Browsers AND in-cluster
+#   pods use this SAME URL for discovery (/.well-known/openid-configuration),
+#   because OIDC requires the discovery `issuer` to byte-match the configured
+#   issuer — there is no "public vs internal" split.
+#
+#   => Every pod that verifies a Dex token (forge-web, market web, auto web)
+#      must resolve and reach https://dex.tailf14b5e.ts.net/dex from INSIDE the
+#      cluster, over VALID TLS. Two bootstrap pieces make that work:
+#        - ../bootstrap/coredns-rewrite.yaml rewrites dex.tailf14b5e.ts.net to
+#          the in-cluster Dex Service (so pods reach Dex directly, not via the
+#          tailnet).
+#        - ../bootstrap/cert-sync.yaml copies the operator-minted Let's Encrypt
+#          cert into the `dex-tls` Secret (below), so Dex serves the SAME cert
+#          the browser trusts. Pods therefore get valid TLS on the same name.
+#
+#   Because Dex serves real TLS in-cluster, allowInsecure stays false
+#   everywhere and NO app needs NODE_TLS_REJECT_UNAUTHORIZED or hostAliases.
+# ===========================================================================
+
+replicaCount: 1
+
+image:
+  tag: "v2.44.0"
+
+# Serve HTTPS in-cluster on :5554 using the synced operator cert (dex-tls). The
+# tailscale Ingress (../bootstrap/dex-ingress.yaml) terminates browser TLS and
+# forwards to Dex HTTP :5556; the HTTPS:443 path here is for in-cluster PODS
+# that resolve the ts.net issuer to this Service via the CoreDNS rewrite.
+https:
+  enabled: true
+
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5556
+    https:
+      # Expose Dex HTTPS on 443 so pods reach https://dex.tailf14b5e.ts.net
+      # (default :443) directly against the in-cluster Service.
+      port: 443
+
+# Mount the synced operator cert. `dex-tls` is created/refreshed by
+# ../bootstrap/cert-sync.yaml; it is the SAME Let's Encrypt cert the Tailscale
+# operator mints for dex.tailf14b5e.ts.net (browser-trusted).
+volumes:
+  - name: dex-tls
+    secret:
+      secretName: dex-tls
+volumeMounts:
+  - name: dex-tls
+    mountPath: /etc/dex/tls
+    readOnly: true
+
+# The dex chart's OWN ingress is DISABLED — the tailscale Ingress is a separate
+# bootstrap manifest (../bootstrap/dex-ingress.yaml) so it can carry the
+# operator proxy-group annotation + tls.hosts shortname.
+ingress:
+  enabled: false
+
+# --- Dex application config (becomes config.yaml in a generated Secret) -------
+config:
+  # The PUBLIC issuer. Path is /dex because the ingress routes /dex here and Dex
+  # serves discovery + endpoints under the issuer path. Byte-identical for
+  # browsers and pods (see the issuer-identity note above).
+  issuer: https://dex.tailf14b5e.ts.net/dex
+
+  storage:
+    type: memory
+
+  # Listen on HTTP :5556 (ingress/proxy path) AND HTTPS :5554 (in-cluster pod
+  # path) using the mounted operator cert.
+  web:
+    http: "0.0.0.0:5556"
+    https: "0.0.0.0:5554"
+    tlsCert: "/etc/dex/tls/tls.crt"
+    tlsKey: "/etc/dex/tls/tls.key"
+
+  oauth2:
+    # Skip the consent screen for this single-user test IdP.
+    skipApprovalScreen: true
+
+  # --- Static test user ------------------------------------------------------
+  # email:    admin@example.com
+  # password: password
+  # The hash below is bcrypt($2a$, cost 10) of "password". Regenerate with:
+  #   htpasswd -bnBC 10 "" "password" | tr -d ':\n' | sed 's/^\$2y/\$2a/'
+  enablePasswordDB: true
+  staticPasswords:
+    - email: "admin@example.com"
+      hash: "$2a$10$ylOxZ.hjoOPE54DwNhZ5g.cBCkrA8Vmn5lnnvWQR/yjJeWci.9/L2"
+      username: "admin"
+      userID: "00000000-0000-0000-0000-000000000001"
+
+  # NOTE on the Market admin group: Dex's static-password connector does NOT
+  # emit a `groups` claim. So for THIS test IdP the Market admin is granted by
+  # EMAIL (values-market.yaml sets web.config.adminEmails: admin@example.com).
+  # We still wire ADMIN_OIDC_GROUP=agentkit-admins end-to-end so the exact same
+  # overlay works unchanged against a real IdP that DOES emit groups — just put
+  # your user in that group there.
+  staticClients:
+    # --- AgentKitForge WebApp ---
+    # The `secret` MUST be supplied at install time and MUST equal the
+    # OIDC_CLIENT_SECRET the forge-web app reads from its own Secret. It is NOT
+    # hardcoded here: override via a values file / --set (see ../secrets.example.yaml).
+    - id: agentkitforge-web
+      name: "AgentKitForge WebApp"
+      secret: "<FORGE_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://forge.tailf14b5e.ts.net/auth/callback
+    # --- AgentKitMarket ---
+    - id: agentkitmarket
+      name: "AgentKitMarket"
+      secret: "<MARKET_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://market.tailf14b5e.ts.net/auth/callback
+    # --- AgentKitAuto ---
+    - id: agentkitauto
+      name: "AgentKitAuto"
+      secret: "<AUTO_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://auto.tailf14b5e.ts.net/auth/callback

@@ -1,0 +1,51 @@
+{
+  "name": "@agentkitforge/gateway-core",
+  "version": "0.1.0",
+  "description": "Runtime-agnostic AgentKit inference gateway: ports, credit ledger, session store, chat provider adapters, and AWS + self-host adapters. Shared by the hosted (Lambda/DynamoDB) and self-hosted (container/Postgres) deployments.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./entrypoints/lambda": {
+      "types": "./dist/entrypoints/lambda.d.ts",
+      "default": "./dist/entrypoints/lambda.js"
+    },
+    "./entrypoints/server": {
+      "types": "./dist/entrypoints/server.d.ts",
+      "default": "./dist/entrypoints/server.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run copy-sql",
+    "copy-sql": "cp src/adapters/selfhost/schema.sql dist/adapters/selfhost/schema.sql",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentKitProject/agentkitgateway-core.git"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1068.0",
+    "@aws-sdk/lib-dynamodb": "^3.1068.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

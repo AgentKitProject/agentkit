@@ -1,0 +1,82 @@
+{
+  "name": "@agentkitforge/market-core",
+  "version": "0.13.0",
+  "description": "Runtime-agnostic AgentKitMarket backend core: routes, services, ports, and AWS + self-host adapters. Shared by the hosted (Lambda/DynamoDB) and self-hosted (container/Postgres on k8s) deployments.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./entrypoints/lambda": {
+      "types": "./dist/entrypoints/lambda.d.ts",
+      "default": "./dist/entrypoints/lambda.js"
+    },
+    "./entrypoints/lambda-worker": {
+      "types": "./dist/entrypoints/lambda-worker.d.ts",
+      "default": "./dist/entrypoints/lambda-worker.js"
+    },
+    "./entrypoints/server": {
+      "types": "./dist/entrypoints/server.d.ts",
+      "default": "./dist/entrypoints/server.js"
+    },
+    "./entrypoints/worker": {
+      "types": "./dist/entrypoints/worker.d.ts",
+      "default": "./dist/entrypoints/worker.js"
+    },
+    "./adapters/aws": {
+      "types": "./dist/adapters/aws/index.d.ts",
+      "default": "./dist/adapters/aws/index.js"
+    },
+    "./adapters/selfhost": {
+      "types": "./dist/adapters/selfhost/index.d.ts",
+      "default": "./dist/adapters/selfhost/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run copy-sql",
+    "copy-sql": "cp src/adapters/selfhost/schema.sql dist/adapters/selfhost/schema.sql",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AgentKitProject/agentkitmarket-core"
+  },
+  "dependencies": {
+    "@agentkitforge/contracts": "workspace:*",
+    "@aws-sdk/client-dynamodb": "^3.1068.0",
+    "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/client-sqs": "^3.1068.0",
+    "@aws-sdk/lib-dynamodb": "^3.1068.0",
+    "@aws-sdk/s3-request-presigner": "^3.1068.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.1"
+  },
+  "optionalDependencies": {
+    "@agentkit-commercial/market-core": "*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.11.10",
+    "pg-mem": "^3.0.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,65 @@
+{{- if and .Values.web.enabled .Values.auto.enabled .Values.auto.sweep.enabled -}}
+{{- /*
+AgentKitAuto schedule sweep — the self-host equivalent of the hosted EventBridge
+rule. Once per minute it POSTs the AUTO_WORKER_SERVICE_KEY to the web app's
+internal sweep endpoint (/api/internal/auto/sweep), which runs one scheduling
+sweep: due AutoSchedules are re-checked against their standing approval and
+dispatched as runs (each dispatched run becomes its own Kubernetes Job).
+
+SECURITY: this is the THIRD (service-key) auth path. The CronJob presents ONLY
+the service key (never a user token), exactly like the hosted Lambda tick. The
+key is read from the effective secret; the sweep is a no-op (503) until it is set.
+*/ -}}
+{{- $secretName := include "agentkitauto.webEffectiveSecretName" . -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "agentkitauto.fullname" . }}-auto-sweep
+  labels:
+    {{- include "agentkitauto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auto-sweep
+spec:
+  schedule: {{ .Values.auto.sweep.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 120
+      template:
+        metadata:
+          labels:
+            {{- include "agentkitauto.selectorLabelsWeb" . | nindent 12 }}
+            app.kubernetes.io/component: auto-sweep
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+          containers:
+            - name: sweep
+              image: {{ .Values.auto.sweep.image | quote }}
+              env:
+                - name: SWEEP_URL
+                  value: {{ printf "%s/api/internal/auto/sweep" (include "agentkitauto.webInternalUrl" .) | quote }}
+                - name: AUTO_WORKER_SERVICE_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $secretName }}
+                      key: AUTO_WORKER_SERVICE_KEY
+                      optional: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  curl -fsS -X POST
+                  -H "x-service-key: ${AUTO_WORKER_SERVICE_KEY}"
+                  -H "content-type: application/json"
+                  "${SWEEP_URL}"
+{{- end }}

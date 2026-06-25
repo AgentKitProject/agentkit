@@ -1,0 +1,501 @@
+---
+import '@agentkitforge/ui/styles.css';
+import { DEFAULT_NAV, navWithActive } from '@agentkitforge/ui';
+import {
+  docsUrl,
+  forgeUrl,
+  githubOrgUrl,
+  marketUrl,
+  profileUrl,
+  roadmapUrl,
+  webForgeUrl
+} from '../data/products';
+
+interface Props {
+  title: string;
+  description?: string;
+  theme?: 'project' | 'forge' | 'market' | 'auto';
+}
+
+const {
+  title,
+  description = 'AgentKitProject is the ecosystem for creating, sharing, and automating portable Agent Kits.',
+  theme = 'project'
+} = Astro.props;
+
+const pageTitle = title === 'AgentKitProject' ? title : `${title} | AgentKitProject`;
+const currentPath = Astro.url.pathname;
+
+// Build the nav: canonical items with Home active, plus page-specific About tab.
+const canonicalNav = navWithActive('Home', [
+  ...DEFAULT_NAV,
+  { label: 'About', href: '/about' }
+]);
+
+// For the About page, override its active state based on the current path.
+const navItems = canonicalNav.map((item) => {
+  if (item.href.startsWith('/')) {
+    const active = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href);
+    return { ...item, active };
+  }
+  return item;
+});
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/brand/agentkitproject-mark.png" />
+    <title>{pageTitle}</title>
+    <link rel="canonical" href={new URL(Astro.url.pathname, 'https://agentkitproject.com').href} />
+    <link rel="apple-touch-icon" href="/brand/agentkitproject-mark.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={new URL(Astro.url.pathname, 'https://agentkitproject.com').href} />
+    <meta property="og:image" content="https://agentkitproject.com/brand/agentkitproject-og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content="https://agentkitproject.com/brand/agentkitproject-og.png" />
+  </head>
+  <body class={`ak-root ak-shell theme-${theme}`}>
+    <a href="#main-content" class="ak-skip-link">Skip to content</a>
+    <header class="ak-header site-header">
+      <div class="ak-header__inner">
+        <span class="ak-header__logo"><a href="/" aria-label="AgentKitProject home"><img src="/brand/agentkitproject-wordmark.png" alt="AgentKitProject" height="28" /></a></span>
+        <nav class="ak-header__nav" aria-label="Primary navigation">
+          {navItems.map((item) => (
+            <a
+              class={`ak-header__nav-link${item.active ? ' ak-header__nav-link--active' : ''}`}
+              href={item.href}
+              aria-current={item.active ? 'page' : undefined}
+              target={item.external ? '_blank' : undefined}
+              rel={item.external ? 'noreferrer noopener' : undefined}
+            >{item.label}</a>
+          ))}
+        </nav>
+        <span class="ak-header__spacer"></span>
+        <span class="ak-header__account">
+          <a id="ak-account" class="ak-btn ak-btn--secondary ak-btn--sm" href={profileUrl}>Account</a>
+          <a class="ak-btn ak-btn--secondary ak-btn--sm nav-github" href={githubOrgUrl}>GitHub</a>
+        </span>
+      </div>
+    </header>
+    <script is:inline>
+      // Cross-site login indicator: reflect AgentKitProfile session via the
+      // shared WorkOS cookie. Dependency-free, never blocks render, never
+      // errors visibly. Degrades to a "Sign in" link on any failure.
+      (function () {
+        var el = document.getElementById('ak-account');
+        if (!el) return;
+        var PROFILE = 'https://profile.agentkitproject.com';
+        function setSignedOut() {
+          el.textContent = 'Sign in';
+          el.setAttribute('href', PROFILE);
+        }
+        try {
+          fetch(PROFILE + '/api/me', { credentials: 'include' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+              if (d && d.signedIn) {
+                el.textContent = d.displayName || d.avatarInitials || 'Account';
+                el.setAttribute('href', PROFILE);
+              } else {
+                setSignedOut();
+              }
+            })
+            .catch(setSignedOut);
+        } catch (e) {
+          setSignedOut();
+        }
+      })();
+    </script>
+    <main id="main-content" class="ak-main">
+      <slot />
+    </main>
+    <footer class="ak-footer site-footer">
+      <div class="ak-footer__inner">
+        <div>
+          <p class="ak-footer__brand-title">AgentKitProject</p>
+          <p class="ak-footer__brand-subtitle">Open ecosystem for portable, reusable Agent Kits.</p>
+          <p style="margin-top:12px">
+            <a class="ak-footer__contact" href="mailto:hello@agentkit-project.com">hello@agentkit-project.com</a>
+          </p>
+        </div>
+        <div>
+          <p class="ak-footer__col-title">Ecosystem</p>
+          <ul class="ak-footer__links">
+            <li><a class="ak-footer__link" href="https://agentkitproject.com">AgentKitProject</a></li>
+            <li><a class="ak-footer__link" href={marketUrl}>Market</a></li>
+            <li><a class="ak-footer__link" href={forgeUrl}>Forge</a></li>
+            <li><a class="ak-footer__link" href={webForgeUrl}>Web Forge</a></li>
+            <li><a class="ak-footer__link" href={docsUrl}>Docs</a></li>
+            <li><a class="ak-footer__link" href={roadmapUrl}>Roadmap</a></li>
+            <li><a class="ak-footer__link" href={profileUrl}>Account</a></li>
+            <li><a class="ak-footer__link" href={githubOrgUrl} target="_blank" rel="noreferrer noopener">GitHub</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="ak-footer__col-title">Legal</p>
+          <ul class="ak-footer__links">
+            <li><a class="ak-footer__link" href="/privacy">Privacy</a></li>
+            <li><a class="ak-footer__link" href="/terms">Terms</a></li>
+            <li><a class="ak-footer__link" href="/legal/kit-license">Kit License</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="ak-footer__bottom">
+        <span>&copy; 2026 AgentKitProject</span>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    color-scheme: light;
+    /* Brand palette (site-owned source colors) */
+    --project-navy: #091227;
+    --project-navy-soft: #111b35;
+    --project-blue: #2c77f1;
+    --project-cyan: #0fb3d1;
+    --project-purple: #6d46e9;
+    --forge: #5b4cf0;
+    --market: #0fb3d1;
+    --auto: #16a34a;
+
+    /* ----- Bridge: @agentkitforge/ui --ak-* tokens -----
+       Default section ("project") drives the shared brand accent so the
+       ak- chrome (header/footer/buttons/cards) renders in the site palette.
+       Per-section themes override --ak-brand* below to keep Forge/Market/Auto
+       accents (the framework's brand-accent mechanism). Neutral --ak-* tokens
+       are aligned to the site's surface/border/text vars for a single palette. */
+    --ak-brand: var(--project-purple);
+    --ak-brand-strong: #5a36c9;
+    --ak-brand-soft: #eef0ff;
+    --ak-accent: var(--project-cyan);
+    --ak-text: var(--project-navy);
+    --ak-muted: #475569;
+    --ak-bg: #f7f9fd;
+    --ak-surface: #ffffff;
+    --ak-surface-muted: #eef3fb;
+    --ak-border: #d5dde9;
+    --ak-success: #16a34a;
+    --ak-warning: #d97706;
+    --ak-error: #dc2626;
+
+    /* ----- Bridge: site vars -> shared --ak-* tokens (minimal markup churn) ----- */
+    --primary: var(--ak-brand);
+    --primary-hover: var(--ak-brand-strong);
+    --accent: var(--ak-accent);
+    --theme-accent: var(--ak-brand);
+    --theme-accent-strong: var(--ak-brand-strong);
+    --theme-soft: var(--ak-brand-soft);
+    --success: var(--ak-success);
+    --warning: var(--ak-warning);
+    --planned: #64748b;
+    --text: var(--ak-text);
+    --muted: var(--ak-muted);
+    --background: var(--ak-bg);
+    --surface: var(--ak-surface);
+    --muted-surface: var(--ak-surface-muted);
+    --border: var(--ak-border);
+    --code: #eef2ff;
+    --shadow: var(--ak-shadow, 0 16px 42px rgba(9, 18, 39, 0.08));
+  }
+
+  /* Per-section accent theming: override the framework brand-accent vars.
+     The site vars (--theme-accent etc.) inherit these via the bridge above. */
+  body.theme-forge {
+    --ak-brand: var(--forge);
+    --ak-brand-strong: #4338ca;
+    --ak-brand-soft: #eef2ff;
+  }
+
+  body.theme-market {
+    --ak-brand: var(--market);
+    --ak-brand-strong: #087a8f;
+    --ak-brand-soft: #ecfeff;
+  }
+
+  body.theme-auto {
+    --ak-brand: var(--auto);
+    --ak-brand-strong: #15803d;
+    --ak-brand-soft: #f0fdf4;
+  }
+
+  * {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  html {
+    background: var(--background);
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 253, 0.88) 20rem, var(--background)),
+      linear-gradient(115deg, rgba(44, 119, 241, 0.11), transparent 34rem),
+      linear-gradient(245deg, rgba(109, 70, 233, 0.08), transparent 28rem),
+      var(--background);
+    color: var(--text);
+    margin: 0;
+    min-width: 320px;
+    overflow-x: clip;
+  }
+
+  a {
+    color: var(--primary);
+  }
+
+  img,
+  svg {
+    max-width: 100%;
+  }
+
+  .container {
+    margin: 0 auto;
+    max-width: 1120px;
+    padding: 0 1.25rem;
+    width: 100%;
+  }
+
+  /* Header chrome now uses the shared .ak-header classes; this only keeps
+     the AgentKitProject brand accent stripe + flex-wrap nav (no-JS, SSR). */
+  .ak-header.site-header {
+    position: relative;
+  }
+
+  .ak-header.site-header::before {
+    background: linear-gradient(90deg, var(--project-blue), var(--project-cyan), var(--project-purple));
+    content: "";
+    height: 3px;
+    inset: 0 0 auto;
+    position: absolute;
+    z-index: 1;
+  }
+
+  .ak-header__inner {
+    min-height: 4.6rem;
+    flex-wrap: wrap;
+  }
+
+  /* No mobile hamburger (would need JS); keep nav visible + wrapping. */
+  @media (max-width: 760px) {
+    .ak-header__nav {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .ak-header__spacer {
+      display: none;
+    }
+  }
+
+  .section {
+    padding: 4.75rem 0;
+  }
+
+  .section.tight {
+    padding: 3rem 0;
+  }
+
+  .eyebrow {
+    color: var(--theme-accent-strong);
+    font-size: 0.8rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    margin: 0 0 0.85rem;
+    text-transform: uppercase;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--text);
+    letter-spacing: 0;
+    line-height: 1.08;
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(2.65rem, 8vw, 5rem);
+    max-width: 960px;
+  }
+
+  h2 {
+    font-size: clamp(1.8rem, 4vw, 3rem);
+  }
+
+  h3 {
+    font-size: 1.25rem;
+  }
+
+  p {
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .lead {
+    font-size: clamp(1.08rem, 2vw, 1.35rem);
+    max-width: 830px;
+  }
+
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 2rem;
+  }
+
+  .button {
+    align-items: center;
+    background: linear-gradient(135deg, var(--theme-accent), var(--theme-accent-strong));
+    border: 1px solid color-mix(in srgb, var(--theme-accent) 82%, var(--theme-accent-strong));
+    border-radius: 8px;
+    color: white;
+    display: inline-flex;
+    font-weight: 850;
+    justify-content: center;
+    min-height: 2.9rem;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      transform 140ms ease;
+  }
+
+  .button.secondary {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .button:hover,
+  .button:focus-visible {
+    background: linear-gradient(135deg, var(--theme-accent-strong), var(--theme-accent));
+    border-color: var(--theme-accent-strong);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--theme-accent) 24%, transparent);
+    color: white;
+    outline: none;
+    transform: translateY(-1px);
+  }
+
+  .button.secondary:hover,
+  .button.secondary:focus-visible {
+    background: var(--theme-soft);
+    border-color: color-mix(in srgb, var(--theme-accent) 38%, var(--border));
+    color: var(--text);
+  }
+
+  .grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .content-panel,
+  .card {
+    background: var(--surface);
+    border: 1px solid color-mix(in srgb, var(--theme-accent) 16%, var(--border));
+    border-radius: var(--ak-radius-card, 14px);
+    padding: clamp(1.2rem, 4vw, 2rem);
+  }
+
+  .content-panel p:last-child,
+  .card p:last-child {
+    margin-bottom: 0;
+  }
+
+  .card {
+    box-shadow: var(--shadow);
+  }
+
+  .card h3,
+  .content-panel h2 {
+    position: relative;
+  }
+
+  .card h3::before,
+  .content-panel h2::before {
+    background: var(--theme-accent);
+    border-radius: 99px;
+    content: "";
+    display: block;
+    height: 3px;
+    margin-bottom: 0.85rem;
+    width: 2.5rem;
+  }
+
+  .status {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.76rem;
+    font-weight: 850;
+    line-height: 1;
+    padding: 0.42rem 0.62rem;
+  }
+
+  .status.live {
+    background: color-mix(in srgb, var(--forge) 12%, transparent);
+    border-color: color-mix(in srgb, var(--forge) 35%, transparent);
+    color: #4338ca;
+  }
+
+  .status.soon {
+    background: color-mix(in srgb, var(--market) 12%, transparent);
+    border-color: color-mix(in srgb, var(--market) 35%, transparent);
+    color: #087a8f;
+  }
+
+  .status.planned {
+    background: color-mix(in srgb, var(--auto) 12%, transparent);
+    border-color: color-mix(in srgb, var(--auto) 35%, transparent);
+    color: #15803d;
+  }
+
+  code {
+    background: var(--code);
+    border-radius: 7px;
+    color: var(--text);
+    font-size: 0.92em;
+    padding: 0.15rem 0.35rem;
+  }
+
+  /* Footer chrome uses the shared .ak-footer classes; keep a subtle
+     ecosystem gradient + the AgentKitProject logo mark in the brand column. */
+  .ak-footer.site-footer {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(238, 243, 251, 0.86)), var(--surface);
+  }
+
+  @media (max-width: 860px) {
+    .grid.two,
+    .grid.three {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: 3px;
+  }
+</style>

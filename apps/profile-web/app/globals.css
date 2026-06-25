@@ -1,0 +1,53 @@
+/* Shared UI framework stylesheet (tokens + SiteShell/Header/Footer + primitives).
+   Imported first so the legacy token bridge below resolves against the
+   framework defaults and the app's Tailwind utilities layer on top. The
+   framework also supplies Inter, base resets, focus-visible, and the skip
+   link, so those are no longer defined here. */
+@import "@agentkitforge/ui/styles.css";
+@import "tailwindcss";
+
+/*
+ * Token bridge: Profile's legacy bespoke token names are mapped onto the
+ * shared framework `--ak-*` tokens, so the app's Tailwind utility classes
+ * (text-[var(--brand)], border-[var(--line)], etc.) keep working unchanged,
+ * now driven by the single shared palette.
+ *
+ * The Profile teal brand accent (#2f8f89) overrides the framework's
+ * `--ak-brand*` defaults at the root; SiteShell also receives brandAccent so
+ * the chrome it renders is teal even if mounted in isolation.
+ */
+:root {
+  /* Profile brand: teal accent over the framework's indigo defaults. */
+  --ak-brand: #2f8f89;
+  --ak-brand-strong: #24736e;
+  --ak-brand-soft: #e6f4f2;
+  --ak-accent: #e0a526;
+
+  /* Legacy Profile tokens → framework tokens. */
+  --background: var(--ak-bg);
+  --foreground: var(--ak-text);
+  --muted: var(--ak-muted);
+  --line: var(--ak-border);
+  --panel: var(--ak-surface);
+  --brand: var(--ak-brand);
+  --brand-strong: var(--ak-brand-strong);
+  --brand-soft: var(--ak-brand-soft);
+  --accent: var(--ak-accent);
+}
+
+/* App-specific: Profile's signature teal top-gradient on the page background,
+   which the framework intentionally doesn't impose. */
+body {
+  background:
+    linear-gradient(180deg, rgba(47, 143, 137, 0.08), rgba(248, 250, 252, 0) 360px),
+    var(--background);
+}
+
+/* Profile pages own their own width/padding (mx-auto max-w-6xl px-5 py-…),
+   so let the framework's main slot be a transparent passthrough rather than
+   a second centered container. */
+.ak-main__inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}

@@ -1,0 +1,112 @@
+# ===========================================================================
+# values-market.yaml — ts.net real-TLS self-host overlay for AgentKitMarket.
+#
+# Rendered by ArgoCD against agentkitmarket-core/charts/agentkitmarket
+# (../apps/30-market.yaml). Carries ONLY non-secret config. The web OIDC client
+# secret + SESSION_SECRET live in a plain Secret YOU create (see
+# ../secrets.example.yaml); the backend ADMIN_API_KEY + DB/MinIO/Redis passwords
+# are chart-generated (secrets.generate=true).
+#
+# Browser-facing URL is the real https://market.tailf14b5e.ts.net name with an
+# operator-minted Let's Encrypt cert → allowInsecure stays false, NO
+# NODE_TLS_REJECT_UNAUTHORIZED, NO hostAliases.
+#
+# Only the WEB UI is exposed on the tailnet. The API is reached IN-CLUSTER (the
+# web tier defaults apiBaseUrl to the in-cluster API Service), so the api
+# ingress stays disabled.
+#
+# Replace `tailf14b5e.ts.net` with YOUR tailnet suffix first (see ../README.md → sed).
+# ===========================================================================
+
+# api + worker image (public market-core image). pullPolicy Always so nodes
+# always fetch the current :latest instead of pinning a stale cached layer
+# (self-host tracks :latest; flip to a release tag for pinned deploys).
+image:
+  repository: ghcr.io/agentkitproject/agentkitmarket-core
+  tag: "latest"
+  pullPolicy: Always
+
+# API is internal-only — reached in-cluster by the web tier. Keep its ingress off.
+api:
+  ingress:
+    enabled: false
+
+web:
+  enabled: true
+  image:
+    repository: ghcr.io/agentkitproject/agentkitmarket-app
+    tag: "latest"
+    pullPolicy: Always
+  authProvider: "oidc"
+
+  # Reference the plain Secret you create with OIDC_CLIENT_SECRET (and optionally
+  # SESSION_SECRET). The OIDC_CLIENT_SECRET MUST equal the agentkitmarket Dex
+  # staticClient secret. See ../secrets.example.yaml. (adminApiKey defaults to
+  # the chart-generated backend key.)
+  secrets:
+    existingSecret: "agentkitmarket-web-secret"
+
+  config:
+    appUrl: "https://market.tailf14b5e.ts.net"
+    # Self-host: hide the hosted-Forge vendor link and point "open in Forge" at
+    # the operator's own Web Forge instead of forge.agentkitproject.com.
+    selfHost: true
+    forgeUrl: "https://forge.tailf14b5e.ts.net"
+    # Dex's static-password user can't carry a `groups` claim, so for this test
+    # IdP the admin is granted by EMAIL. (oidc.adminGroup below is still wired so
+    # the same overlay grants admin by group against a real IdP that emits groups.)
+    adminEmails: "admin@example.com"
+    oidc:
+      issuer: "https://dex.tailf14b5e.ts.net/dex"
+      clientId: "agentkitmarket"
+      scopes: "openid profile email"
+      # OIDC_REDIRECT_URI auto-derives {appUrl}/auth/callback → must match the
+      # Dex staticClient redirect for agentkitmarket.
+      adminGroup: "agentkit-admins"
+      allowInsecure: false
+
+  # Tailscale operator ingress for the WEB UI. host EMPTY → defaultBackend path;
+  # served name from tls.hosts SHORTNAME. Operator mints cert Secret
+  # market.tailf14b5e.ts.net in the tailscale namespace.
+  ingress:
+    enabled: true
+    className: "tailscale"
+    host: ""
+    annotations:
+      tailscale.com/proxy-group: admin-ingress
+    tls:
+      - hosts:
+          - market
+
+# Backend (api + worker) secrets are chart-generated; the only non-generated
+# value we pin is the PUBLIC MinIO endpoint used for presigned upload/download
+# URLs handed to browsers — it MUST match the minio.ingress host below so the
+# presigned URLs are externally reachable (server-side ops keep the in-cluster
+# endpoint). SigV4 is preserved through the Tailscale operator proxy.
+secrets:
+  s3PublicEndpoint: "https://minio.tailf14b5e.ts.net"
+
+# Bundled data services on local-path (k3s).
+postgres:
+  enabled: true
+  storage:
+    storageClassName: local-path
+minio:
+  enabled: true
+  storage:
+    storageClassName: local-path
+  # Expose MinIO on the tailnet so presigned S3 URLs resolve for browser clients.
+  # Operator mints cert Secret minio.tailf14b5e.ts.net; served name from tls SHORTNAME.
+  ingress:
+    enabled: true
+    className: "tailscale"
+    host: ""
+    annotations:
+      tailscale.com/proxy-group: admin-ingress
+    tls:
+      - hosts:
+          - minio
+redis:
+  enabled: true
+  storage:
+    storageClassName: local-path

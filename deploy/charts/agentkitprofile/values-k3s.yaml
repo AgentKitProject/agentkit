@@ -1,0 +1,62 @@
+# ===========================================================================
+# values-k3s.yaml — self-host preset for a single-node k3s cluster.
+#
+# A single web tier (Next.js UI + folded-in profile-api), plain k8s Secrets (no
+# Infisical / Sealed Secrets required), and a chart-generated PROFILE_SERVICE_KEY
+# so there is no placeholder to forget.
+#
+# Profile has NO bundled database — point it at your managed/external Postgres.
+#
+# Quickstart:
+#   helm install agentkitprofile ./charts/agentkitprofile -f values-k3s.yaml \
+#     --set web.config.appUrl=https://profile.example.com \
+#     --set web.ingress.host=profile.example.com \
+#     --set web.secrets.databaseUrl=postgresql://user:pass@pg:5432/agentkitprofile \
+#     --set web.config.workosClientId=client_... \
+#     --set web.secrets.workosApiKey=sk_... \
+#     --set web.secrets.workosCookiePassword=$(openssl rand -base64 32)
+#
+# PROFILE_SERVICE_KEY is generated and persisted by the chart.
+# ===========================================================================
+
+image:
+  repository: ghcr.io/agentkitproject/agentkitprofile-app
+  # TODO: pin to a release tag once published, e.g. tag: "0.2.0"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Public GHCR image → no pull secret.
+imagePullSecrets: []
+
+# Single-node k3s: one replica is plenty.
+web:
+  enabled: true
+  replicas: 1
+  config:
+    profileStore: "postgres"
+    # Defaults to this web tier's own in-cluster Service — leave empty.
+    profileApiBaseUrl: ""
+    # REQUIRED: your public origin. Drives APP_URL + the WorkOS redirect URI.
+    appUrl: ""
+    workosClientId: ""
+    adminEmails: ""
+  secrets:
+    # REQUIRED: external/managed Postgres connection string.
+    databaseUrl: ""
+    # PROFILE_SERVICE_KEY — leave empty; chart generates + persists it.
+    profileServiceKey: ""
+    workosApiKey: ""
+    workosCookiePassword: ""
+  ingress:
+    enabled: true
+    # k3s ships Traefik by default.
+    className: "traefik"
+    host: ""
+    annotations: {}
+    tls: []
+    #  - secretName: agentkitprofile-web-tls
+    #    hosts:
+    #      - profile.example.com
+
+migrate:
+  enabled: true

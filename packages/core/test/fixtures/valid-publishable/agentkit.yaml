@@ -1,0 +1,25 @@
+schemaVersion: "0.1"
+kind: AgentKit
+id: valid-publishable
+name: Valid Publishable Kit
+version: "0.1.0"
+description: A valid publishable Agent Kit fixture.
+author:
+  name: AgentKitForge Test
+license: MIT
+entrypoints:
+  human: START_HERE.md
+  agent: AGENTKIT.md
+userExperience:
+  setupLevel: low
+compatibility:
+  targets:
+    - codex
+risk:
+  level: low
+skills:
+  - id: summarize
+    path: skills/summarize/SKILL.md
+    description: Summarize provided text.
+    triggers:
+      - summarize text

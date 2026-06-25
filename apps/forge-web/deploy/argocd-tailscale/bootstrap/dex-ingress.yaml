@@ -1,0 +1,42 @@
+# ===========================================================================
+# dex-ingress.yaml — standalone Tailscale Ingress for Dex.
+#
+# The dex chart's own ingress is DISABLED (values-dex.yaml: ingress.enabled
+# false) so we can drive the operator with the proxy-group annotation + a
+# shortname tls.hosts. Applying THIS Ingress is what triggers the Tailscale
+# operator to:
+#   1. expose https://dex.tailf14b5e.ts.net on the tailnet, and
+#   2. mint a Let's Encrypt cert Secret named `dex.tailf14b5e.ts.net` in the
+#      `tailscale` namespace.
+# That minted Secret is then copied into the app namespace as `dex-tls` by
+# ../bootstrap/cert-sync.yaml, which Dex mounts to serve the SAME cert
+# in-cluster (so pods reaching the issuer over the CoreDNS rewrite get valid TLS).
+#
+# Why the backend is Dex HTTP :5556, NOT HTTPS :443:
+#   The operator proxy TERMINATES browser TLS itself and forwards plain HTTP to
+#   the backend Service. So this ingress points at Dex's HTTP listener (5556).
+#   Dex's in-cluster HTTPS:443 (service.ports.https) is for the separate POD
+#   path (pods → Dex Service directly via the CoreDNS rewrite), NOT this ingress.
+#
+# tls.hosts is the SHORTNAME only (`dex`), never the FQDN — that is the proven
+# operator pattern. Replace the tailnet suffix on the cert Secret name in
+# ../bootstrap/cert-sync.yaml (and the issuer in ../values/values-dex.yaml) to
+# match if you change `dex`/the tailnet.
+# ===========================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dex-tailscale
+  namespace: agentkit
+  annotations:
+    tailscale.com/proxy-group: admin-ingress
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: dex
+      port:
+        number: 5556
+  tls:
+    - hosts:
+        - dex

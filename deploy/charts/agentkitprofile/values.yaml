@@ -1,0 +1,112 @@
+# ---------------------------------------------------------------------------
+# Image
+#
+# One runtime-configured image serving the AgentKitProfile Next.js app — both
+# the UI and the folded-in profile-api (a single web tier). The same image runs
+# the app (`node server.js`) and the DB migration Job.
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/agentkitproject/agentkitprofile-app
+  tag: "latest"      # override with a release tag for reproducible deploys
+  pullPolicy: IfNotPresent   # set to Always to re-pull a moving tag on every roll
+
+# Pull secrets for a private registry (e.g. a synced ghcr pull secret).
+# Leave empty if the image is public.
+imagePullSecrets: []
+#  - name: ghcr-pull-secret-infisical
+
+# ---------------------------------------------------------------------------
+# Web app (the Next.js UI + profile-api)
+#
+# Profile uses an EXTERNAL / managed Postgres — there is no bundled database.
+# Supply the connection string via web.secrets.databaseUrl (or an existingSecret).
+# ---------------------------------------------------------------------------
+web:
+  enabled: true
+  replicas: 2
+  port: 3000
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Extra env vars merged verbatim into the web container (standard k8s env
+  # list). Default empty.
+  extraEnv: []
+  # Static /etc/hosts entries for the web pod (standard k8s hostAliases list).
+  # Default empty.
+  hostAliases: []
+  # Non-secret runtime config (ConfigMap). Set appUrl / workosRedirectUri to your
+  # public origin so auth redirects resolve correctly.
+  config:
+    # Profile backend selector; only "postgres" is implemented.
+    profileStore: "postgres"
+    # Server-side Profile API base URL (PROFILE_API_BASE_URL). Empty → this web
+    # tier's own in-cluster Service (http://<release>-web), so the app's outbound
+    # service.ts self-calls resolve.
+    profileApiBaseUrl: ""
+    # Set to "disable" to turn off Postgres TLS (e.g. local PG without SSL).
+    profileDbSsl: ""
+    # Public origin of the app (APP_URL / NEXT_PUBLIC_APP_URL).
+    appUrl: ""
+    # WorkOS redirect URI (WORKOS_REDIRECT_URI). Empty → "<appUrl>/auth/callback".
+    workosRedirectUri: ""
+    # WorkOS client id (WORKOS_CLIENT_ID) — public, lives in the ConfigMap.
+    workosClientId: ""
+    # Comma-separated admin emails (AGENTKITPROJECT_ADMIN_EMAILS).
+    adminEmails: ""
+  # Secret runtime config. Either set these inline (use a --values secrets.yaml
+  # NOT committed to git), source them from an existing Secret via existingSecret,
+  # or leave generate-able ones empty and let the chart generate them.
+  secrets:
+    # Use an externally-managed Secret instead of the chart-managed one. When set,
+    # the inline values below are ignored and envFrom references this Secret. The
+    # referenced Secret must provide DATABASE_URL, PROFILE_SERVICE_KEY, and the
+    # WorkOS keys (WORKOS_API_KEY/WORKOS_COOKIE_PASSWORD).
+    existingSecret: ""
+    # Postgres connection string (DATABASE_URL). REQUIRED at runtime — there is no
+    # bundled database. e.g. postgresql://user:pass@host:5432/agentkitprofile
+    databaseUrl: ""
+    # Shared bearer the Market server presents to the profile-api
+    # (PROFILE_SERVICE_KEY). Auto-generated + persisted when left empty (and no
+    # existingSecret is set).
+    profileServiceKey: ""
+    # WorkOS AuthKit (required for sign-in / account management).
+    workosApiKey: ""
+    # Must be >= 32 chars. Generate with: openssl rand -base64 32
+    workosCookiePassword: ""
+  # Ingress for the web UI. Leave host empty for the tailscale defaultBackend
+  # pattern (served name comes from tls.hosts).
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    #   tailscale.com/expose: "true"
+    tls: []
+    #  - secretName: profile-tls
+    #    hosts:
+    #      - profile.example.com
+
+# ---------------------------------------------------------------------------
+# Database migration Job (Helm pre-install / pre-upgrade hook)
+#
+# Runs `node scripts/migrate.mts` against DATABASE_URL before the app rolls out.
+# Idempotent (IF NOT EXISTS + advisory lock), so it is safe to re-run.
+# ---------------------------------------------------------------------------
+migrate:
+  enabled: true
+  backoffLimit: 3
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

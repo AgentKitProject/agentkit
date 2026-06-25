@@ -1,0 +1,80 @@
+# ===========================================================================
+# values-forge-web.yaml — ts.net real-TLS self-host overlay for AgentKitForge.
+#
+# Rendered by ArgoCD against charts/agentkitforge-web in THIS repo
+# (../apps/20-forge-web.yaml). Carries ONLY non-secret config. The OIDC client
+# secret + SESSION_SECRET + AGENTKITFORGE_WEB_SECRET live in a plain Secret YOU
+# create (see ../secrets.example.yaml); reference it via web.secrets.existingSecret.
+#
+# Browser-facing URLs are real https://*.tailf14b5e.ts.net names with
+# operator-minted Let's Encrypt certs, so allowInsecure stays false and there is
+# NO NODE_TLS_REJECT_UNAUTHORIZED hack and NO hostAliases.
+#
+# Replace `tailf14b5e.ts.net` with YOUR tailnet suffix first (see ../README.md → sed).
+# ===========================================================================
+
+web:
+  image:
+    repository: ghcr.io/agentkitproject/agentkitforge-web
+    tag: "latest"
+    # Track :latest on self-host (don't pin a stale cached layer); use a release tag for pinned deploys.
+    pullPolicy: Always
+
+  # Generic OIDC → also flips the instance into self-host mode (SELF_HOST=true).
+  auth:
+    provider: "oidc"
+    oidc:
+      # Same PUBLIC issuer browsers and pods use (see values-dex.yaml).
+      issuer: "https://dex.tailf14b5e.ts.net/dex"
+      clientId: "agentkitforge-web"
+      scopes: "openid profile email"
+      # Issuer serves a real Let's Encrypt cert in-cluster (dex-tls), so
+      # allowInsecure stays false.
+      allowInsecure: false
+
+  # Reference the plain Secret you create with OIDC_CLIENT_SECRET (and optionally
+  # SESSION_SECRET, AGENTKITFORGE_WEB_SECRET, POSTGRES_PASSWORD,
+  # MINIO_ROOT_PASSWORD). The OIDC_CLIENT_SECRET MUST equal the agentkitforge-web
+  # Dex staticClient secret. See ../secrets.example.yaml.
+  secrets:
+    existingSecret: "agentkitforge-web-secret"
+
+  config:
+    kitstoreBackend: "selfhost"
+    # Public origin → OIDC_REDIRECT_URI auto-derives {appUrl}/auth/callback,
+    # which must match the Dex staticClient redirect for agentkitforge-web.
+    appUrl: "https://forge.tailf14b5e.ts.net"
+    # Forge→Market is a SERVER-SIDE call (import/favorites). Point at the
+    # IN-CLUSTER Market web Service, NOT the ts.net name — the forge-web pod
+    # reaches Market directly without leaving the cluster. Service name is
+    # <market-release>-web; release is `agentkitmarket`, web Service port is 80.
+    marketBaseUrl: "http://agentkitmarket-web.agentkit.svc.cluster.local:80"
+    disableMarket: false
+    # Link OUT to the in-cluster AgentKitAuto app (NEXT_PUBLIC_AUTO_URL). Auto is
+    # a SEPARATE app/chart (agentkitauto); Forge does not run it.
+    ecosystemLinks:
+      autoUrl: "https://auto.tailf14b5e.ts.net"
+
+  # Tailscale operator ingress. host is EMPTY → the chart's defaultBackend path;
+  # the served name comes from tls.hosts (SHORTNAME only, not the FQDN). The
+  # operator mints a Let's Encrypt cert Secret named forge.tailf14b5e.ts.net in
+  # the tailscale namespace.
+  ingress:
+    enabled: true
+    className: "tailscale"
+    host: ""
+    annotations:
+      tailscale.com/proxy-group: admin-ingress
+    tls:
+      - hosts:
+          - forge
+
+# Bundled Postgres + MinIO on k3s' local-path StorageClass.
+postgres:
+  enabled: true
+  storage:
+    storageClassName: local-path
+minio:
+  enabled: true
+  storage:
+    storageClassName: local-path

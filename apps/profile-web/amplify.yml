@@ -1,0 +1,32 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - test -n "$APP_URL"
+        - test -n "$NEXT_PUBLIC_APP_URL"
+        - test -n "$WORKOS_REDIRECT_URI"
+        - test -n "$WORKOS_API_KEY"
+        - test -n "$WORKOS_CLIENT_ID"
+        - test -n "$WORKOS_COOKIE_PASSWORD"
+        - test -n "$PROFILE_API_BASE_URL"
+        - printf "APP_URL=%s\n" "$APP_URL" > .env.production
+        - printf "NEXT_PUBLIC_APP_URL=%s\n" "$NEXT_PUBLIC_APP_URL" >> .env.production
+        - printf "WORKOS_REDIRECT_URI=%s\n" "$WORKOS_REDIRECT_URI" >> .env.production
+        - printf "WORKOS_API_KEY=%s\n" "$WORKOS_API_KEY" >> .env.production
+        - printf "WORKOS_CLIENT_ID=%s\n" "$WORKOS_CLIENT_ID" >> .env.production
+        - printf "WORKOS_COOKIE_PASSWORD=%s\n" "$WORKOS_COOKIE_PASSWORD" >> .env.production
+        - printf "AGENTKITPROJECT_ADMIN_EMAILS=%s\n" "$AGENTKITPROJECT_ADMIN_EMAILS" >> .env.production
+        - printf "PROFILE_API_BASE_URL=%s\n" "$PROFILE_API_BASE_URL" >> .env.production
+        - printf "PROFILE_SERVICE_KEY=%s\n" "$PROFILE_SERVICE_KEY" >> .env.production
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*

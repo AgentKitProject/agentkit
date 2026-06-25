@@ -1,0 +1,67 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeDocsUrl, forgeUrl, githubOrgUrl } from '../data/products';
+---
+<BaseLayout
+  title="AgentKitForge"
+  description="AgentKitForge is the local-first desktop app for building, editing, running, packaging, exporting, and installing portable Agent Kits."
+  theme="forge"
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Current product</p>
+      <h1>AgentKitForge builds and runs portable Agent Kits locally.</h1>
+      <p class="lead">
+        AgentKitForge is the public preview desktop app for building, editing, and running Agent
+        Kits on your computer, then packaging, exporting, and installing them where they belong. It
+        is local-first and available for Windows, macOS, and Linux.
+      </p>
+      <div class="button-row">
+        <a class="button" href={forgeUrl}>Open AgentKitForge</a>
+        <a class="button secondary" href={forgeDocsUrl}>Read Forge docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid three">
+      <article class="card">
+        <h3>Build and edit</h3>
+        <p>Create kits with prepared prompts, skills, policies, templates, examples, and context.</p>
+      </article>
+      <article class="card">
+        <h3>Run on your computer</h3>
+        <p>Use kits locally with your selected provider, collect required inputs, and generate outputs from Forge.</p>
+      </article>
+      <article class="card">
+        <h3>Package and install</h3>
+        <p>Package <code>.agentkit.zip</code> files, export portable Markdown bundles, and install kits into supported agent tools.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container grid two">
+      <div>
+        <p class="eyebrow">Domain plan</p>
+        <h2>Forge remains available at agentkitforge.com.</h2>
+      </div>
+      <div class="content-panel">
+        <p>
+          The ecosystem domain will later support <code>forge.agentkitproject.com</code>, but
+          <a href={forgeUrl}>agentkitforge.com</a> is not going away. This site does not migrate
+          Forge, change downloads, or alter update endpoints.
+        </p>
+        <p><a href={githubOrgUrl}>View the AgentKitProject GitHub organization</a></p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section:first-child {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--forge) 13%, transparent), transparent 34rem),
+      transparent;
+  }
+</style>

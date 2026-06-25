@@ -1,0 +1,11 @@
+{
+  "id": "appr_01HXYZ",
+  "userId": "user_01ABC",
+  "kitRef": { "source": "local", "localKitId": "local_kit_1" },
+  "scope": "workspace_read_write",
+  "toolAllowlist": ["read_file", "write_file", "http_fetch"],
+  "networkPolicy": { "mode": "allowlist", "hosts": ["api.example.com", "*.trusted.dev"] },
+  "maxBudgetCents": 1000,
+  "createdAt": "2026-06-20T00:00:00.000Z",
+  "revokedAt": null
+}

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 96" role="img" aria-labelledby="title desc">
+  <title id="title">AgentKitForge logo</title>
+  <desc id="desc">AgentKitForge wordmark with a stacked modular cube icon and cyan connector.</desc>
+  <defs>
+    <linearGradient id="topFace" x1="14" x2="76" y1="8" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="leftFace" x1="14" x2="48" y1="24" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#3730A3"/>
+    </linearGradient>
+    <linearGradient id="rightFace" x1="48" x2="82" y1="24" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+    <linearGradient id="connector" x1="36" x2="60" y1="36" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4 4)" fill="none" stroke-linejoin="round">
+    <path d="M48 6 69 18.1 48 30.2 27 18.1 48 6Z" fill="url(#topFace)"/>
+    <path d="M27 18.1 48 30.2v17L27 35.1v-17Z" fill="#4F46E5"/>
+    <path d="M69 18.1 48 30.2v17l21-12.1v-17Z" fill="#3730A3"/>
+    <path d="M43 39h10v17l-5 4-5-4V39Z" fill="url(#connector)"/>
+    <path d="M48 50 80 68.5 48 87 16 68.5 48 50Z" fill="url(#topFace)"/>
+    <path d="M16 68.5 48 87V60L16 41.5v27Z" fill="url(#leftFace)"/>
+    <path d="M80 68.5 48 87V60l32-18.5v27Z" fill="url(#rightFace)"/>
+    <path d="M16 41.5 48 60l32-18.5-17-9.8-15 8.7-15-8.7-17 9.8Z" fill="#4F46E5"/>
+    <path d="M36.5 45 48 51.6 59.5 45v12.5L48 64.2l-11.5-6.7V45Z" fill="#E0F7FF"/>
+    <path d="M43 42.6 48 45.5l5-2.9V56l-5 4-5-4V42.6Z" fill="url(#connector)"/>
+  </g>
+  <text x="108" y="60" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="38" font-weight="800" letter-spacing="0" fill="#0F172A">AgentKit<tspan fill="#4F46E5">Forge</tspan></text>
+</svg>

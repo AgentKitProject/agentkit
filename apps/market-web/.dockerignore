@@ -1,0 +1,15 @@
+.next
+node_modules
+.git
+.github
+out
+dist
+build
+npm-debug.log*
+.env*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+README.md
+docs
+reference

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentkitmarket.fullname" . }}-worker
+  labels:
+    {{- include "agentkitmarket.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentkitmarket.selectorLabelsWorker" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentkitmarket.selectorLabelsWorker" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/entrypoints/worker.js"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "agentkitmarket.configmapName" . }}
+            - secretRef:
+                name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "agentkitmarket.secretName" . }}{{ end }}
+          {{- if and (not .Values.secrets.existingSecret) .Values.secrets.adminApiKeyExistingSecret }}
+          env:
+            - name: ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.adminApiKeyExistingSecret }}
+                  key: {{ .Values.secrets.adminApiKeyExistingSecretKey }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

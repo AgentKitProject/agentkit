@@ -1,0 +1,60 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { autoRoadmapUrl, marketRoadmapUrl } from '../data/products';
+---
+<BaseLayout
+  title="AgentKitAuto"
+  description="AgentKitAuto is the planned automation layer for running Agent Kits on schedules, events, and workflows."
+  theme="auto"
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Planned</p>
+      <h1>AgentKitAuto is the future automation layer for Agent Kits.</h1>
+      <p class="lead">
+        Auto is not available yet. It is planned as the automation layer for running portable
+        Agent Kits on schedules, event triggers, and workflow steps once the ecosystem foundation
+        is ready.
+      </p>
+      <div class="button-row">
+        <a class="button" href={autoRoadmapUrl}>View Auto roadmap</a>
+        <a class="button secondary" href={marketRoadmapUrl}>See Market roadmap</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid three">
+      <article class="card">
+        <h3>Local and free</h3>
+        <p>Run automations on your own machine for personal workflows when local mode exists.</p>
+      </article>
+      <article class="card">
+        <h3>Self-hosted</h3>
+        <p>Operate automations in your own environment for controlled infrastructure and data boundaries.</p>
+      </article>
+      <article class="card">
+        <h3>Cloud modes</h3>
+        <p>Future hosted automation can support managed scheduling, events, monitoring, and team operations.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container content-panel">
+      <p>
+        AgentKitAuto will be designed around explicit triggers and portable Agent Kit artifacts.
+        This website does not include automation services, schedulers, queues, worker APIs, or
+        backend execution today.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section:first-child {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--auto) 12%, transparent), transparent 34rem),
+      transparent;
+  }
+</style>

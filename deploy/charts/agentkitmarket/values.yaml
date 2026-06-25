@@ -1,0 +1,297 @@
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/agentkitproject/agentkitmarket-core
+  tag: "latest"      # override with a release tag for reproducible deploys
+  pullPolicy: IfNotPresent
+
+# Pull secrets for a private registry (e.g. a synced ghcr pull secret).
+# Leave empty if the image is public.
+imagePullSecrets: []
+#  - name: ghcr-pull-secret-infisical
+
+# ---------------------------------------------------------------------------
+# API server
+# ---------------------------------------------------------------------------
+api:
+  replicas: 2
+  port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+    className: ""
+    host: "market.example.com"
+    # annotations:
+    #   kubernetes.io/ingress.class: nginx
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls: []
+    #  - secretName: market-tls
+    #    hosts:
+    #      - market.example.com
+
+# ---------------------------------------------------------------------------
+# Web app (agentkitmarket-app — the Next.js UI)
+#
+# One runtime-configured image. The backend URL defaults to the in-cluster API
+# Service (http://<release>-api), so a self-hoster runs ONE image pointing at
+# their self-hosted backend with no rebuild. WorkOS / admin / profile config is
+# supplied at runtime via the web ConfigMap + Secret below.
+# ---------------------------------------------------------------------------
+web:
+  enabled: true
+  replicas: 2
+  port: 3000
+  image:
+    repository: ghcr.io/agentkitproject/agentkitmarket-app
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 80
+  # Extra env vars merged verbatim into the web container (standard k8s env
+  # list). Default empty. Use sparingly — e.g. the k3s smoke test injects
+  # NODE_TLS_REJECT_UNAUTHORIZED=0 to accept Traefik's self-signed TLS during
+  # OIDC discovery. NEVER disable TLS verification in production.
+  extraEnv: []
+  # Static /etc/hosts entries for the web pod (standard k8s hostAliases list).
+  # Default empty. Used by the k3s smoke test to resolve the ingress nip.io
+  # hosts to the node IP when the CNI can't hairpin.
+  hostAliases: []
+  # Auth provider for the web tier: "workos" (hosted SaaS default) or "oidc"
+  # (generic OpenID Connect for self-host). Sets AUTH_PROVIDER on the web app.
+  authProvider: "workos"
+  # Non-secret runtime config (ConfigMap). Leave apiBaseUrl empty to default to
+  # the in-cluster API Service. Set appUrl / workosRedirectUri to your public
+  # origin so auth redirects resolve correctly.
+  config:
+    # Backend URL the web app's server routes call. Empty → in-cluster API:
+    #   http://<release>-api  (ClusterIP Service on port 80)
+    apiBaseUrl: ""
+    # Public origin of the web app (APP_URL / NEXT_PUBLIC_APP_URL).
+    appUrl: ""
+    # WorkOS redirect URI (WORKOS_REDIRECT_URI). Empty → "<appUrl>/auth/callback".
+    # Only used when authProvider=workos.
+    workosRedirectUri: ""
+    # Comma-separated admin emails. Maps to AGENTKITMARKET_ADMIN_EMAILS (workos)
+    # and ADMIN_EMAILS (oidc) — both are emitted so either provider sees it.
+    adminEmails: ""
+    # Server-side Profile API base URL (PROFILE_API_BASE_URL). Optional.
+    profileApiBaseUrl: ""
+    # Self-host signal (SELF_HOST=true). Hides the hosted-Forge vendor link
+    # unless web.config.forgeUrl is set.
+    selfHost: false
+    # Operator's own Web Forge URL (NEXT_PUBLIC_FORGE_URL) for "open in Forge"
+    # links; empty + selfHost=true → link hidden.
+    forgeUrl: ""
+    # ---- OIDC (self-host) non-secret config; used when authProvider=oidc ----
+    oidc:
+      # OIDC issuer URL (OIDC_ISSUER), e.g. https://idp.example.com/realms/main
+      issuer: ""
+      # OAuth client id (OIDC_CLIENT_ID).
+      clientId: ""
+      # OAuth scopes (OIDC_SCOPES). Empty → "openid profile email".
+      scopes: ""
+      # Redirect URI (OIDC_REDIRECT_URI). Empty → "<appUrl>/auth/callback".
+      redirectUri: ""
+      # Admin is granted when this group/role appears in the token's
+      # groups/roles claims (ADMIN_OIDC_GROUP). Optional — use this OR
+      # config.adminEmails (or both).
+      adminGroup: ""
+      # Allow non-HTTPS issuers (OIDC_ALLOW_INSECURE=true) — dev/test only.
+      allowInsecure: false
+  # Secret runtime config. Either set these inline (use a --values secrets.yaml
+  # NOT committed to git), source them from an existing Secret via existingSecret,
+  # or leave generate-able ones empty and let the chart generate them.
+  secrets:
+    # Use an externally-managed Secret instead of the chart-managed one. When set,
+    # the inline values below are ignored and envFrom references this Secret. The
+    # referenced Secret must provide the keys the active auth provider expects
+    # (workos: WORKOS_API_KEY/WORKOS_CLIENT_ID/WORKOS_COOKIE_PASSWORD;
+    # oidc: OIDC_CLIENT_SECRET/SESSION_SECRET), plus AGENTKITMARKET_ADMIN_KEY and
+    # optionally PROFILE_SERVICE_KEY.
+    existingSecret: ""
+    # WorkOS AuthKit (required for login / admin / submit when authProvider=workos;
+    # public browsing works without these — auth only gates admin/submit flows).
+    workosApiKey: ""
+    workosClientId: ""
+    # Must be >= 32 chars. Generate with: openssl rand -base64 32
+    workosCookiePassword: ""
+    # ---- OIDC (self-host) secrets; used when authProvider=oidc ----
+    # OAuth client secret (OIDC_CLIENT_SECRET).
+    oidcClientSecret: ""
+    # iron-session cookie secret (SESSION_SECRET), >= 32 chars. Auto-generated by
+    # the chart when left empty (and no existingSecret is set).
+    sessionSecret: ""
+    # Shared admin key for the web app's server routes → backend (must match the
+    # backend's secrets.adminApiKey / ADMIN_API_KEY). Empty → reuses the backend
+    # key (chart-generated or backend secrets.adminApiKey).
+    adminApiKey: ""
+    # Optional bearer for the Profile API.
+    profileServiceKey: ""
+  # Tailscale (or other) ingress for the web UI. Mirrors the api ingress:
+  # leave host empty for the tailscale defaultBackend pattern (served name comes
+  # from tls.hosts).
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    #   tailscale.com/expose: "true"
+    tls: []
+    #  - hosts:
+    #      - market.example.ts.net
+
+# ---------------------------------------------------------------------------
+# Background worker
+# ---------------------------------------------------------------------------
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Application config (non-secret, goes into ConfigMap)
+# ---------------------------------------------------------------------------
+config:
+  # Comma-separated CORS origins; leave empty to allow none.
+  allowedOrigins: ""
+  # S3/MinIO region; default is us-east-1 (fine for MinIO)
+  s3Region: "us-east-1"
+  # Force path-style S3 URLs — required for MinIO.
+  s3ForcePathStyle: "true"
+  # HTTP listen port — must match api.port above.
+  port: "8080"
+
+# ---------------------------------------------------------------------------
+# Secrets (base64-encoded in the generated Secret).
+# All values below are REQUIRED; set them on the command line:
+#   --set secrets.adminApiKey=... --set secrets.databaseUrl=...
+# or in a separate --values secrets.yaml that is NOT committed to git.
+# ---------------------------------------------------------------------------
+secrets:
+  # When true, the chart auto-generates any of ADMIN_API_KEY, the Postgres
+  # password, and the MinIO root password that are left empty — using a strong
+  # random value persisted into the Secret on first install and preserved across
+  # upgrades (via lookup). Never emits a "changeme" placeholder. Set the value
+  # explicitly to override generation. Ignored when existingSecret is set.
+  generate: true
+
+  # Source ALL backend secrets from a single externally-managed Secret (e.g. one
+  # synced by Infisical). When set:
+  #   - The chart-managed app Secret is NOT rendered.
+  #   - api + worker containers use envFrom: secretRef pointing at this Secret.
+  #   - adminApiKeyExistingSecret env block is skipped (ADMIN_API_KEY is already
+  #     present in the external Secret).
+  #   - Bundled postgres POSTGRES_PASSWORD and bundled minio MINIO_ROOT_PASSWORD
+  #     are sourced via secretKeyRef from this Secret (their own chart Secrets are
+  #     NOT rendered).
+  #   - The inline values below (adminApiKey, databaseUrl, etc.) are all ignored.
+  #
+  # Required keys in the external Secret:
+  #   ADMIN_API_KEY, DATABASE_URL, S3_ENDPOINT, PACKAGE_BUCKET_NAME,
+  #   S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, REDIS_URL,
+  #   POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
+  #
+  # IMPORTANT: S3_ACCESS_KEY_ID must equal values.minio.rootUser (default:
+  # "minioadmin") and S3_SECRET_ACCESS_KEY must equal the MINIO_ROOT_PASSWORD in
+  # this Secret — the app authenticates to bundled MinIO with the S3 credentials.
+  existingSecret: ""
+
+  # Admin API key (ADMIN_API_KEY): gates /admin/* and /users/* routes.
+  adminApiKey: ""
+  # Alternatively, source ADMIN_API_KEY from an existing Secret (e.g. one synced
+  # by Infisical) rather than the chart-managed Secret. Set the name (and key) to
+  # use it; when set, secrets.adminApiKey is not required and is omitted here.
+  adminApiKeyExistingSecret: ""
+  adminApiKeyExistingSecretKey: "ADMIN_API_KEY"
+  # Postgres connection string (DATABASE_URL), e.g.:
+  #   postgresql://user:password@postgres:5432/agentkitmarket
+  databaseUrl: ""
+  # S3/MinIO endpoint (S3_ENDPOINT), e.g. http://minio:9000
+  s3Endpoint: ""
+  # Public/externally-reachable S3/MinIO endpoint used ONLY for presigned
+  # upload/download URLs handed to browsers (S3_PUBLIC_ENDPOINT). Empty →
+  # presign uses the internal s3Endpoint. Set this to your MinIO ingress URL on
+  # self-host so presigned URLs are reachable by clients.
+  s3PublicEndpoint: ""
+  # S3/MinIO bucket name (PACKAGE_BUCKET_NAME)
+  packageBucketName: ""
+  # S3/MinIO access key (S3_ACCESS_KEY_ID)
+  s3AccessKeyId: ""
+  # S3/MinIO secret key (S3_SECRET_ACCESS_KEY)
+  s3SecretAccessKey: ""
+  # Redis URL (REDIS_URL), e.g. redis://redis:6379
+  redisUrl: ""
+
+# ---------------------------------------------------------------------------
+# Optional in-cluster Postgres (for dev/testing)
+# Disable and set secrets.databaseUrl to point at an external instance for prod.
+# ---------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image: postgres:16
+  database: agentkitmarket
+  user: agentkitmarket
+  # Leave empty to let the chart generate + persist a strong password
+  # (secrets.generate=true). Set explicitly to pin one.
+  password: ""
+  storage:
+    size: 5Gi
+    # storageClassName: ""  # uncomment and set for your cluster
+
+# ---------------------------------------------------------------------------
+# Optional in-cluster MinIO (for dev/testing)
+# Disable and configure secrets.s3* for an external S3-compatible store in prod.
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  image: minio/minio:latest
+  bucket: agentkit-packages
+  rootUser: minioadmin
+  # Leave empty to let the chart generate + persist a strong password
+  # (secrets.generate=true). Set explicitly to pin one.
+  rootPassword: ""
+  # Expose MinIO externally so presigned S3 URLs are reachable by browsers.
+  # Pair with secrets.s3PublicEndpoint set to this ingress's URL.
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls: []
+  storage:
+    size: 10Gi
+    # storageClassName: ""
+
+# ---------------------------------------------------------------------------
+# Optional in-cluster Redis (for dev/testing)
+# Disable and set secrets.redisUrl to point at an external instance for prod.
+# ---------------------------------------------------------------------------
+redis:
+  enabled: true
+  image: redis:7
+  storage:
+    size: 1Gi
+    # storageClassName: ""

@@ -1,0 +1,243 @@
+# ---------------------------------------------------------------------------
+# AgentKitAuto WebApp — self-host Helm chart (DEFAULT values).
+#
+# One runtime-configured Next.js standalone image (`node server.js`) with
+# KITSTORE_BACKEND=selfhost: kit input trees in MinIO/S3, run/approval/schedule
+# metadata in Postgres. Both data services are bundled (in-cluster, persistent)
+# by default. Each Auto run is dispatched as a one-shot Kubernetes Job running
+# the Auto WORKER image (AUTO_DISPATCH=k8s); a per-minute CronJob sweeps due
+# schedules. Inference is BYO — the operator supplies ANTHROPIC_API_KEY.
+#
+# For a turnkey self-host on k3s (generic OIDC, plain k8s Secrets, BYO LLM key,
+# Market OFF), use the values-k3s.yaml preset:
+#
+#   helm install agentkitauto ./charts/agentkitauto -f values-k3s.yaml \
+#     --set web.config.appUrl=https://auto.example.com \
+#     --set web.auth.oidc.issuer=https://idp.example.com \
+#     --set web.auth.oidc.clientId=agentkitauto \
+#     --set web.secrets.oidcClientSecret=... \
+#     --set auto.anthropicApiKey=sk-ant-...
+#
+# In-cluster service URLs (DATABASE_URL, S3_ENDPOINT) auto-default, and all
+# remaining secrets (SESSION_SECRET, AGENTKITFORGE_WEB_SECRET, the bundled
+# Postgres/MinIO passwords, the Auto worker service key) are Helm-GENERATED when
+# not supplied and PRESERVED across `helm upgrade` — so nothing is `changeme`.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Pull secrets for the container images. The default GHCR images are PUBLIC, so
+# no pull secret is needed. Set this only if you mirror to a private registry.
+# ---------------------------------------------------------------------------
+imagePullSecrets: []
+#  - name: my-registry-pull-secret
+
+# ---------------------------------------------------------------------------
+# Web app (the Next.js standalone server — the AgentKitAuto control plane)
+# ---------------------------------------------------------------------------
+web:
+  enabled: true
+  replicas: 1
+  port: 3000
+  image:
+    repository: ghcr.io/agentkitproject/agentkitauto-app
+    # Pin to a release tag (e.g. "v0.1.0") for reproducible deploys. "latest"
+    # tracks the default branch.
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 768Mi
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Extra env vars merged verbatim into the web container (standard k8s env
+  # list). Default empty. Used e.g. by the k3s smoke test to inject
+  # NODE_TLS_REJECT_UNAUTHORIZED=0 to accept Traefik's self-signed TLS during
+  # OIDC discovery. NEVER disable TLS verification in production.
+  extraEnv: []
+  # Static /etc/hosts entries for the web pod (standard k8s hostAliases list).
+  # Default empty. Used by the k3s smoke test to resolve the ingress nip.io
+  # hosts to the node IP when the CNI can't hairpin.
+  hostAliases: []
+
+  # --- Authentication (pluggable) ------------------------------------------
+  auth:
+    # "workos" (hosted SaaS default) | "oidc" (generic OpenID Connect self-host).
+    # AUTH_PROVIDER=oidc ALSO marks the instance self-hosted (Market default OFF,
+    # BYO-LLM only, ecosystem links hidden unless configured).
+    provider: "workos"
+    # Explicit self-host opt-in for an OIDC-less self-host (SELF_HOST=true). Not
+    # needed when provider=oidc (which implies self-host).
+    selfHost: false
+    # Generic OIDC settings (used when provider=oidc). The client SECRET is in
+    # web.secrets.oidcClientSecret (not here).
+    oidc:
+      # Discovery (.well-known) base, e.g. https://idp.example.com/realms/main
+      issuer: ""
+      clientId: ""
+      # Defaults to "openid profile email" when empty.
+      scopes: ""
+      # Dev-only: allow non-TLS (http) issuers. NEVER set true in production.
+      allowInsecure: false
+
+  # Non-secret runtime config (ConfigMap).
+  config:
+    # KitStore adapter. "selfhost" (Postgres + MinIO/S3) for this chart.
+    kitstoreBackend: "selfhost"
+    # Public origin of the web app (APP_URL / NEXT_PUBLIC_APP_URL). Set this to
+    # your public ingress origin so auth redirects resolve.
+    appUrl: ""
+    # Auth callback URI (WorkOS WORKOS_REDIRECT_URI or OIDC OIDC_REDIRECT_URI).
+    # Empty → "<appUrl>/auth/callback".
+    redirectUri: ""
+    # Base URL of a Market app for kit import/favorites (AGENTKITMARKET_BASE_URL).
+    # EMPTY by default → Market OFF on self-host (no phone-home to the hosted
+    # Market). Point it at your OWN Market (e.g. the in-cluster Market) to enable.
+    marketBaseUrl: ""
+    # WorkOS client id used by the core market client for device flows
+    # (AGENTKITPROJECT_WORKOS_CLIENT_ID). Optional.
+    agentkitprojectWorkosClientId: ""
+    # S3/MinIO bucket holding kit input trees (S3_BUCKET). Defaults to minio.bucket.
+    s3Bucket: ""
+    # Optional key prefix within the bucket (S3_PREFIX).
+    s3Prefix: ""
+    # S3 region (AWS_REGION); us-east-1 is fine for MinIO.
+    s3Region: "us-east-1"
+    # Ecosystem link overrides (NEXT_PUBLIC_*_URL). On self-host an unset link is
+    # HIDDEN. Set these to point at your own properties.
+    ecosystemLinks:
+      projectUrl: ""
+      forgeUrl: ""
+      profileUrl: ""
+      autoUrl: ""
+
+  # Secret runtime config. Either set inline (use a --values secrets.yaml NOT
+  # committed to git) or source from an existing Secret via existingSecret.
+  # Anything left empty that the chart can generate (sessionSecret, forgeWebSecret,
+  # the DB/MinIO passwords, the Auto worker service key) is Helm-GENERATED and
+  # preserved across upgrades.
+  secrets:
+    # Use an externally-managed Secret instead of the chart-managed one (GitOps).
+    # When set, the inline values below are ignored and the web container envFroms
+    # it; the bundled Postgres/MinIO + worker read their secrets from it.
+    #   Required keys (oidc):  OIDC_CLIENT_SECRET, SESSION_SECRET,
+    #     AGENTKITFORGE_WEB_SECRET, POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD,
+    #     AUTO_WORKER_SERVICE_KEY, ANTHROPIC_API_KEY
+    #   Required keys (workos): WORKOS_API_KEY, WORKOS_CLIENT_ID,
+    #     WORKOS_COOKIE_PASSWORD, AGENTKITFORGE_WEB_SECRET, POSTGRES_PASSWORD,
+    #     MINIO_ROOT_PASSWORD, AUTO_WORKER_SERVICE_KEY, ANTHROPIC_API_KEY
+    existingSecret: ""
+
+    # --- Generic OIDC (provider=oidc) ---
+    # The OIDC client secret (OIDC_CLIENT_SECRET).
+    oidcClientSecret: ""
+    # iron-session seal secret (SESSION_SECRET, >= 32 chars). GENERATED when empty.
+    sessionSecret: ""
+
+    # --- WorkOS AuthKit (provider=workos) ---
+    workosApiKey: ""
+    workosClientId: ""
+    # Must be >= 32 chars. Generate with: openssl rand -base64 32
+    workosCookiePassword: ""
+
+    # AES-256-GCM key for at-rest encryption of per-user AI provider keys
+    # (AGENTKITFORGE_WEB_SECRET). GENERATED when empty.
+    forgeWebSecret: ""
+
+  # Ingress. For k3s the bundled Traefik IngressClass works out of the box; set
+  # ingress.enabled=true and a host. (Self-hosters behind Tailscale can set
+  # className: tailscale with an empty host instead.)
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls: []
+    #  - hosts:
+    #      - auto.example.com
+
+# ---------------------------------------------------------------------------
+# AgentKitAuto worker dispatch (Phase D) — ON by default for this chart.
+#
+# The web app dispatches each Auto run to a one-shot Kubernetes Job running the
+# Auto WORKER image (AUTO_DISPATCH=k8s). Requires the worker image +
+# ANTHROPIC_API_KEY (BYO LLM key). Disable only if you are running the control
+# plane without execution (rare).
+# ---------------------------------------------------------------------------
+auto:
+  enabled: true
+  # The Auto worker image (AUTO_K8S_WORKER_IMAGE; built from
+  # agentkitauto-core/Dockerfile).
+  workerImage: "ghcr.io/agentkitproject/agentkitauto-worker:latest"
+  # Namespace the dispatcher creates worker Jobs in. Empty → the release namespace.
+  namespace: ""
+  # Optional ServiceAccount the worker Jobs run under (AUTO_K8S_SERVICE_ACCOUNT).
+  # Empty → the namespace default SA. The workers need no cluster API access.
+  serviceAccount: ""
+  # Self-host billing policy: "free" (default, BYO key, no metering) | "managed".
+  billing: "free"
+  # ANTHROPIC_API_KEY for inference — REQUIRED. In free mode this is the
+  # operator's BYO key used by every run.
+  anthropicApiKey: ""
+  # Shared service key the sweep + worker present to the web app's internal
+  # endpoints (AUTO_WORKER_SERVICE_KEY). GENERATED when empty.
+  serviceKey: ""
+  # The in-cluster URL the worker + sweep reach the web app at. Empty → derived
+  # from the in-cluster web Service (http://<release>-web).
+  internalUrl: ""
+  # Per-run worker resources + lifecycle (forwarded to the Job spec via env).
+  worker:
+    cpuRequest: "250m"
+    cpuLimit: "1"
+    memoryRequest: "512Mi"
+    memoryLimit: "1Gi"
+    # Auto-delete finished Jobs after this many seconds.
+    ttlSecondsAfterFinished: 3600
+    # emptyDir size for the per-run /scratch workspace.
+    scratchSize: "1Gi"
+  # The per-minute schedule sweep (self-host equivalent of the EventBridge rule).
+  sweep:
+    enabled: true
+    schedule: "* * * * *"
+    # A tiny image with curl to POST the service key to the sweep endpoint.
+    image: "curlimages/curl:8.11.1"
+
+# ---------------------------------------------------------------------------
+# Bundled in-cluster Postgres (run/approval/schedule/webhook metadata + settings).
+# DATABASE_URL auto-defaults to this Service. Disable + provide DATABASE_URL in
+# the secret to point at an external instance.
+# ---------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image: postgres:16
+  database: agentkitauto
+  user: agentkitauto
+  # GENERATED + preserved across upgrades when empty (never "changeme"). Set only
+  # to pin a specific password.
+  password: ""
+  storage:
+    size: 5Gi
+    storageClassName: local-path
+
+# ---------------------------------------------------------------------------
+# Bundled in-cluster MinIO (kit input trees / Auto input store).
+# S3_ENDPOINT auto-defaults to this Service. Disable + provide S3_* in the secret
+# to point at an external S3-compatible store.
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  image: minio/minio:latest
+  bucket: agentkitauto
+  # Must equal S3_ACCESS_KEY_ID. The chart sets S3_ACCESS_KEY_ID from this.
+  rootUser: minioadmin
+  # GENERATED + preserved across upgrades when empty (never "changeme"). Set only
+  # to pin a specific password.
+  rootPassword: ""
+  storage:
+    size: 10Gi
+    storageClassName: local-path

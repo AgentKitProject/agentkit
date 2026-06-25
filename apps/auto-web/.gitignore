@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+.env.local
+.env*.local
+.agentkitauto-app-data
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store

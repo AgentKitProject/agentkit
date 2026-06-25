@@ -1,0 +1,74 @@
+{
+  "name": "@agentkitforge/core",
+  "version": "0.6.1",
+  "description": "Core package, validation, export, and packaging engine for AgentKitForge.",
+  "type": "module",
+  "bin": {
+    "agentkitforge": "dist/cli/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./market": {
+      "types": "./dist/market/index.d.ts",
+      "default": "./dist/market/index.js"
+    },
+    "./gateway": {
+      "types": "./dist/gateway/index.d.ts",
+      "default": "./dist/gateway/index.js"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CLI.md",
+    "SPEC.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "VERSIONING.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "agentkit",
+    "agents",
+    "validation",
+    "cli"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AgentKitProject/agentkitforge-core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@agentkitforge/contracts": "workspace:*",
+    "commander": "^14.0.2",
+    "jszip": "^3.10.1",
+    "yaml": "^2.8.2",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

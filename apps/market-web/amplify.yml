@@ -1,0 +1,51 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - 'test -n "$NEXT_PUBLIC_AGENTKITMARKET_API_BASE_URL" || (echo "Missing required env var: NEXT_PUBLIC_AGENTKITMARKET_API_BASE_URL" && exit 1)'
+        - 'test -n "$APP_URL" || (echo "Missing required env var: APP_URL" && exit 1)'
+        - 'test -n "$NEXT_PUBLIC_APP_URL" || (echo "Missing required env var: NEXT_PUBLIC_APP_URL" && exit 1)'
+        - 'test -n "$WORKOS_REDIRECT_URI" || (echo "Missing required env var: WORKOS_REDIRECT_URI" && exit 1)'
+        - 'test -n "$NEXT_PUBLIC_WORKOS_REDIRECT_URI" || (echo "Missing required env var: NEXT_PUBLIC_WORKOS_REDIRECT_URI" && exit 1)'
+        - 'case "$APP_URL" in *localhost*) echo "APP_URL must not use localhost for production hosting" && exit 1;; esac'
+        - 'case "$NEXT_PUBLIC_APP_URL" in *localhost*) echo "NEXT_PUBLIC_APP_URL must not use localhost for production hosting" && exit 1;; esac'
+        - 'case "$WORKOS_REDIRECT_URI" in *localhost*) echo "WORKOS_REDIRECT_URI must not use localhost for production hosting" && exit 1;; esac'
+        - 'case "$NEXT_PUBLIC_WORKOS_REDIRECT_URI" in *localhost*) echo "NEXT_PUBLIC_WORKOS_REDIRECT_URI must not use localhost for production hosting" && exit 1;; esac'
+        - 'test -n "$WORKOS_API_KEY" || (echo "Missing required env var: WORKOS_API_KEY" && exit 1)'
+        - 'test -n "$WORKOS_CLIENT_ID" || (echo "Missing required env var: WORKOS_CLIENT_ID" && exit 1)'
+        - 'test -n "$WORKOS_COOKIE_PASSWORD" || (echo "Missing required env var: WORKOS_COOKIE_PASSWORD" && exit 1)'
+        - 'test -n "$AGENTKITMARKET_ADMIN_EMAILS" || (echo "Missing required env var: AGENTKITMARKET_ADMIN_EMAILS" && exit 1)'
+        - 'test -n "$AGENTKITMARKET_ADMIN_KEY" || (echo "Missing required env var: AGENTKITMARKET_ADMIN_KEY" && exit 1)'
+        - 'test -n "$PROFILE_API_BASE_URL" || (echo "Missing required env var: PROFILE_API_BASE_URL" && exit 1)'
+        - 'test "$NEXT_PUBLIC_AGENTKITMARKET_USE_MOCKS" != "true" || (echo "NEXT_PUBLIC_AGENTKITMARKET_USE_MOCKS must not be true for production hosting" && exit 1)'
+        - 'printf "NEXT_PUBLIC_AGENTKITMARKET_API_BASE_URL=%s\n" "$NEXT_PUBLIC_AGENTKITMARKET_API_BASE_URL" > .env.production'
+        - 'printf "APP_URL=%s\n" "$APP_URL" >> .env.production'
+        - 'printf "NEXT_PUBLIC_APP_URL=%s\n" "$NEXT_PUBLIC_APP_URL" >> .env.production'
+        - 'printf "WORKOS_API_KEY=%s\n" "$WORKOS_API_KEY" >> .env.production'
+        - 'printf "WORKOS_CLIENT_ID=%s\n" "$WORKOS_CLIENT_ID" >> .env.production'
+        - 'printf "WORKOS_COOKIE_PASSWORD=%s\n" "$WORKOS_COOKIE_PASSWORD" >> .env.production'
+        - 'printf "AGENTKITMARKET_ADMIN_EMAILS=%s\n" "$AGENTKITMARKET_ADMIN_EMAILS" >> .env.production'
+        - 'printf "AGENTKITMARKET_ADMIN_KEY=%s\n" "$AGENTKITMARKET_ADMIN_KEY" >> .env.production'
+        - 'printf "WORKOS_REDIRECT_URI=%s\n" "$WORKOS_REDIRECT_URI" >> .env.production'
+        - 'printf "NEXT_PUBLIC_WORKOS_REDIRECT_URI=%s\n" "$NEXT_PUBLIC_WORKOS_REDIRECT_URI" >> .env.production'
+        - 'printf "PROFILE_API_BASE_URL=%s\n" "$PROFILE_API_BASE_URL" >> .env.production'
+        - 'printf "PROFILE_SERVICE_KEY=%s\n" "$PROFILE_SERVICE_KEY" >> .env.production'
+        # Server-only service key for the web-forge → market-app service-to-service
+        # licensed-package endpoint (hosted AgentKitAuto protected-kit resolution).
+        # OPTIONAL — when unset the /api/forge/service/* endpoint returns 503 (NO
+        # preBuild required-var check). Must equal the SAME value set on
+        # agentkitforge-web. Never echoed to logs; never sent to the browser.
+        - 'printf "MARKET_SERVICE_KEY=%s\n" "$MARKET_SERVICE_KEY" >> .env.production'
+        - 'npm ci'
+    build:
+      commands:
+        - 'npm run build'
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - 'node_modules/**/*'
+      - '.next/cache/**/*'

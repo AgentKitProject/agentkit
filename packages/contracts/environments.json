@@ -1,0 +1,10 @@
+{
+  "$comment": "Public service domains per environment. API Gateway base URLs are environment-specific infrastructure and are deliberately NOT published here — each service reads them from its own deploy outputs / env vars (e.g. PROFILE_API_BASE_URL, NEXT_PUBLIC_AGENTKITMARKET_API_BASE_URL).",
+  "production": {
+    "marketApp": "https://market.agentkitproject.com",
+    "profileApp": "https://profile.agentkitproject.com",
+    "forgeSite": "https://forge.agentkitproject.com",
+    "autoApp": "https://auto.agentkitproject.com",
+    "projectSite": "https://agentkitproject.com"
+  }
+}

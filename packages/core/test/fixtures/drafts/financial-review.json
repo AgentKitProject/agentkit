@@ -1,0 +1,54 @@
+{
+  "id": "financial-review-draft",
+  "name": "Financial Review Draft",
+  "description": "Review financial workbooks for structure, formulas, and follow-up risks.",
+  "author": {
+    "name": "AgentKitForge Test"
+  },
+  "setupLevel": "medium",
+  "riskLevel": "medium",
+  "agentInstructions": "# Financial Review Draft\n\nUse this Agent Kit for structured financial workbook review. Stay within the guardrails in policies/financial-review-guardrails.yaml.\n",
+  "startHere": "# Financial Review Draft\n\nUse the skills to map workbook structure and audit formulas before summarizing review findings.\n",
+  "readme": "# Financial Review Draft\n\nA trusted Agent Kit draft for reviewing financial workbooks.\n",
+  "changelog": "# Changelog\n\n## 0.1.0\n\nInitial financial review draft.\n",
+  "skills": [
+    {
+      "id": "map-workbook-structure",
+      "name": "Map Workbook Structure",
+      "description": "Map workbook sheets, tables, and important financial review areas.",
+      "triggers": ["map workbook", "workbook structure"],
+      "riskLevel": "medium",
+      "useWhen": "Use this skill when a user needs an overview of a financial workbook before detailed review.",
+      "procedure": "Identify sheets, major tables, assumptions, outputs, and areas requiring follow-up.",
+      "output": "Return a concise workbook map with notable review risks."
+    },
+    {
+      "id": "audit-formulas",
+      "name": "Audit Formulas",
+      "description": "Audit formulas for consistency, risk, and review follow-up.",
+      "triggers": ["audit formulas", "review spreadsheet formulas"],
+      "riskLevel": "medium",
+      "useWhen": "Use this skill when a user asks for a formula review in a financial workbook.",
+      "procedure": "Check formula consistency, hardcoded values, broken references, unusual ranges, and unexplained overrides.",
+      "output": "Return findings with severity, location, rationale, and recommended follow-up."
+    }
+  ],
+  "policies": [
+    {
+      "id": "financial-review-guardrails",
+      "description": "Guardrails for financial review workflows.",
+      "rules": [
+        "Do not provide investment, tax, legal, or accounting advice.",
+        "Flag uncertain conclusions for human review.",
+        "Preserve source workbook assumptions unless explicitly asked to propose alternatives."
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "id": "monthly-review",
+      "prompt": "Review this monthly finance workbook for formula consistency and obvious structural risks.",
+      "output": "## Summary\n\nNo critical issues found in the sample output.\n\n## Follow-up\n\nConfirm assumptions and investigate any formula ranges that differ from adjacent periods."
+    }
+  ]
+}

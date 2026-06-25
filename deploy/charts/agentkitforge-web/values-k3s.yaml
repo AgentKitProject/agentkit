@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------------
+# values-k3s.yaml — turnkey self-host preset for k3s (or any vanilla k8s).
+#
+# Generic OIDC auth, plain Kubernetes Secrets (no Infisical), BYO LLM key only,
+# Market OFF (no phone-home to the hosted ecosystem), bundled Postgres + MinIO on
+# the local-path StorageClass that ships with k3s.
+#
+# Install:
+#   helm install agentkitforge-web ./charts/agentkitforge-web -f values-k3s.yaml \
+#     --set web.config.appUrl=https://forge.example.com \
+#     --set web.auth.oidc.issuer=https://idp.example.com/realms/main \
+#     --set web.auth.oidc.clientId=agentkitforge-web \
+#     --set web.secrets.oidcClientSecret=<client-secret>
+#
+# Everything else (SESSION_SECRET, AGENTKITFORGE_WEB_SECRET, the Postgres + MinIO
+# passwords) is Helm-generated and preserved across `helm upgrade`. Register
+# {APP_URL}/auth/callback as a redirect URI in your IdP.
+# ---------------------------------------------------------------------------
+
+web:
+  auth:
+    # Generic OIDC also flips the instance into self-host mode (Market OFF, BYO
+    # LLM only, ecosystem links hidden unless explicitly set).
+    provider: "oidc"
+    oidc:
+      # REQUIRED — set via --set or by editing this file:
+      issuer: ""           # e.g. https://idp.example.com/realms/main
+      clientId: ""         # e.g. agentkitforge-web
+      scopes: "openid profile email"
+      allowInsecure: false # dev only — never true with a real IdP
+
+  config:
+    kitstoreBackend: "selfhost"
+    # REQUIRED — your public origin. OIDC_REDIRECT_URI defaults to
+    # {appUrl}/auth/callback.
+    appUrl: ""
+    # Market OFF on self-host. Point at your OWN Market to enable, else leave empty.
+    marketBaseUrl: ""
+    disableMarket: false
+
+  secrets:
+    # REQUIRED — the OIDC client secret from your IdP.
+    oidcClientSecret: ""
+    # sessionSecret + forgeWebSecret are GENERATED when empty (recommended).
+
+  # k3s bundles a Traefik IngressClass. Set enabled=true + a host to expose it,
+  # or front it with your own ingress / LoadBalancer / Tailscale.
+  ingress:
+    enabled: false
+    className: "traefik"
+    host: ""        # e.g. forge.example.com
+    tls: []
+
+# AgentKitAuto is a SEPARATE self-host app with its OWN chart (agentkitauto-app
+# repo, charts/agentkitauto). To link Forge to it, set
+# web.config.ecosystemLinks.autoUrl to the Auto app's public origin.
+
+# Bundled data services on k3s' default local-path StorageClass.
+postgres:
+  enabled: true
+  storage:
+    storageClassName: local-path
+minio:
+  enabled: true
+  storage:
+    storageClassName: local-path

@@ -1,0 +1,39 @@
+# ===========================================================================
+# 00-bootstrap (sync-wave 0) — cluster wiring that must land BEFORE Dex.
+#
+# Renders every manifest under deploy/argocd-tailscale/bootstrap/ (recursively):
+#   - namespace.yaml      → the `agentkit` namespace
+#   - dex-ingress.yaml    → tailscale Ingress that makes the operator mint the
+#                           dex.<tailnet> cert
+#   - cert-sync.yaml      → RBAC + Job/CronJob copying that cert → dex-tls
+#   - coredns-rewrite.yaml→ coredns-custom key resolving the issuer to in-cluster Dex
+#
+# These objects carry their OWN explicit namespaces (some are cluster-scoped or
+# target kube-system / tailscale), so the Application destination namespace is
+# only a default — it does not pin them.
+# ===========================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentkit-bootstrap
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AgentKitProject/agentkitforge-web.git
+    targetRevision: main
+    path: deploy/argocd-tailscale/bootstrap
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentkit
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -1,0 +1,783 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
+
+/* ==========================================================================
+   @agentkitforge/ui — design tokens (single source of truth)
+
+   Foundation derived from the DESKTOP Forge app (React 19 + Vite + Tauri),
+   the most polished surface in the AgentKitProject ecosystem:
+     • palette  = Tailwind slate neutrals + indigo-600 brand + cyan-500 accent
+     • type     = Inter (UI) + Cascadia Code (mono); heavy 700/800 emphasis
+     • radius   = 14px cards / 10px controls / 12px nav+icons / 999px pills
+     • signature interaction = 0.16s multi-prop transition + translateY(-1px)
+       hover lift + a soft indigo focus / selection ring
+
+   Light theme on :root; dark overrides under [data-theme="dark"].
+   Apps rebrand by overriding the three --ak-brand* vars (inline style,
+   a className, or the AppShell `brandAccent` prop / brandVars() helper).
+   The default brand is desktop Forge indigo.
+   ========================================================================== */
+
+:root {
+  /* Text / surfaces (Tailwind slate) */
+  --ak-text: #0f172a; /* slate-900 */
+  --ak-bg: #f8fafc; /* slate-50  */
+  --ak-surface: #ffffff;
+  --ak-surface-muted: #f1f5f9; /* slate-100 */
+  --ak-border: #cbd5e1; /* slate-300 */
+  --ak-muted: #475569; /* slate-600 */
+
+  /* Status (success doubles as the Auto green) */
+  --ak-success: #16a34a;
+  --ak-warning: #d97706;
+  --ak-error: #dc2626;
+
+  /* Brand accent — DEFAULT is desktop Forge indigo (per-app overridable) */
+  --ak-brand: #4f46e5; /* indigo-600 */
+  --ak-brand-strong: #4338ca; /* indigo-700 (hover/pressed) */
+  --ak-brand-soft: #eef2ff; /* indigo-50 (tinted surfaces / active nav) */
+
+  /* Secondary accent — cyan; structural highlights (tool I/O, logo gem) */
+  --ak-accent: #06b6d4; /* cyan-500 */
+
+  /* Sidebar (app shell) */
+  --ak-sidebar: var(--ak-surface);
+  --ak-sidebar-active: var(--ak-brand-soft);
+  --ak-sidebar-width: 260px;
+
+  /* Geometry — Forge radii */
+  --ak-radius: 10px; /* default control radius (back-compat alias)        */
+  --ak-radius-control: 10px; /* buttons, inputs, selects, chips           */
+  --ak-radius-card: 14px; /* cards, panels, tab-list                      */
+  --ak-radius-nav: 12px; /* nav items, icon tiles                         */
+
+  --ak-shadow: 0 16px 38px rgba(15, 23, 42, 0.06); /* primary card shadow */
+  --ak-shadow-sm: 0 1px 0 rgba(15, 23, 42, 0.03);
+  --ak-ring: 0 0 0 3px rgba(79, 70, 229, 0.16); /* indigo focus ring      */
+  --ak-ring-soft: 0 0 0 3px rgba(79, 70, 229, 0.12);
+
+  --ak-container: 1180px;
+
+  /* Type */
+  --ak-font: Inter, ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ak-font-mono: "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
+  /* Shared interaction transition */
+  --ak-transition: border-color 0.16s ease, background-color 0.16s ease,
+    color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+[data-theme="dark"] {
+  --ak-text: #e5e7eb;
+  --ak-bg: #020617; /* slate-950 */
+  --ak-surface: #0f172a; /* slate-900 */
+  --ak-surface-muted: #1e293b; /* slate-800 */
+  --ak-border: #334155; /* slate-700 */
+  --ak-muted: #cbd5e1; /* slate-300 */
+
+  --ak-success: #22c55e;
+  --ak-warning: #f59e0b;
+  --ak-error: #f87171;
+
+  /* indigo lightens in dark for contrast (indigo-400 / -300) */
+  --ak-brand: #818cf8;
+  --ak-brand-strong: #a5b4fc;
+  --ak-brand-soft: #1e293b;
+
+  --ak-accent: #22d3ee;
+
+  --ak-sidebar: #0f172a;
+  --ak-sidebar-active: #1e293b;
+
+  --ak-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  --ak-shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --ak-ring: 0 0 0 3px rgba(129, 140, 248, 0.28);
+  --ak-ring-soft: 0 0 0 3px rgba(129, 140, 248, 0.2);
+}
+
+/* ===================== Base helpers ===================== */
+
+.ak-root {
+  font-family: var(--ak-font);
+  color: var(--ak-text);
+  background: var(--ak-bg);
+}
+
+.ak-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 1000;
+  background: var(--ak-brand);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ak-font);
+  font-weight: 700;
+}
+.ak-skip-link:focus {
+  left: 12px;
+  top: 12px;
+}
+
+/* ===================== Button ===================== */
+
+.ak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--ak-font);
+  font-weight: 700;
+  border-radius: var(--ak-radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1;
+  transition: var(--ak-transition);
+  white-space: nowrap;
+}
+.ak-btn--sm {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.ak-btn--md {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+.ak-btn--primary {
+  background: var(--ak-brand);
+  color: #fff;
+}
+.ak-btn--primary:hover {
+  background: var(--ak-brand-strong);
+  border-color: var(--ak-brand-strong);
+  transform: translateY(-1px);
+}
+.ak-btn--secondary {
+  background: var(--ak-surface);
+  color: var(--ak-text);
+  border-color: var(--ak-border);
+}
+.ak-btn--secondary:hover {
+  color: var(--ak-brand);
+  background: var(--ak-surface-muted);
+  border-color: color-mix(in srgb, var(--ak-brand) 35%, var(--ak-border));
+  transform: translateY(-1px);
+}
+.ak-btn--ghost {
+  background: transparent;
+  color: var(--ak-text);
+}
+.ak-btn--ghost:hover {
+  color: var(--ak-brand);
+  background: var(--ak-brand-soft);
+}
+.ak-btn--danger {
+  background: var(--ak-error);
+  color: #fff;
+}
+.ak-btn--danger:hover {
+  background: color-mix(in srgb, var(--ak-error) 82%, #000);
+  transform: translateY(-1px);
+}
+.ak-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ak-ring);
+}
+.ak-btn:disabled,
+.ak-btn[aria-disabled="true"],
+.ak-btn--loading {
+  opacity: 0.62;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+.ak-btn__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  animation: ak-spin 0.75s linear infinite;
+}
+@keyframes ak-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===================== Card ===================== */
+
+.ak-card {
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  box-shadow: var(--ak-shadow);
+  padding: 22px;
+  color: var(--ak-text);
+}
+.ak-card__header {
+  margin-bottom: 12px;
+}
+.ak-card__title {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+/* ===================== Form controls ===================== */
+
+.ak-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ak-label {
+  font-family: var(--ak-font);
+  font-size: 0.86rem;
+  font-weight: 680;
+  color: var(--ak-text);
+}
+.ak-input,
+.ak-textarea,
+.ak-select {
+  font-family: var(--ak-font);
+  font-size: 0.92rem;
+  color: var(--ak-text);
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  min-height: 42px;
+  padding: 0 12px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: var(--ak-transition);
+}
+.ak-textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.ak-input:focus,
+.ak-textarea:focus,
+.ak-select:focus {
+  outline: none;
+  border-color: var(--ak-brand);
+  box-shadow: var(--ak-ring);
+}
+.ak-input:disabled,
+.ak-textarea:disabled,
+.ak-select:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+/* ===================== Badge / Pill ===================== */
+
+.ak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--ak-brand-soft);
+  color: var(--ak-brand-strong);
+  border: 1px solid color-mix(in srgb, var(--ak-brand) 24%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-family: var(--ak-font);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.ak-badge--success {
+  background: color-mix(in srgb, var(--ak-success) 12%, var(--ak-surface));
+  color: var(--ak-success);
+  border-color: color-mix(in srgb, var(--ak-success) 28%, transparent);
+}
+.ak-badge--warning {
+  background: color-mix(in srgb, var(--ak-warning) 12%, var(--ak-surface));
+  color: var(--ak-warning);
+  border-color: color-mix(in srgb, var(--ak-warning) 28%, transparent);
+}
+.ak-badge--error {
+  background: color-mix(in srgb, var(--ak-error) 12%, var(--ak-surface));
+  color: var(--ak-error);
+  border-color: color-mix(in srgb, var(--ak-error) 28%, transparent);
+}
+.ak-badge--neutral {
+  background: var(--ak-surface-muted);
+  color: var(--ak-muted);
+  border-color: var(--ak-border);
+}
+
+/* ===================== Header (web chrome) ===================== */
+
+.ak-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--ak-surface) 85%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--ak-border);
+}
+.ak-header__inner {
+  max-width: var(--ak-container);
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ak-header__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--ak-font);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--ak-text);
+  text-decoration: none;
+}
+.ak-header__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+.ak-header__nav-link {
+  font-family: var(--ak-font);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ak-muted);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: var(--ak-radius-control);
+  transition: var(--ak-transition);
+}
+.ak-header__nav-link:hover {
+  color: var(--ak-brand);
+  background: var(--ak-surface-muted);
+}
+.ak-header__nav-link--active {
+  color: var(--ak-brand);
+  background: var(--ak-brand-soft);
+}
+.ak-header__spacer {
+  flex: 1;
+}
+.ak-header__account {
+  display: inline-flex;
+  align-items: center;
+}
+.ak-header__menu-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  color: var(--ak-text);
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.ak-header__mobile-nav {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 20px 14px;
+  border-top: 1px solid var(--ak-border);
+}
+.ak-header__mobile-nav .ak-header__nav-link {
+  padding: 10px 12px;
+}
+
+@media (max-width: 760px) {
+  .ak-header__nav {
+    display: none;
+  }
+  .ak-header__menu-btn {
+    display: inline-flex;
+  }
+  .ak-header__mobile-nav--open {
+    display: flex;
+  }
+}
+
+/* ===================== SiteShell (marketing / catalog chrome) ===== */
+
+.ak-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--ak-bg);
+  color: var(--ak-text);
+  font-family: var(--ak-font);
+}
+.ak-main {
+  flex: 1;
+  width: 100%;
+}
+.ak-main__inner {
+  max-width: var(--ak-container);
+  margin: 0 auto;
+  padding: 32px 20px 56px;
+}
+
+/* ===================== AppShell (sidebar app layout, ex-Forge) ===== */
+
+.ak-app {
+  display: grid;
+  grid-template-columns: var(--ak-sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--ak-bg);
+  color: var(--ak-text);
+  font-family: var(--ak-font);
+}
+
+.ak-sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 16px;
+  background: var(--ak-sidebar);
+  border-right: 1px solid var(--ak-border);
+  box-shadow: 10px 0 28px rgba(15, 23, 42, 0.04);
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* Brand block */
+.ak-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--ak-text);
+}
+.ak-sidebar__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--ak-radius-nav);
+  overflow: hidden;
+}
+.ak-sidebar__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ak-sidebar__brand-name {
+  font-size: 1.04rem;
+  font-weight: 820;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.ak-sidebar__brand-sub {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ak-muted);
+}
+
+/* Nav rail */
+.ak-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ak-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--ak-radius-nav);
+  background: transparent;
+  color: var(--ak-muted);
+  font-family: var(--ak-font);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--ak-transition);
+  box-sizing: border-box;
+}
+.ak-nav-item__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.ak-nav-item__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ak-nav-item:hover {
+  color: var(--ak-brand);
+  background: var(--ak-surface-muted);
+  border-color: var(--ak-border);
+  transform: translateY(-1px);
+}
+.ak-nav-item--active,
+.ak-nav-item--active:hover {
+  color: var(--ak-brand);
+  background: var(--ak-sidebar-active);
+  border-color: color-mix(in srgb, var(--ak-brand) 28%, transparent);
+  transform: none;
+}
+
+/* Sidebar lower region (account / footer slots pushed to bottom) */
+.ak-sidebar__foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ak-sidebar__account {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-nav);
+  background: var(--ak-surface);
+  color: var(--ak-text);
+  font-family: var(--ak-font);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--ak-transition);
+  box-sizing: border-box;
+}
+.ak-sidebar__account:hover {
+  border-color: color-mix(in srgb, var(--ak-brand) 35%, var(--ak-border));
+  background: var(--ak-surface-muted);
+}
+.ak-sidebar__account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ak-sidebar-active);
+  color: var(--ak-brand);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  overflow: hidden;
+}
+.ak-sidebar__account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ak-sidebar__account-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ak-sidebar__account-status {
+  font-size: 0.76rem;
+  color: var(--ak-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Main column */
+.ak-app__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ak-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 34px 22px;
+  background: var(--ak-surface);
+  border-bottom: 1px solid var(--ak-border);
+  box-shadow: var(--ak-shadow-sm);
+}
+.ak-topbar__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ak-topbar__eyebrow {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ak-muted);
+}
+.ak-topbar__title {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.ak-topbar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.ak-app__content {
+  flex: 1;
+  padding: 32px 34px;
+  min-width: 0;
+}
+
+/* Responsive: collapse the rail (icon-only) then stack */
+@media (max-width: 980px) {
+  .ak-app {
+    grid-template-columns: 1fr;
+  }
+  .ak-sidebar {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .ak-sidebar__nav {
+    flex: 1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .ak-nav-item {
+    width: auto;
+  }
+  .ak-sidebar__foot {
+    margin-top: 0;
+    flex-direction: row;
+    align-items: center;
+  }
+}
+@media (max-width: 720px) {
+  .ak-topbar,
+  .ak-app__content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .ak-nav-item__label {
+    display: none;
+  }
+  .ak-nav-item {
+    padding: 0 10px;
+  }
+}
+
+/* ===================== Footer ===================== */
+
+.ak-footer {
+  border-top: 1px solid var(--ak-border);
+  background: var(--ak-surface);
+  color: var(--ak-text);
+  font-family: var(--ak-font);
+}
+.ak-footer__inner {
+  max-width: var(--ak-container);
+  margin: 0 auto;
+  padding: 40px 20px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 32px;
+}
+.ak-footer__brand-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.ak-footer__brand-subtitle {
+  margin: 0;
+  color: var(--ak-muted);
+  font-size: 14px;
+  max-width: 36ch;
+}
+.ak-footer__col-title {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ak-muted);
+}
+.ak-footer__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ak-footer__link {
+  color: var(--ak-text);
+  text-decoration: none;
+  font-size: 14px;
+}
+.ak-footer__link:hover {
+  color: var(--ak-brand);
+}
+.ak-footer__bottom {
+  max-width: var(--ak-container);
+  margin: 0 auto;
+  padding: 16px 20px 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--ak-border);
+  color: var(--ak-muted);
+  font-size: 13px;
+}
+.ak-footer__contact {
+  color: var(--ak-muted);
+  text-decoration: none;
+}
+.ak-footer__contact:hover {
+  color: var(--ak-brand);
+}
+
+@media (max-width: 760px) {
+  .ak-footer__inner {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}

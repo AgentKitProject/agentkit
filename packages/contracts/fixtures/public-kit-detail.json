@@ -1,0 +1,39 @@
+{
+  "item": {
+    "kitId": "kit_example_kit_4fb88aca",
+    "slug": "example-kit",
+    "name": "Example Kit",
+    "summary": "An example Agent Kit.",
+    "description": "Longer description of the example Agent Kit.",
+    "publisher": {
+      "publisherId": "Example Publisher",
+      "displayName": "Example Publisher",
+      "handle": "example-publisher",
+      "avatarInitials": "EP",
+      "verified": false
+    },
+    "categories": ["productivity"],
+    "tags": ["example"],
+    "currentVersion": "2",
+    "latestVersion": {
+      "version": "2",
+      "summary": "An example Agent Kit.",
+      "schemaVersion": "0.1",
+      "packageSizeBytes": 4215,
+      "sha256": "0993768dc179cd77dc5571ee3f0c12788ed6f791863a3f546210eec726a76e5a",
+      "publishedAt": "2026-06-13T12:00:00.000Z"
+    },
+    "versions": [
+      {
+        "version": "2",
+        "summary": "An example Agent Kit.",
+        "schemaVersion": "0.1",
+        "packageSizeBytes": 4215,
+        "sha256": "0993768dc179cd77dc5571ee3f0c12788ed6f791863a3f546210eec726a76e5a",
+        "publishedAt": "2026-06-13T12:00:00.000Z"
+      }
+    ],
+    "publishedAt": "2026-06-13T12:00:00.000Z",
+    "updatedAt": "2026-06-13T12:00:00.000Z"
+  }
+}

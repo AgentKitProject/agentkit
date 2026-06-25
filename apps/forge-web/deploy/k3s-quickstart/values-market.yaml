@@ -1,0 +1,76 @@
+# ===========================================================================
+# values-market.yaml — k3s quickstart overlay for AgentKitMarket.
+#
+# Layered ON TOP of the market chart's own values-k3s.yaml preset:
+#   helm install agentkitmarket ../../../agentkitmarket-core/charts/agentkitmarket \
+#     -f ../../../agentkitmarket-core/charts/agentkitmarket/values-k3s.yaml \
+#     -f values-market.yaml \
+#     -f secrets.generated.yaml \    # produced by ./gen-secrets.sh
+#     --namespace agentkit
+#
+# Carries ONLY non-secret config. The OIDC client secret lives in
+# secrets.generated.yaml; ADMIN_API_KEY + SESSION_SECRET + DB/MinIO passwords
+# are chart-generated.
+#
+# Replace <NODE_IP> everywhere first (see ../README.md → `sed`).
+# ===========================================================================
+
+# api + worker image (public market-core image).
+image:
+  repository: ghcr.io/agentkitproject/agentkitmarket-core
+  tag: "latest"
+
+web:
+  enabled: true
+  image:
+    repository: ghcr.io/agentkitproject/agentkitmarket-app
+    tag: "latest"
+  authProvider: "oidc"
+  config:
+    appUrl: "https://market.<NODE_IP>.nip.io"
+    # Dex's static-password user can't carry a `groups` claim, so for this test
+    # IdP the admin is granted by EMAIL. (adminGroup below is still wired so the
+    # same overlay grants admin by group against a real IdP that emits groups.)
+    adminEmails: "admin@example.com"
+    oidc:
+      issuer: "https://dex.<NODE_IP>.nip.io/dex"
+      clientId: "agentkitmarket"
+      scopes: "openid profile email"
+      # OIDC_REDIRECT_URI auto-derives {appUrl}/auth/callback → must match the
+      # Dex staticClient redirect for agentkitmarket.
+      adminGroup: "agentkit-admins"
+      allowInsecure: false
+
+  ingress:
+    enabled: true
+    className: "traefik"
+    host: "market.<NODE_IP>.nip.io"
+    tls: []
+
+  # DEV/SMOKE-TEST ONLY — disables TLS verification; do NOT use in production
+  # (see TLS section). Traefik serves a self-signed cert on the nip.io hosts, so
+  # the Node process would reject Dex's HTTPS issuer during OIDC discovery/token
+  # calls. This blunt flag makes Node accept it for the smoke test. The
+  # production path is cert-manager + dropping this var (README → Self-signed TLS).
+  extraEnv:
+    - name: NODE_TLS_REJECT_UNAUTHORIZED
+      value: "0"
+
+  # Resolve the ingress hosts straight to the node IP from inside the pod, so
+  # pod→ingress OIDC calls don't depend on CNI hairpin NAT (README → Hairpin).
+  hostAliases:
+    - ip: "<NODE_IP>"
+      hostnames:
+        - "dex.<NODE_IP>.nip.io"
+        - "forge.<NODE_IP>.nip.io"
+        - "market.<NODE_IP>.nip.io"
+        - "auto.<NODE_IP>.nip.io"
+
+# Bundled data services on local-path (inherited from the chart's values-k3s;
+# restated for clarity).
+postgres:
+  enabled: true
+minio:
+  enabled: true
+redis:
+  enabled: true

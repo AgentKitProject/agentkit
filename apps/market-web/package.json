@@ -1,0 +1,35 @@
+{
+  "name": "agentkitmarket-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test lib/*.test.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@agentkitforge/contracts": "workspace:*",
+    "@agentkitforge/ui": "workspace:*",
+    "@workos-inc/authkit-nextjs": "^4.1.1",
+    "iron-session": "^8.0.4",
+    "jose": "^5.10.0",
+    "next": "^15.3.3",
+    "openid-client": "^6.8.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "optionalDependencies": {
+    "@agentkit-commercial/market-web": "*"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^15.3.3",
+    "typescript": "^5.8.3"
+  }
+}

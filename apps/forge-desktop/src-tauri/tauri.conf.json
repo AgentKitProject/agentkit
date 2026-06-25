@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AgentKitForge",
+  "version": "0.6.2",
+  "identifier": "com.agentkitforge.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev:frontend",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build:backend && npm run build:frontend",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AgentKitForge",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 960,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "AgentKitForge",
+    "shortDescription": "Desktop app for portable Agent Kits.",
+    "longDescription": "AgentKitForge is a desktop app for building, validating, packaging, installing, and using portable Agent Kits.",
+    "copyright": "Copyright (c) AgentKitForge",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": [
+      "backend-dist/validate-agent-kit.mjs",
+      "backend-dist/security-utils.mjs",
+      "backend-dist/create-agent-kit.mjs",
+      "backend-dist/export-agent-kit-onefile.mjs",
+      "backend-dist/render-agent-kit-draft.mjs",
+      "backend-dist/generate-agent-kit-draft.mjs",
+      "backend-dist/render-generated-agent-kit-draft.mjs",
+      "backend-dist/package-agent-kit.mjs",
+      "backend-dist/build-agent-kit-context.mjs",
+      "backend-dist/prepared-prompts.mjs",
+      "backend-dist/agent-kit-app-support.mjs",
+      "backend-dist/export-agent-kit-codex.mjs",
+      "backend-dist/export-agent-kit-claude-code.mjs",
+      "backend-dist/agent-kit-version.mjs",
+      "backend-dist/market-operation.mjs",
+      "backend-dist/chunks"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "agentkitforge"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJDMDYzNzdCOTQ3NDNBQTgKUldTb09uU1VlemNHdkZRTE9nVHZkK3lwVDdSS21ETENUdkdnVlh5aHhQQ1ZzNWRNQUpLOThPNUIK",
+      "endpoints": [
+        "https://forge.agentkitproject.com/updates/latest.json"
+      ]
+    }
+  }
+}

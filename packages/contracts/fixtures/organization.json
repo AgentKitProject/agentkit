@@ -1,0 +1,13 @@
+{
+  "orgId": "org_01HXYZ",
+  "slug": "acme-labs",
+  "displayName": "Acme Labs",
+  "type": "team",
+  "ownerUserId": "user_01HXYZ",
+  "handle": "acmelabs",
+  "avatarInitials": "AL",
+  "verified": false,
+  "workosOrganizationId": null,
+  "createdAt": "2026-06-15T00:00:00Z",
+  "updatedAt": "2026-06-15T00:00:00Z"
+}

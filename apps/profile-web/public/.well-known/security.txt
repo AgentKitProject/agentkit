@@ -1,0 +1,3 @@
+Contact: mailto:hello@agentkit-project.com
+Expires: 2026-12-31T00:00:00.000Z
+Policy: https://profile.agentkitproject.com/security

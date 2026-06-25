@@ -1,0 +1,13 @@
+# ===========================================================================
+# namespace.yaml — the single app namespace for all AgentKit self-host
+# workloads (Dex, Forge, Market, Auto, and their bundled Postgres/MinIO/Redis).
+#
+# The other namespaces this bundle touches already exist and are NOT created
+# here: `kube-system` (CoreDNS rewrite target) and `tailscale` (the operator's
+# namespace, where the minted cert lives — see ../bootstrap/coredns-rewrite.yaml
+# and ../bootstrap/cert-sync.yaml).
+# ===========================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentkit

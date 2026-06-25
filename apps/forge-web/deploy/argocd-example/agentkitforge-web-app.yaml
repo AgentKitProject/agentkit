@@ -1,0 +1,73 @@
+# ---------------------------------------------------------------------------
+# EXAMPLE ArgoCD Application for agentkitforge-web (self-host on k3s).
+#
+# This is an EXAMPLE, not a supported/maintained manifest — copy it into your
+# own GitOps repo and adjust. It points ArgoCD at the Helm chart in THIS public
+# repo and renders it with the values-k3s.yaml self-host preset (generic OIDC,
+# bundled Postgres + MinIO, Market OFF).
+#
+# It deliberately has NO placeholders, NO Infisical CRs, and NO private-repo /
+# GHCR pull-secret assumptions: the chart image is PUBLIC, and self-host secrets
+# are supplied by a PLAIN Kubernetes Secret that YOU create (see below).
+#
+# Prereqs you provide out-of-band (not managed here):
+#   1. A plain Secret in the target namespace with your OIDC client secret +
+#      any pinned values, then set web.secrets.existingSecret to its name. Or
+#      omit it and let the chart generate everything except the OIDC client
+#      secret (which you must supply — see the example Secret at the bottom).
+#   2. Your public origin (appUrl) and OIDC issuer/clientId — set via the
+#      `helm.parameters` below.
+# ---------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentkitforge-web
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentkitforge-web
+  source:
+    repoURL: https://github.com/AgentKitProject/agentkitforge-web.git
+    targetRevision: main          # or a release tag, e.g. v0.1.0
+    path: charts/agentkitforge-web
+    helm:
+      valueFiles:
+        - values-k3s.yaml
+      # Supply your instance-specific config here (or in your own values file).
+      parameters:
+        - name: web.config.appUrl
+          value: https://forge.example.com
+        - name: web.auth.oidc.issuer
+          value: https://idp.example.com/realms/main
+        - name: web.auth.oidc.clientId
+          value: agentkitforge-web
+        # Reference a plain Secret you created in the destination namespace that
+        # holds OIDC_CLIENT_SECRET (and optionally SESSION_SECRET,
+        # AGENTKITFORGE_WEB_SECRET, POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD). When
+        # set, the chart does NOT manage its own Secret.
+        - name: web.secrets.existingSecret
+          value: agentkitforge-web-secret
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+# ---------------------------------------------------------------------------
+# Example plain Secret to create yourself (kubectl apply -f), referenced above.
+# At minimum it needs OIDC_CLIENT_SECRET; the chart generates the rest if absent.
+# ---------------------------------------------------------------------------
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: agentkitforge-web-secret
+#   namespace: agentkitforge-web
+# type: Opaque
+# stringData:
+#   OIDC_CLIENT_SECRET: "<client secret from your IdP>"
+#   SESSION_SECRET: "<openssl rand -base64 32>"
+#   AGENTKITFORGE_WEB_SECRET: "<openssl rand -base64 32>"
+#   POSTGRES_PASSWORD: "<openssl rand -base64 24>"
+#   MINIO_ROOT_PASSWORD: "<openssl rand -base64 24>"

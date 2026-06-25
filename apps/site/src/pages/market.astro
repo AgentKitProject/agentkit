@@ -1,0 +1,54 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeUrl, marketUrl, roadmapUrl } from '../data/products';
+---
+<BaseLayout
+  title="AgentKitMarket"
+  description="AgentKitMarket is the public catalog and sharing foundation for portable Agent Kits."
+  theme="market"
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Public preview foundation</p>
+      <h1>AgentKitMarket helps people discover and distribute Agent Kits.</h1>
+      <p class="lead">
+        Market is the active public catalog and sharing foundation for Agent Kits. Phase 1 focuses
+        on public browsing, signed-in submissions and downloads, admin review, and clean profile
+        display. Private catalogs and commercial marketplace features are planned later.
+      </p>
+      <div class="button-row">
+        <a class="button" href={marketUrl}>Open AgentKitMarket</a>
+        <a class="button secondary" href={roadmapUrl}>View roadmap</a>
+        <a class="button secondary" href={forgeUrl}>Build kits in Forge</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid two">
+      <article class="content-panel">
+        <h2>First: public and personal sharing.</h2>
+        <p>
+          Market starts with discoverable public kits, signed-in submission and download flows,
+          admin validation/review/publish, and safe public profile display.
+        </p>
+      </article>
+      <article class="content-panel">
+        <h2>Later: private, team, and company distribution.</h2>
+        <p>
+          Private repositories, team catalogs, company marketplaces, governance, and commercial
+          distribution belong to later phases. This site includes no fake listings, auth, payments,
+          or marketplace APIs.
+        </p>
+      </article>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section:first-child {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--market) 14%, transparent), transparent 34rem),
+      transparent;
+  }
+</style>

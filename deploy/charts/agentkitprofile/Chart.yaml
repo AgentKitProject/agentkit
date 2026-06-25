@@ -1,0 +1,12 @@
+apiVersion: v2
+name: agentkitprofile
+description: Self-hosted AgentKitProfile (Next.js web UI + folded-in profile-api)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agentkit
+  - profile
+home: https://agentkitproject.com
+sources:
+  - https://github.com/AgentKitProject/agentkitprofile-app

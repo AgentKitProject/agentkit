@@ -1,0 +1,907 @@
+/* AgentKitForge Web UI — app-specific styles.
+ *
+ * The shell (sidebar nav rail, topbar, brand, account block), the design
+ * TOKENS, base resets, buttons, inputs, cards, and badges now come from the
+ * shared framework `@agentkitforge/ui` (`@agentkitforge/ui/styles.css`,
+ * imported in app/layout.tsx before this file). The web Forge shell is the
+ * framework `AppShell` (see app/forge/ForgeApp.tsx).
+ *
+ * What remains here is the app-specific layer the framework doesn't cover:
+ *   • a token BRIDGE that maps the section markup's legacy `--color-*` /
+ *     `--radius-*` / `--shadow-*` names onto the framework's `--ak-*` tokens,
+ *     so every section (and dark mode) is driven by the single shared palette;
+ *   • the bespoke section layouts/components that haven't been ported to
+ *     framework primitives (build/use/run/import/package/settings/about
+ *     panels, kit cards, validation banners, file-tree editor, segmented
+ *     controls, etc.);
+ *   • web-only pieces the desktop doesn't need: toast + modal overlay.
+ *
+ * To re-theme, change the framework tokens (or override --ak-brand* per app);
+ * the --color-* aliases below follow automatically. Light theme on :root,
+ * dark overrides under [data-theme="dark"] flow through the --ak-* values.
+ */
+
+:root {
+  /* Token bridge: legacy --color-* names → shared framework --ak-* tokens. */
+  --color-background: var(--ak-bg);
+  --color-surface: var(--ak-surface);
+  --color-muted-surface: var(--ak-surface-muted);
+  --color-text: var(--ak-text);
+  --color-text-secondary: var(--ak-muted);
+  --color-border: var(--ak-border);
+  --color-primary: var(--ak-brand);
+  --color-primary-hover: var(--ak-brand-strong);
+  --color-accent: var(--ak-accent);
+  --color-success: var(--ak-success);
+  --color-warning: var(--ak-warning);
+  --color-error: var(--ak-error);
+  --color-sidebar: var(--ak-sidebar);
+  --color-sidebar-active: var(--ak-sidebar-active);
+  --shadow-card: var(--ak-shadow);
+  --radius-card: var(--ak-radius-card);
+  --radius-control: var(--ak-radius-control);
+  --radius-panel: var(--ak-radius-card);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  min-height: 100vh;
+  color: var(--color-text);
+  background: var(--color-background);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+}
+
+button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+/* The eyebrow/panel-label small-caps style still used in section markup. The
+   shell brand/nav/topbar/account rules are now owned by the framework. */
+.eyebrow,
+.panel-label {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+label {
+  color: var(--color-text-secondary);
+  font-size: 0.86rem;
+  font-weight: 680;
+}
+
+/* Bare inputs/selects/textareas inside section markup (controls not wrapped in
+   a framework <Input>/<Select>/<Textarea>). Mirrors the framework control look
+   via the bridged tokens. */
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--ak-ring);
+}
+
+textarea {
+  min-height: 96px;
+  padding-top: 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+/* Active state for the framework SidebarAccount when the Account section is
+   open (the framework only ships hover styling). */
+.ak-sidebar__account--active,
+.ak-sidebar__account--active:hover {
+  color: var(--ak-brand);
+  background: var(--ak-sidebar-active);
+  border-color: color-mix(in srgb, var(--ak-brand) 28%, var(--ak-border));
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  max-width: 560px;
+  margin: 74px auto;
+  padding: 42px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.empty-state h2,
+.placeholder-card h2 {
+  margin: 18px 0 8px;
+  color: var(--color-text);
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.empty-state p,
+.placeholder-card p,
+.results-panel p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+/* Button styles (.primary-button/.secondary-button/.danger-button) were removed:
+   all section buttons now use the shared <Button> primitive (.ak-btn) from
+   @agentkitforge/ui. */
+
+.screen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.screen-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.build-layout {
+  display: grid;
+  grid-template-columns: minmax(min(100%, 340px), 440px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+  min-width: 0;
+}
+
+.import-screen .build-layout {
+  grid-template-columns: minmax(0, 760px);
+}
+
+.build-screen {
+  display: grid;
+  gap: 22px;
+}
+
+.segmented-control {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 0;
+  width: min(560px, 100%);
+  padding: 4px;
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.segment-button {
+  min-width: 0;
+  padding: 10px 14px;
+  color: var(--color-text-secondary);
+  font-weight: 800;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 4px);
+  cursor: pointer;
+}
+
+.segment-button:hover,
+.segment-button.active {
+  color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.build-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+
+.build-mode-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 110px;
+  padding: 16px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  text-align: left;
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.build-mode-card strong,
+.build-mode-card small,
+.build-mode-card em {
+  display: block;
+}
+
+.build-mode-card strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.build-mode-card small {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.build-mode-card em {
+  margin-top: 10px;
+  color: var(--color-primary);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.build-mode-card:hover,
+.build-mode-card.active {
+  border-color: rgba(79, 70, 229, 0.42);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.tab-button {
+  min-height: 38px;
+  padding: 0 14px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.tab-button:hover,
+.tab-button.active {
+  color: var(--color-primary);
+  background: var(--color-sidebar-active);
+  border-color: rgba(79, 70, 229, 0.24);
+}
+
+.placeholder-card,
+.form-panel,
+.results-panel {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.placeholder-card {
+  min-height: 200px;
+  padding: 22px;
+}
+
+.card-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: var(--color-primary);
+  background: var(--color-sidebar-active);
+  border-radius: 12px;
+}
+
+.form-layout {
+  display: grid;
+  grid-template-columns: minmax(min(100%, 320px), 460px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+  min-width: 0;
+}
+
+.form-panel {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+}
+
+.form-panel h2 {
+  margin: 0 0 8px;
+  color: var(--color-text);
+  font-size: 1.12rem;
+  letter-spacing: 0;
+}
+
+.form-copy {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.results-panel {
+  min-height: 240px;
+  padding: 22px;
+}
+
+.results-panel p {
+  margin-top: 14px;
+}
+
+.loading-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.inline-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 20%, var(--color-border));
+  border-top-color: var(--color-primary);
+  border-radius: 999px;
+  animation: spin 0.75s linear infinite;
+}
+
+.button-spinner {
+  width: 15px;
+  height: 15px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.inline-code {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: var(--color-text);
+}
+
+.error-state {
+  margin-top: 14px;
+  padding: 12px 14px;
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-error) 24%, var(--color-border));
+  border-radius: var(--radius-control);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.field-error {
+  margin-top: -4px;
+  color: var(--color-error);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.inline-warning {
+  padding: 10px 12px;
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
+  border-radius: var(--radius-control);
+  line-height: 1.45;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.settings-screen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  grid-auto-flow: row;
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+  max-width: 1400px;
+}
+
+.account-screen,
+.about-screen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+  max-width: 1200px;
+}
+
+.settings-panel,
+.account-panel,
+.about-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  height: auto;
+  align-content: start;
+  padding: 22px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.settings-panel h2,
+.account-panel h2,
+.about-panel h2 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.provider-list {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.provider-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-card p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.secret-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 10px;
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-error) 24%, var(--color-border));
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.secret-status.saved {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border));
+}
+
+.my-kits-screen,
+.use-screen,
+.install-targets-screen {
+  display: grid;
+  gap: 18px;
+}
+
+.screen-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.kit-list {
+  display: grid;
+  gap: 14px;
+}
+
+.kit-library-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.kit-library-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.kit-library-main h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.08rem;
+}
+
+.kit-library-main p {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.source-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  color: var(--color-primary);
+  background: var(--color-sidebar-active);
+  border: 1px solid rgba(79, 70, 229, 0.24);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.kit-meta-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px 18px;
+  margin: 0;
+}
+
+.kit-meta-grid div {
+  display: contents;
+}
+
+.kit-meta-grid dt {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.kit-meta-grid dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.json-panel {
+  overflow: auto;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 0;
+  padding: 14px;
+  color: var(--color-text);
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.validation-report {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-banner.valid {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border));
+}
+
+.status-banner.invalid {
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-error) 24%, var(--color-border));
+}
+
+.update-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
+  border-radius: var(--radius-control);
+  min-width: 0;
+}
+
+.update-banner p {
+  margin: 0;
+}
+
+.created-files ul {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  color: var(--color-text);
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  list-style-position: inside;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.about-links a,
+.about-links button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--color-text);
+  text-decoration: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.about-links a:hover,
+.about-links button:hover {
+  color: var(--color-primary);
+  background: var(--color-muted-surface);
+  border-color: rgba(79, 70, 229, 0.35);
+}
+
+.about-meta {
+  padding: 12px 14px;
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+pre {
+  overflow-x: auto;
+}
+
+:where(p, h1, h2, h3, strong, span, small, label, button, summary, dd, dt, li) {
+  overflow-wrap: anywhere;
+}
+
+/* ===========================================================================
+ * Web additions — pieces the desktop app doesn't need (toast, modal overlay,
+ * file-tree editor split-pane). These reuse the design tokens above.
+ * ======================================================================== */
+
+.akf-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 60;
+  max-width: 380px;
+  padding: 0.8rem 1rem;
+  color: #ffffff;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  background: #0f172a;
+  border-radius: var(--radius-control);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.akf-toast.err {
+  background: var(--color-error);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: start center;
+  padding: 48px 16px;
+  overflow: auto;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.modal-card {
+  width: min(680px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.editor-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.file-tree {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  max-height: 560px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.file-tree button {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 7px 10px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.file-tree button:hover {
+  background: var(--color-muted-surface);
+}
+
+.file-tree button[aria-selected="true"] {
+  color: var(--color-primary);
+  background: var(--color-sidebar-active);
+  border-color: rgba(79, 70, 229, 0.24);
+}
+
+.code-area {
+  width: 100%;
+  min-height: 480px;
+  padding: 12px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.preview-list {
+  margin: 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  color: var(--color-text-secondary);
+  background: var(--color-muted-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  list-style-position: inside;
+}
+
+/* Responsive: the shell rail/topbar collapse is handled by the framework
+   (.ak-app / .ak-sidebar / .ak-topbar media queries). Here we only stack the
+   app-specific section layouts. */
+@media (max-width: 980px) {
+  .form-layout,
+  .build-layout,
+  .screen-grid,
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .build-mode-grid {
+    grid-template-columns: 1fr;
+  }
+}

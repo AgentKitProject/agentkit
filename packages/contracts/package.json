@@ -1,0 +1,42 @@
+{
+  "name": "@agentkitforge/contracts",
+  "version": "0.15.0",
+  "description": "Shared cross-service contracts for the AgentKitProject ecosystem: payload schemas, route builders, status enums, and the environment service manifest.",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./environments.json": "./environments.json",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "files": [
+    "dist",
+    "environments.json",
+    "fixtures"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.ts",
+    "prepare": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentKitProject/agentkitproject-contracts.git"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

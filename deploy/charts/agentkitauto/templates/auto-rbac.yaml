@@ -1,0 +1,58 @@
+{{- if and .Values.web.enabled .Values.auto.enabled -}}
+{{- /*
+AgentKitAuto self-host RBAC.
+
+The web app dispatches each Auto run by CREATING a Kubernetes Job dynamically
+(server/core/auto-kube-dispatcher.ts). That requires the web pod's ServiceAccount
+to manage batch/v1 Jobs (and read their pods/logs for status) in the Auto
+namespace. We grant exactly that — scoped to a namespaced Role, NOT cluster-wide.
+
+The Job-management verbs are namespace-scoped to auto.namespace (defaults to the
+release namespace). Kubernetes TTL auto-cleans finished Jobs, but we also grant
+delete so the operator/app can prune.
+*/ -}}
+{{- $sa := include "agentkitauto.webServiceAccountName" . -}}
+{{- $autoNs := include "agentkitauto.autoNamespace" . -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $sa }}
+  labels:
+    {{- include "agentkitauto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "agentkitauto.fullname" . }}-auto-dispatch
+  namespace: {{ $autoNs }}
+  labels:
+    {{- include "agentkitauto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auto
+rules:
+  # The dispatcher creates/gets/lists/deletes Auto worker Jobs.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # Read the Job's pods + logs for run status/diagnostics.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "agentkitauto.fullname" . }}-auto-dispatch
+  namespace: {{ $autoNs }}
+  labels:
+    {{- include "agentkitauto.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auto
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "agentkitauto.fullname" . }}-auto-dispatch
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
