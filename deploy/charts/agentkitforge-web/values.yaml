@@ -200,3 +200,14 @@ minio:
   storage:
     size: 10Gi
     storageClassName: local-path
+
+# ---------------------------------------------------------------------------
+# Database TLS
+#
+# Optional Postgres CA certificate for sslmode=verify-full. When caSecret is
+# set, the named k8s Secret (key "ca-certificate.crt") is mounted read-only at
+# /etc/db-ca/ on every container that connects to the database. Leave empty to
+# change nothing (existing installs are unaffected).
+# ---------------------------------------------------------------------------
+database:
+  caSecret: ""

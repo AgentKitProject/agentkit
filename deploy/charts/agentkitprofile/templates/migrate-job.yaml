@@ -45,6 +45,20 @@ spec:
             - name: PROFILE_DB_SSL
               value: {{ .Values.web.config.profileDbSsl | quote }}
             {{- end }}
+          {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+          {{- if .Values.database.caSecret }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /etc/db-ca
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.migrate.resources | nindent 12 }}
+      {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+      {{- if .Values.database.caSecret }}
+      volumes:
+        - name: db-ca
+          secret:
+            secretName: {{ .Values.database.caSecret }}
+      {{- end }}
 {{- end }}

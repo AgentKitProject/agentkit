@@ -149,6 +149,13 @@ spec:
             {{- with .Values.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+          {{- if .Values.database.caSecret }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /etc/db-ca
+              readOnly: true
+          {{- end }}
           readinessProbe:
             httpGet:
               path: /health
@@ -165,4 +172,11 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
+      {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+      {{- if .Values.database.caSecret }}
+      volumes:
+        - name: db-ca
+          secret:
+            secretName: {{ .Values.database.caSecret }}
+      {{- end }}
 {{- end }}
