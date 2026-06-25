@@ -2,17 +2,22 @@ import commonjs from "@rollup/plugin-commonjs";
 import { nodeResolve } from "@rollup/plugin-node-resolve";
 import { rollup } from "rollup";
 import { builtinModules } from "node:module";
-import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceBackendDir = path.join(root, "src-tauri", "backend");
 const distBackendDir = path.join(root, "src-tauri", "backend-dist");
-const sidecarDir = path.join(root, "src-tauri", "binaries");
 const tempBackendDir = path.join(root, "src-tauri", ".backend-build");
+
+// Resolve bare imports against this app package (not the temp build dir, which
+// sits outside node_modules). In the pnpm/Turborepo monorepo, workspace deps
+// (@agentkitforge/core) and direct deps (jszip) are symlinked into this app's
+// node_modules; the temp .backend-build dir is not, so node-resolve must be
+// anchored at the package root to find them. Core's own transitive deps
+// (yaml/zod/commander/contracts) resolve from core's node_modules as usual.
+const moduleResolveRoots = [path.join(root, "node_modules")];
 
 await rm(distBackendDir, { force: true, recursive: true });
 await rm(tempBackendDir, { force: true, recursive: true });
@@ -39,6 +44,10 @@ const bundle = await rollup({
     nodeResolve({
       exportConditions: ["node", "import", "default"],
       preferBuiltins: true,
+      // Anchor module resolution at this app's node_modules so pnpm-symlinked
+      // workspace + direct deps resolve even though the bridge sources are
+      // bundled from a temp dir outside node_modules.
+      modulePaths: moduleResolveRoots,
     }),
     commonjs(),
   ],
@@ -61,9 +70,13 @@ await bundle.write({
 await bundle.close();
 
 await rm(tempBackendDir, { force: true, recursive: true });
-await prepareNodeSidecar();
 
 console.log(`Bundled ${backendFiles.length} backend bridge file(s) into ${path.relative(root, distBackendDir)}.`);
+// Note: staging the standalone Node sidecar binary is a Tauri *packaging*
+// concern (it needs a statically-linkable Node, unavailable in plain dev/CI),
+// so it lives in scripts/prepare-node-sidecar.mjs and runs from build:tauri —
+// not here. This keeps `build`/`build:backend` runnable under `turbo run build`
+// without the Rust toolchain or a release-grade Node binary.
 
 function preparePackagedBridgeSource(source) {
   return source
@@ -83,139 +96,4 @@ function preparePackagedBridgeSource(source) {
       /async function loadCoreGateway\(\) \{[\s\S]*?\n\}/,
       'async function loadCoreGateway() {\n  return import("@agentkitforge/core/gateway");\n}',
     );
-}
-
-async function prepareNodeSidecar() {
-  const targetTriple = resolveTauriTargetTriple();
-  const extension = process.platform === "win32" ? ".exe" : "";
-  const sidecarPath = path.join(sidecarDir, `node-${targetTriple}${extension}`);
-
-  await mkdir(sidecarDir, { recursive: true });
-  const { sourceNodePath, rejected } = await prepareNodeSidecarFromCandidates(sidecarPath);
-  if (sourceNodePath) {
-    console.log(`Prepared Node sidecar at ${path.relative(root, sidecarPath)} from ${sourceNodePath}.`);
-    return;
-  }
-  throw new Error(
-    [
-      "No bundleable Node sidecar candidate was found for packaged builds.",
-      "Install a standalone Node binary or set AGENTKITFORGE_NODE_SIDECAR=/absolute/path/to/node.",
-      rejected.length ? `Rejected candidates:\n${rejected.map((entry) => `- ${entry}`).join("\n")}` : "",
-    ].filter(Boolean).join("\n"),
-  );
-}
-
-async function prepareNodeSidecarFromCandidates(sidecarPath) {
-  const overridePath = process.env.AGENTKITFORGE_NODE_SIDECAR?.trim();
-  const candidates = overridePath
-    ? [path.resolve(overridePath)]
-    : [
-        process.execPath,
-        "/Applications/AgentKitForge.app/Contents/MacOS/node",
-        sidecarPath,
-      ];
-  const rejected = [];
-  for (const candidate of candidates) {
-    if (!candidate || !existsSync(candidate)) {
-      rejected.push(`${candidate}: file does not exist`);
-      continue;
-    }
-    const bundleable = nodeSidecarBundleability(candidate);
-    if (!bundleable.ok) {
-      rejected.push(`${candidate}: ${bundleable.reason}`);
-      continue;
-    }
-    const runnable = nodeSidecarRuns(candidate);
-    if (!runnable.ok) {
-      rejected.push(`${candidate}: ${runnable.reason}`);
-      continue;
-    }
-
-    try {
-      if (path.resolve(candidate) !== path.resolve(sidecarPath)) {
-        await copyFile(candidate, sidecarPath);
-      }
-      if (process.platform !== "win32") {
-        await chmod(sidecarPath, 0o755);
-      }
-      const prepared = nodeSidecarRuns(sidecarPath);
-      if (!prepared.ok) {
-        rejected.push(`${candidate}: prepared sidecar check failed: ${prepared.reason}`);
-        continue;
-      }
-    } catch (error) {
-      rejected.push(`${candidate}: unable to prepare sidecar: ${error.message}`);
-      continue;
-    }
-
-    if (!overridePath && candidate !== process.execPath) {
-      console.log(`Using fallback Node sidecar candidate: ${candidate}`);
-    }
-    return { sourceNodePath: path.resolve(candidate), rejected };
-  }
-  return { sourceNodePath: null, rejected };
-}
-
-function nodeSidecarBundleability(sourceNodePath) {
-  if (process.platform !== "darwin") {
-    return { ok: true };
-  }
-
-  const otool = spawnSync("otool", ["-L", sourceNodePath], {
-    encoding: "utf8",
-  });
-  if (otool.error || otool.status !== 0) {
-    const detail = otool.stderr?.trim() || otool.error?.message || "unknown error";
-    return { ok: false, reason: `Unable to inspect Node sidecar candidate with otool: ${detail}` };
-  }
-
-  const unresolvedRpathDependencies = otool.stdout
-    .split("\n")
-    .map((line) => line.trim().split(" ")[0])
-    .filter((dependency) => dependency.startsWith("@rpath/"));
-
-  if (unresolvedRpathDependencies.length > 0) {
-    return {
-      ok: false,
-      reason: [
-        `Node sidecar candidate is dynamically linked and cannot be copied as a standalone Tauri sidecar: ${sourceNodePath}`,
-        `Unbundled @rpath dependencies: ${unresolvedRpathDependencies.join(", ")}`,
-      ].join("\n"),
-    };
-  }
-
-  return { ok: true };
-}
-
-function nodeSidecarRuns(sidecarPath) {
-  const check = spawnSync(sidecarPath, ["--version"], {
-    encoding: "utf8",
-  });
-  if (check.error || check.status !== 0) {
-    const detail = check.stderr?.trim() || check.error?.message || "unknown error";
-    return { ok: false, reason: `Node sidecar failed to start: ${detail}` };
-  }
-  return { ok: true };
-}
-
-function resolveTauriTargetTriple() {
-  const platform = process.platform;
-  const arch = process.arch;
-
-  if (platform === "win32") {
-    if (arch === "x64") return "x86_64-pc-windows-msvc";
-    if (arch === "arm64") return "aarch64-pc-windows-msvc";
-  }
-
-  if (platform === "darwin") {
-    if (arch === "x64") return "x86_64-apple-darwin";
-    if (arch === "arm64") return "aarch64-apple-darwin";
-  }
-
-  if (platform === "linux") {
-    if (arch === "x64") return "x86_64-unknown-linux-gnu";
-    if (arch === "arm64") return "aarch64-unknown-linux-gnu";
-  }
-
-  throw new Error(`Unsupported Node sidecar platform: ${platform}/${arch}`);
 }

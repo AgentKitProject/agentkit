@@ -493,14 +493,22 @@ test("GitHub Actions macOS packaging remains explicit after local build wrapper 
 
 test("local macOS builds auto-handle Node sidecar and DMG wrapper gotchas", async () => {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
-  const backendScript = await readFile("scripts/build-backend.mjs", "utf8");
+  // Node sidecar staging is a Tauri packaging concern (needs a
+  // statically-linkable Node), so it lives in its own script and runs from
+  // build:tauri — not from build:backend, which must stay runnable under
+  // `turbo run build` without a release-grade Node binary.
+  const sidecarScript = await readFile("scripts/prepare-node-sidecar.mjs", "utf8");
   const tauriBuildScript = await readFile("scripts/build-tauri.mjs", "utf8");
 
-  assert.equal(packageJson.scripts["build:tauri"], "node scripts/build-tauri.mjs");
-  assert.match(backendScript, /AGENTKITFORGE_NODE_SIDECAR/);
-  assert.match(backendScript, /\/Applications\/AgentKitForge\.app\/Contents\/MacOS\/node/);
-  assert.match(backendScript, /No bundleable Node sidecar candidate was found/);
-  assert.match(backendScript, /Using fallback Node sidecar candidate/);
+  assert.equal(
+    packageJson.scripts["build:tauri"],
+    "npm run prepare:sidecar && node scripts/build-tauri.mjs",
+  );
+  assert.equal(packageJson.scripts["prepare:sidecar"], "node scripts/prepare-node-sidecar.mjs");
+  assert.match(sidecarScript, /AGENTKITFORGE_NODE_SIDECAR/);
+  assert.match(sidecarScript, /\/Applications\/AgentKitForge\.app\/Contents\/MacOS\/node/);
+  assert.match(sidecarScript, /No bundleable Node sidecar candidate was found/);
+  assert.match(sidecarScript, /Using fallback Node sidecar candidate/);
   assert.match(tauriBuildScript, /--bundles", "app"/);
   assert.match(tauriBuildScript, /avoid Tauri's generated DMG wrapper/);
   assert.match(tauriBuildScript, /signLocalMacosAppIfNeeded/);
