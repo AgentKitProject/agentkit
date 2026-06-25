@@ -1,48 +1,100 @@
 <!--
-  Reusable OG-card template (1200x630) for the AgentKitProject ecosystem.
+  OG-card template (1200x630) — interim v2.
   Placeholders replaced by scripts/generate-og.mjs:
-    AgentKitAuto    — large headline (per-surface, e.g. "AgentKitMarket")
+    AgentKitAuto    — large headline (e.g. "AgentKitMarket")
     Schedule and automate trusted kits.  — one-line subtitle
-    #16a34a   — accent hex (per-surface brand color)
-  This is a brand-consistent PLACEHOLDER card. A designer may replace it with a
-  richer treatment (see DOCS_LAUNCH_POLISH_PLAN.md, P2 #6).
+    #16a34a   — accent hex (per-app brand color from BRAND_ACCENTS)
+  Single shared template, per-app accent drives the visual personality.
+  Designed as a programmatic interim until final designer artwork is ready.
 -->
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Dark navy background gradient, diagonal -->
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#091227"/>
-      <stop offset="1" stop-color="#111b35"/>
+      <stop offset="0%" stop-color="#0b1120"/>
+      <stop offset="100%" stop-color="#0f1a30"/>
     </linearGradient>
-    <linearGradient id="accentbar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#2c77f1"/>
-      <stop offset="0.5" stop-color="#0fb3d1"/>
-      <stop offset="1" stop-color="#6d46e9"/>
+    <!-- Accent bloom: large soft radial at top-right -->
+    <radialGradient id="bloom" cx="1" cy="0" r="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#16a34a" stop-opacity="0.30"/>
+      <stop offset="55%" stop-color="#16a34a" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Counter-bloom: lower-left in muted blue -->
+    <radialGradient id="bloom2" cx="0" cy="1" r="0.9" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#2563eb" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Left accent bar gradient: accent → transparent downward -->
+    <linearGradient id="sidebar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16a34a"/>
+      <stop offset="60%" stop-color="#16a34a" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Ecosystem rainbow bar: accent + flanking ecosystem colors -->
+    <linearGradient id="rainbar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="33%" stop-color="#0fb3d1"/>
+      <stop offset="66%" stop-color="#16a34a"/>
+      <stop offset="100%" stop-color="#6d46e9"/>
     </linearGradient>
   </defs>
 
+  <!-- Base background -->
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect width="1200" height="10" fill="url(#accentbar)"/>
 
-  <!-- soft accent glow -->
-  <circle cx="1040" cy="120" r="320" fill="#16a34a" opacity="0.14"/>
-  <circle cx="120" cy="560" r="240" fill="#2c77f1" opacity="0.10"/>
+  <!-- Accent bloom (top-right) -->
+  <rect width="1200" height="630" fill="url(#bloom)"/>
 
-  <!-- eyebrow -->
-  <text x="90" y="240" font-family="Inter, sans-serif" font-size="30" font-weight="800"
-        letter-spacing="4" fill="#16a34a">AGENTKITPROJECT</text>
+  <!-- Counter-bloom (bottom-left) -->
+  <rect width="1200" height="630" fill="url(#bloom2)"/>
 
-  <!-- title -->
-  <text x="86" y="350" font-family="Inter, sans-serif" font-size="86" font-weight="900"
-        fill="#ffffff">AgentKitAuto</text>
+  <!-- Left vertical accent stripe — 6px, full height, fades out below center -->
+  <rect x="0" y="0" width="6" height="630" fill="url(#sidebar)"/>
 
-  <!-- tagline -->
-  <text x="90" y="430" font-family="Inter, sans-serif" font-size="36" font-weight="500"
-        fill="#aeb9cc">Schedule and automate trusted kits.</text>
+  <!-- Top rainbow bar — 3px, ecosystem identity marker -->
+  <rect x="0" y="0" width="1200" height="3" fill="url(#rainbar)"/>
 
-  <!-- footer accent dot row -->
-  <circle cx="100" cy="540" r="9" fill="#5b4cf0"/>
-  <circle cx="128" cy="540" r="9" fill="#0fb3d1"/>
-  <circle cx="156" cy="540" r="9" fill="#16a34a"/>
-  <text x="180" y="548" font-family="Inter, sans-serif" font-size="26" font-weight="600"
-        fill="#aeb9cc">agentkitproject.com</text>
+  <!-- Geometric accent rings (top-right corner, behind content) -->
+  <circle cx="1100" cy="80" r="280" fill="none" stroke="#16a34a" stroke-width="1" opacity="0.12"/>
+  <circle cx="1100" cy="80" r="180" fill="none" stroke="#16a34a" stroke-width="1" opacity="0.18"/>
+
+  <!-- Eyebrow label -->
+  <text
+    x="80" y="230"
+    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-size="22" font-weight="700" letter-spacing="6"
+    fill="#16a34a" opacity="0.9"
+  >AGENTKITPROJECT</text>
+
+  <!-- Separator rule under eyebrow -->
+  <rect x="80" y="244" width="48" height="2" fill="#16a34a" opacity="0.5" rx="1"/>
+
+  <!-- App title — primary headline -->
+  <text
+    x="78" y="360"
+    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-size="88" font-weight="800" letter-spacing="-2"
+    fill="#ffffff"
+  >AgentKitAuto</text>
+
+  <!-- Tagline -->
+  <text
+    x="80" y="432"
+    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-size="34" font-weight="400" letter-spacing="0"
+    fill="#8fa3bf"
+  >Schedule and automate trusted kits.</text>
+
+  <!-- Footer area: accent dot trio + domain -->
+  <circle cx="80" cy="548" r="7" fill="#4f46e5" opacity="0.9"/>
+  <circle cx="100" cy="548" r="7" fill="#0fb3d1" opacity="0.9"/>
+  <circle cx="120" cy="548" r="7" fill="#16a34a" opacity="0.9"/>
+
+  <text
+    x="144" y="554"
+    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-size="24" font-weight="500"
+    fill="#5a7090"
+  >agentkitproject.com</text>
 </svg>
