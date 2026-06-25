@@ -37,7 +37,7 @@ COPY packages/core/package.json          packages/core/package.json
 COPY packages/market-core/package.json   packages/market-core/package.json
 COPY packages/auto-core/package.json     packages/auto-core/package.json
 COPY packages/gateway-core/package.json  packages/gateway-core/package.json
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild
 
 FROM base AS builder
 ENV NEXT_TELEMETRY_DISABLED=1
