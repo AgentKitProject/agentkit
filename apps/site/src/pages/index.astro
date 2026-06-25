@@ -4,9 +4,9 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { forgeUrl, githubOrgUrl, marketUrl, products, profileUrl, roadmapUrl, webForgeUrl } from '../data/products';
 
 const flow = [
-  ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits on your computer in AgentKitForge, using prompts, skills, policies, templates, examples, and context.'],
-  ['Share & Browse', 'var(--market)', 'Publish, discover, and browse validated kits through AgentKitMarket as the sharing layer comes online.'],
-  ['Schedule & Automate', 'var(--auto)', 'Schedule and trigger trusted kits with AgentKitAuto when the automation layer ships.']
+  ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits in AgentKitForge — on your desktop or in the browser — using prompts, skills, policies, templates, examples, and context.'],
+  ['Share & Browse', 'var(--market)', 'Publish, discover, and download validated kits through AgentKitMarket — with organizations, private catalogs, and paid kits.'],
+  ['Schedule & Automate', 'var(--auto)', 'Schedule and trigger trusted kits with AgentKitAuto on demand, on a schedule, or from webhooks — hosted or self-hosted.']
 ];
 ---
 <BaseLayout title="AgentKitProject">
@@ -16,9 +16,9 @@ const flow = [
       <p class="eyebrow">Portable Agent Kit ecosystem</p>
       <h1>Create, share, and automate Agent Kits.</h1>
       <p class="lead">
-        AgentKitProject is the ecosystem for repeatable AI work: build Agent Kits locally,
-        prepare them for trusted distribution, and eventually automate them across schedules,
-        events, and workflows.
+        AgentKitProject is the ecosystem for repeatable AI work: build Agent Kits locally
+        or in the browser, share and sell them through a validated catalog, and automate
+        them across schedules, events, and workflows.
       </p>
       <div class="button-row">
         <a class="button" href={forgeUrl}>Download Forge</a>
@@ -72,8 +72,8 @@ const flow = [
       <div class="content-panel">
         <p>
           AgentKitProject is designed around portable kit artifacts and open-source core tooling.
-          Forge is the current desktop product; Market and Auto are being shaped as separate
-          ecosystem layers rather than hidden backend features.
+          Forge (desktop and web), Market, and Auto are separate, independently usable ecosystem
+          layers — not hidden backend features — and the core engine and CLI are open source.
         </p>
         <p><a href={roadmapUrl}>See the ecosystem roadmap</a></p>
         <p><a href={githubOrgUrl}>Follow the project on GitHub</a></p>

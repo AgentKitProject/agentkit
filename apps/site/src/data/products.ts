@@ -21,9 +21,9 @@ export const products = [
     accent: '#5b4cf0',
     accentSoft: '#eef2ff',
     icon: '/brand/agentkitforge-icon.svg',
-    purpose: 'Build, edit, run, package, export, and install Agent Kits locally.',
+    purpose: 'Build, edit, run, package, export, and install Agent Kits — on desktop or in the browser.',
     summary:
-      'The local-first desktop app for creating portable Agent Kits and running them on your computer with your preferred AI provider. Cross-platform, signed, auto-updating.'
+      'The local-first app for creating portable Agent Kits and running them with your preferred AI provider. A cross-platform desktop build (signed, auto-updating) plus a browser-based Web Forge.'
   },
   {
     name: 'AgentKitMarket',
@@ -33,9 +33,9 @@ export const products = [
     accent: '#0fb3d1',
     accentSoft: '#ecfeff',
     icon: '/brand/agentkitmarket-icon.svg',
-    purpose: 'Discover, publish, validate, review, and distribute Agent Kits.',
+    purpose: 'Discover, publish, validate, review, distribute, and sell Agent Kits.',
     summary:
-      'The public catalog for Agent Kits — browse, submit, and download kits with admin review. Private team catalogs and self-hosted Market are coming in Phase 2.'
+      'The catalog for Agent Kits — browse, submit, and download kits with admin review. Now with organizations, private team catalogs, and paid kits. Self-hostable on your own infrastructure.'
   },
   {
     name: 'AgentKitAuto',
