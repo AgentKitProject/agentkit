@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import {
   Button,
   Card,
@@ -11,6 +11,10 @@ import {
   SidebarAccount,
   Badge,
   brandVars,
+  BRAND_ACCENTS,
+  ThemeToggle,
+  themeInitScript,
+  THEME_STORAGE_KEY,
 } from "../src/index.js";
 
 describe("Button", () => {
@@ -250,5 +254,75 @@ describe("brandVars", () => {
     expect(v["--ak-brand"]).toBe("#16a34a");
     expect(v["--ak-brand-strong"]).toBe("#16a34a");
     expect(v["--ak-brand-soft"]).toContain("color-mix");
+  });
+});
+
+describe("BRAND_ACCENTS", () => {
+  it("exposes the canonical per-app accents", () => {
+    expect(BRAND_ACCENTS.forge).toEqual({
+      accent: "#4f46e5",
+      strong: "#4338ca",
+    });
+    expect(BRAND_ACCENTS.market.accent).toBe("#0fb3d1");
+    expect(BRAND_ACCENTS.auto.accent).toBe("#16a34a");
+    expect(BRAND_ACCENTS.profile.accent).toBe("#2f8f89");
+    expect(BRAND_ACCENTS.site.accent).toBe("#6d46e9");
+  });
+});
+
+describe("themeInitScript", () => {
+  it("references the shared storage key and prefers-color-scheme fallback", () => {
+    const s = themeInitScript();
+    expect(THEME_STORAGE_KEY).toBe("akf-theme");
+    expect(s).toContain('"akf-theme"');
+    expect(s).toContain("prefers-color-scheme: dark");
+    expect(s).toContain('setAttribute("data-theme"');
+  });
+});
+
+describe("ThemeToggle", () => {
+  it("renders an icon button by default and flips data-theme on click", () => {
+    document.documentElement.removeAttribute("data-theme");
+    render(<ThemeToggle />);
+    const btn = screen.getByRole("button", { name: /switch to dark mode/i });
+    expect(btn).toHaveClass("ak-theme-toggle");
+    fireEvent.click(btn);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    // The label flips to offer the reverse action.
+    expect(
+      screen.getByRole("button", { name: /switch to light mode/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the nav variant as a labeled .ak-nav-item row", () => {
+    render(<ThemeToggle variant="nav" />);
+    const btn = screen.getByRole("button", { name: /switch to/i });
+    expect(btn).toHaveClass("ak-nav-item", "ak-theme-toggle--nav");
+    expect(
+      btn.querySelector(".ak-nav-item__label")?.textContent,
+    ).toMatch(/mode/i);
+  });
+});
+
+describe("Shells: built-in themeToggle slot", () => {
+  it("SiteShell renders the icon toggle when themeToggle is set", () => {
+    const { container } = render(
+      <SiteShell themeToggle account={<span>acct</span>}>
+        <div>c</div>
+      </SiteShell>,
+    );
+    expect(container.querySelector(".ak-theme-toggle")).not.toBeNull();
+    expect(container.querySelector(".ak-header__account-cluster")).not.toBeNull();
+  });
+
+  it("AppShell renders the nav toggle in the sidebar footer when set", () => {
+    const { container } = render(
+      <AppShell themeToggle nav={[{ label: "X", onClick: () => {} }]}>
+        <div>c</div>
+      </AppShell>,
+    );
+    const foot = container.querySelector(".ak-sidebar__foot");
+    expect(foot).not.toBeNull();
+    expect(foot?.querySelector(".ak-theme-toggle--nav")).not.toBeNull();
   });
 });

@@ -120,27 +120,6 @@ html[data-theme="dark"] .empty-state {
   color: var(--ak-muted);
 }
 
-/* Header theme-toggle button — rendered into the SiteShell account slot.
-   Styled off the framework tokens so it reads in both themes. */
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--ak-border, var(--market-line));
-  border-radius: 8px;
-  background: var(--ak-surface, #fff);
-  color: var(--ak-text, var(--market-navy));
-  cursor: pointer;
-  transition: var(--ak-transition, all 0.16s ease);
-}
-
-.theme-toggle:hover {
-  border-color: var(--ak-brand);
-  color: var(--ak-brand);
-}
-
 a {
   color: inherit;
   text-decoration: none;

@@ -7,15 +7,11 @@ import {
   SiteShell,
   DEFAULT_FOOTER_LINKS,
   navWithActive,
+  BRAND_ACCENTS,
   type NavItem,
 } from "@agentkitforge/ui";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 const AGENTKIT_PROFILE_ACCOUNT_URL = "https://profile.agentkitproject.com";
-
-// Market brand accent (cyan). Strong shade is the deeper teal used for hover.
-const MARKET_ACCENT = "#0fb3d1";
-const MARKET_ACCENT_STRONG = "#0b8ba6";
 
 export type SiteChromeProps = {
   /** Whether a user is signed in (resolved server-side). */
@@ -136,7 +132,8 @@ export function SiteChrome({ signedIn, showAdmin, children }: SiteChromeProps) {
     { label: "Submit Kit", href: "/submit" },
   ];
 
-  const accountInner = signedIn ? (
+  // The header dark-mode toggle is now the shell's built-in `themeToggle`.
+  const account = signedIn ? (
     <AccountDropdown showAdmin={showAdmin} />
   ) : (
     <Link className="ak-btn ak-btn--secondary ak-btn--sm" href="/auth/sign-in">
@@ -144,16 +141,9 @@ export function SiteChrome({ signedIn, showAdmin, children }: SiteChromeProps) {
     </Link>
   );
 
-  // Theme toggle sits alongside the existing account content in the header slot.
-  const account = (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-      <ThemeToggle />
-      {accountInner}
-    </div>
-  );
-
   return (
     <SiteShell
+      themeToggle
       logo={
         <Link href="/" aria-label="AgentKitMarket home" style={{ display: "inline-flex" }}>
           <Image
@@ -167,8 +157,8 @@ export function SiteChrome({ signedIn, showAdmin, children }: SiteChromeProps) {
       }
       nav={nav}
       account={account}
-      brandAccent={MARKET_ACCENT}
-      brandAccentStrong={MARKET_ACCENT_STRONG}
+      brandAccent={BRAND_ACCENTS.market.accent}
+      brandAccentStrong={BRAND_ACCENTS.market.strong}
       footer={{
         brandTitle: "AgentKitMarket",
         brandSubtitle: "Public discovery, review, and distribution for reusable Agent Kits.",

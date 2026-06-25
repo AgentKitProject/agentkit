@@ -83,6 +83,9 @@ islands). `react`/`react-dom` are peer deps.
 | `DEFAULT_NAV`, `navWithActive` | Pure-data ecosystem cross-nav (no `"use client"`, RSC/Astro-safe). |
 | `DEFAULT_FOOTER_LINKS` | Shared ecosystem + legal footer link set; contact `hello@agentkit-project.com`. |
 | `brandVars(accent, strong?, soft?)` | Inline-style helper that sets the three `--ak-brand*` vars. |
+| `BRAND_ACCENTS` / `BrandKey` | Canonical per-app accents (`forge`/`market`/`auto`/`profile`/`site`), each `{ accent, strong }`. Apps reference these instead of hardcoding hex. |
+| `ThemeToggle` | Built-in dark-mode toggle (`variant="icon"` for SiteShell header, `variant="nav"` for AppShell sidebar). Owns the FOUC-safe persist logic. |
+| `themeInitScript()` / `useTheme()` / `THEME_STORAGE_KEY` | FOUC-free pre-paint `<head>` script (server-safe), the shared theme hook, and the `akf-theme` storage key. |
 
 **Cross-nav is the load-bearing shared piece.** `DEFAULT_NAV` is the single
 source of truth for the ecosystem tab list (Home / Forge / Web Forge / Auto /
@@ -227,10 +230,12 @@ _Reference: `apps/site/src/layouts/BaseLayout.astro`._
 These cross-app design decisions are currently encoded by convention and should
 be confirmed (or centralized) rather than left implicit:
 
-1. **Brand accents (the table in §4).** Confirm the canonical accent per app.
-   Today each app sets these independently in its own CSS — should they instead
-   live as named exports in the package (e.g. `BRAND.market`,
-   `BRAND.profile`) so they cannot drift?
+1. ~~**Brand accents (the table in §4).**~~ **Resolved:** the canonical accents
+   now live as the `BRAND_ACCENTS` named export (`{ accent, strong }` per app)
+   and the four Next apps reference them via the shells' `brandAccent`/
+   `brandAccentStrong` props instead of hardcoding hex. The dark-mode toggle is
+   likewise centralized: apps enable the shells' built-in `themeToggle` and the
+   per-app `ThemeToggle.tsx` files were removed.
 2. **Logo ownership.** Logos are bespoke per app (inline SVG / `next/image`).
    Confirm they stay app-owned (the framework only provides the slot), vs.
    shipping a small `logos/` set from the package.

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Header, type HeaderProps } from "./Header.js";
 import { Footer, type FooterProps } from "./Footer.js";
+import { ThemeToggle } from "./ThemeToggle.js";
 import { brandVars } from "../brand.js";
 
 /**
@@ -24,6 +25,13 @@ export type SiteShellProps = {
   navChildren?: React.ReactNode;
   /** Account / sign-in slot passed through to Header. */
   account?: React.ReactNode;
+  /**
+   * Render the built-in dark-mode `ThemeToggle` (icon variant) in the header,
+   * before the `account` slot. Apps no longer ship a bespoke toggle. Pass a
+   * `storageKey` to override the persisted-theme key (defaults to `akf-theme`).
+   */
+  themeToggle?: boolean;
+  themeToggleStorageKey?: string;
   /** Footer props. */
   footer?: FooterProps;
   /**
@@ -46,6 +54,8 @@ export function SiteShell({
   nav,
   navChildren,
   account,
+  themeToggle,
+  themeToggleStorageKey,
   footer,
   brandAccent,
   brandAccentStrong,
@@ -59,6 +69,18 @@ export function SiteShell({
     ? brandVars(brandAccent, brandAccentStrong, brandAccentSoft)
     : undefined;
 
+  // When enabled, pair the built-in icon toggle with whatever account node the
+  // host passed (sign-in button / account menu), so it reads as one cluster.
+  const accountNode =
+    themeToggle ? (
+      <div className="ak-header__account-cluster">
+        <ThemeToggle storageKey={themeToggleStorageKey} />
+        {account}
+      </div>
+    ) : (
+      account
+    );
+
   return (
     <div
       className={["ak-shell", className].filter(Boolean).join(" ")}
@@ -68,7 +90,7 @@ export function SiteShell({
         Skip to content
       </a>
 
-      <Header logo={logo} brand={brand} nav={nav} account={account}>
+      <Header logo={logo} brand={brand} nav={nav} account={accountNode}>
         {navChildren}
       </Header>
 

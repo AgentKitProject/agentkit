@@ -3,6 +3,7 @@
 import * as React from "react";
 import { brandVars } from "../brand.js";
 import { SiteShell, type SiteShellProps } from "./SiteShell.js";
+import { ThemeToggle } from "./ThemeToggle.js";
 
 /**
  * A sidebar nav entry. `icon` is an optional leading node (e.g. a lucide
@@ -46,6 +47,14 @@ export type AppShellProps = {
   account?: React.ReactNode;
   /** Extra footer slot under the account block (help links, version, …). */
   sidebarFooter?: React.ReactNode;
+  /**
+   * Render the built-in dark-mode `ThemeToggle` (nav variant) in the sidebar
+   * footer, above any custom `sidebarFooter`. Apps no longer ship a bespoke
+   * toggle. Pass `themeToggleStorageKey` to override the persisted-theme key
+   * (defaults to `akf-theme`).
+   */
+  themeToggle?: boolean;
+  themeToggleStorageKey?: string;
 
   /** Topbar eyebrow (uppercase, above the title). */
   eyebrow?: React.ReactNode;
@@ -198,6 +207,8 @@ export function AppShell(props: AppShellProps) {
     navChildren,
     account,
     sidebarFooter,
+    themeToggle,
+    themeToggleStorageKey,
     eyebrow,
     title,
     actions,
@@ -224,6 +235,8 @@ export function AppShell(props: AppShellProps) {
         nav={nav as SiteShellProps["nav"]}
         navChildren={navChildren}
         account={account}
+        themeToggle={themeToggle}
+        themeToggleStorageKey={themeToggleStorageKey}
         footer={footer}
         brandAccent={brandAccent}
         brandAccentStrong={brandAccentStrong}
@@ -302,10 +315,16 @@ export function AppShell(props: AppShellProps) {
         <nav className="ak-sidebar__nav" aria-label="Primary">
           {navNodes}
         </nav>
-        {account || sidebarFooter ? (
+        {account || sidebarFooter || themeToggle ? (
           <div className="ak-sidebar__foot">
             {account ? (
               <div className="ak-sidebar__account-slot">{account}</div>
+            ) : null}
+            {themeToggle ? (
+              <ThemeToggle
+                variant="nav"
+                storageKey={themeToggleStorageKey}
+              />
             ) : null}
             {sidebarFooter}
           </div>

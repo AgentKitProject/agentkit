@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { SiteChrome } from "@/components/SiteChrome";
+import { themeInitScript } from "@agentkitforge/ui";
 import "./globals.css";
 
-// Set data-theme BEFORE React hydrates, from the same source the toggle reads
-// (localStorage "akf-theme", else the OS preference), so the page paints in the
-// correct theme with no flash. React state still starts "light" on first render
-// (matching SSR) and corrects post-mount, so this only touches the <html>
-// attribute — hence suppressHydrationWarning on <html>. Same recipe as the
-// sibling web apps (forge-web, auto-web, apps/site).
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("akf-theme")||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+// Set data-theme BEFORE React hydrates (no flash), from the same source the
+// shell's built-in ThemeToggle reads. Centralized in @agentkitforge/ui;
+// suppressHydrationWarning on <html> because it only touches the attribute.
+const THEME_INIT_SCRIPT = themeInitScript();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://profile.agentkitproject.com"),

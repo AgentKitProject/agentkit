@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { SiteChrome } from "@/components/SiteChrome";
+import { themeInitScript } from "@agentkitforge/ui";
 import { getCurrentUser, isAdminRole } from "@/lib/auth";
 // Shared UI framework stylesheet (tokens + SiteShell + primitives), imported
 // first so app-specific rules in globals.css layer on top and the legacy
@@ -31,10 +32,9 @@ export const metadata: Metadata = {
   },
 };
 
-// Set data-theme BEFORE React hydrates, from the same source the ThemeToggle
-// reads (localStorage "akf-theme", else the OS preference), so the page paints
-// in the correct theme with no flash. Mirrors agentkitforge-web / auto-web.
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("akf-theme")||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+// Set data-theme BEFORE React hydrates (no flash), from the same source the
+// shell's built-in ThemeToggle reads. Centralized in @agentkitforge/ui.
+const THEME_INIT_SCRIPT = themeInitScript();
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const user = await getCurrentUser();

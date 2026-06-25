@@ -8,8 +8,8 @@
 // seam is unchanged — all HTTP calls still go through forge-client/web-client.ts.
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppShell, SidebarAccount, type SidebarNavItem } from "@agentkitforge/ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell, SidebarAccount, BRAND_ACCENTS, type SidebarNavItem } from "@agentkitforge/ui";
 import { getForgeClient } from "@/forge-client";
 import type { MyKitEntry } from "@/forge-client";
 import {
@@ -82,39 +82,6 @@ function initials(email?: string): string {
   return (parts[0]?.[0] ?? name[0] ?? "").concat(parts[1]?.[0] ?? "").toUpperCase();
 }
 
-// Persisted theme: reads/writes localStorage "akf-theme"
-function useTheme(): [string, () => void] {
-  // Default to "light" for the FIRST render on BOTH server and client so the
-  // server-rendered HTML matches the client's initial render (no React #418
-  // hydration mismatch). The real persisted/system theme is read AFTER mount
-  // in the effect below (a pure client update, no hydration involved). The
-  // inline script in app/layout.tsx sets data-theme pre-paint to avoid a flash.
-  const [theme, setTheme] = useState<string>("light");
-
-  useEffect(() => {
-    const saved =
-      localStorage.getItem("akf-theme") ??
-      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(saved);
-  }, []);
-
-  // Skip the first render (theme="light" placeholder): the inline layout script
-  // already set the correct data-theme pre-paint, so applying "light" here would
-  // cause a one-frame flash before the real theme loads. Apply on every change after.
-  const themeSynced = useRef(false);
-  useEffect(() => {
-    if (!themeSynced.current) {
-      themeSynced.current = true;
-      return;
-    }
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("akf-theme", theme);
-  }, [theme]);
-
-  const toggle = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
-  return [theme, toggle];
-}
-
 export default function ForgeApp({ user, config }: { user: SessionUser; config: PublicConfig }) {
   const forge: Forge = useMemo(() => getForgeClient(), []);
   const [section, setSection] = useState<SectionId>("my-kits");
@@ -124,7 +91,6 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
   const [submitKitId, setSubmitKitId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [usage, setUsage] = useState<UsageInfo>(null);
-  const [theme, toggleTheme] = useTheme();
 
   const notify = useCallback((msg: string, err = false) => {
     setToast({ msg, err });
@@ -179,9 +145,8 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     if (sectionParam && isValidSectionId(sectionParam)) {
       setSection(sectionParam);
     }
-    // Apply persisted theme immediately on mount
-    const saved = typeof window !== "undefined" ? localStorage.getItem("akf-theme") : null;
-    if (saved) document.documentElement.setAttribute("data-theme", saved);
+    // The pre-paint inline script (themeInitScript) and the shell's built-in
+    // ThemeToggle own data-theme now, so no extra theme wiring is needed here.
   }, [forge, refresh, config.links.autoUrl, config.marketEnabled]);
 
   const heading = openKitId
@@ -218,22 +183,6 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     navItems.splice(runIdx >= 0 ? runIdx + 1 : navItems.length, 0, autoNavItem);
   }
 
-  // Theme toggle + account block pinned to the bottom of the rail.
-  const sidebarFooter = (
-    <button
-      type="button"
-      className="ak-nav-item"
-      style={{ fontSize: "0.82em", opacity: 0.8 }}
-      onClick={toggleTheme}
-      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-    >
-      <span className="ak-nav-item__icon" aria-hidden="true">
-        {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
-      </span>
-      <span className="ak-nav-item__label">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-    </button>
-  );
-
   const usageNode =
     usage && !openKitId ? (
       <div style={{ fontSize: "0.8em", color: "var(--color-text-secondary)", textAlign: "right" }}>
@@ -252,8 +201,10 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
           </>
         }
         brandSubtitle="Web Forge"
-        brandAccent="#4f46e5"
+        brandAccent={BRAND_ACCENTS.forge.accent}
+        brandAccentStrong={BRAND_ACCENTS.forge.strong}
         nav={navItems}
+        themeToggle
         account={
           <SidebarAccount
             name={user?.email ?? "Signed in"}
@@ -267,7 +218,6 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
             className={section === "account" && !openKitId ? "ak-sidebar__account--active" : undefined}
           />
         }
-        sidebarFooter={sidebarFooter}
         eyebrow={heading.eyebrow}
         title={heading.title}
         actions={usageNode}
@@ -315,30 +265,5 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
       )}
       {toast && <div className={`akf-toast${toast.err ? " err" : ""}`}>{toast.msg}</div>}
     </ConfigProvider>
-  );
-}
-
-// Minimal inline theme icons to avoid adding a dep
-function SunIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="10" cy="10" r="3.5" />
-      <line x1="10" y1="2" x2="10" y2="4" />
-      <line x1="10" y1="16" x2="10" y2="18" />
-      <line x1="2" y1="10" x2="4" y2="10" />
-      <line x1="16" y1="10" x2="18" y2="10" />
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-      <line x1="14.36" y1="14.36" x2="15.78" y2="15.78" />
-      <line x1="4.22" y1="15.78" x2="5.64" y2="14.36" />
-      <line x1="14.36" y1="5.64" x2="15.78" y2="4.22" />
-    </svg>
-  );
-}
-
-function MoonIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M17 11.5A7 7 0 1 1 8.5 3a5.5 5.5 0 1 0 8.5 8.5z" />
-    </svg>
   );
 }

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { SiteShell, DEFAULT_FOOTER_LINKS, navWithActive, type FooterLinks } from "@agentkitforge/ui";
+import {
+  SiteShell,
+  DEFAULT_FOOTER_LINKS,
+  navWithActive,
+  BRAND_ACCENTS,
+  type FooterLinks,
+} from "@agentkitforge/ui";
 import { HeaderAuthNav } from "@/components/HeaderAuthNav";
-import { ThemeToggle } from "@/components/ThemeToggle";
-
-/** Profile brand teal — also wired into the root tokens (globals.css). */
-const PROFILE_TEAL = "#2f8f89";
 
 /** Profile logo: the teal-tile mark + "AgentKitProject account" wordmark. */
 function ProfileLogo() {
@@ -53,15 +55,12 @@ const PROFILE_FOOTER_LINKS: Partial<FooterLinks> = {
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   return (
     <SiteShell
-      brandAccent={PROFILE_TEAL}
+      themeToggle
+      brandAccent={BRAND_ACCENTS.profile.accent}
+      brandAccentStrong={BRAND_ACCENTS.profile.strong}
       logo={<ProfileLogo />}
       nav={navWithActive("Account")}
-      account={
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ThemeToggle />
-          <HeaderAuthNav />
-        </div>
-      }
+      account={<HeaderAuthNav />}
       footer={{
         brandTitle: "AgentKitProject account",
         brandSubtitle: "Shared identity for the AgentKitProject ecosystem.",

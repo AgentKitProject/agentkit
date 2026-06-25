@@ -47,4 +47,15 @@ export type {
   SidebarAccountProps,
 } from "./components/AppShell.js";
 
-export { brandVars } from "./brand.js";
+export { brandVars, BRAND_ACCENTS } from "./brand.js";
+export type { BrandKey, BrandAccent } from "./brand.js";
+
+export { ThemeToggle } from "./components/ThemeToggle.js";
+export type {
+  ThemeToggleProps,
+  ThemeToggleVariant,
+} from "./components/ThemeToggle.js";
+
+export { themeInitScript, THEME_STORAGE_KEY } from "./theme.js";
+export type { Theme } from "./theme.js";
+export { useTheme } from "./use-theme.js";

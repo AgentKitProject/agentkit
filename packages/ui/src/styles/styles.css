@@ -411,6 +411,52 @@
   }
 }
 
+/* ===================== ThemeToggle ===================== */
+
+/* Icon variant — compact square button for the SiteShell header account area. */
+.ak-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  flex: none;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background: var(--ak-surface);
+  color: var(--ak-text);
+  cursor: pointer;
+  line-height: 1;
+  transition: var(--ak-transition);
+}
+.ak-theme-toggle:hover {
+  border-color: color-mix(in srgb, var(--ak-brand) 35%, var(--ak-border));
+  color: var(--ak-brand);
+}
+.ak-theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--ak-ring);
+}
+
+/* Header cluster: groups the icon toggle with the host's account node. */
+.ak-header__account-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Nav variant — labeled row for the AppShell sidebar footer. Slightly dimmed
+   to read as a utility control below the primary nav (matches prior forge/auto
+   footer toggle). Shares .ak-nav-item structure/hover. */
+.ak-theme-toggle--nav {
+  font-size: 0.82em;
+  opacity: 0.8;
+}
+.ak-theme-toggle--nav:hover {
+  opacity: 1;
+}
+
 /* ===================== SiteShell (marketing / catalog chrome) ===== */
 
 .ak-shell {
