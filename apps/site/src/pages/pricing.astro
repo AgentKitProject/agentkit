@@ -1,0 +1,111 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { autoUrl, forgeUrl, marketUrl } from '../data/products';
+---
+<BaseLayout
+  title="Pricing"
+  description="Pricing for the AgentKitProject ecosystem: free to start, optional kit monetization on Market, and pay-as-you-go or bring-your-own-key automation in AgentKitAuto."
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Pricing</p>
+      <h1>Free to start. Monetize when you choose.</h1>
+      <p class="lead">
+        Building, publishing, and using Agent Kits across the ecosystem is free to get started, and
+        creators can optionally monetize their work. The local-first AgentKitForge desktop app —
+        create, validate, package, export, and import local kits — is always free and needs no
+        account.
+      </p>
+      <div class="button-row">
+        <a class="button" href={marketUrl}>Open AgentKitMarket</a>
+        <a class="button secondary" href={forgeUrl}>Get AgentKitForge</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">Kits on Market</p>
+      <h2>List each kit the way that fits.</h2>
+      <p class="lead">
+        Kit owners choose how to list each kit on AgentKitMarket — free, a single up-front price, or
+        a recurring subscription.
+      </p>
+      <div class="grid three" style="margin-top: 2rem;">
+        <article class="card">
+          <h3>Free</h3>
+          <p>List a kit at no cost. Anyone can download it.</p>
+        </article>
+        <article class="card">
+          <h3>One-time</h3>
+          <p>Sell a kit for a single up-front price.</p>
+        </article>
+        <article class="card">
+          <h3>Subscription</h3>
+          <p>Sell a kit as a recurring subscription, with an optional free trial.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <article class="content-panel">
+        <h2>Sellers keep 90%.</h2>
+        <p>
+          The platform fee is 10% — sellers keep 90% of each sale. Payouts are handled through
+          Stripe using Stripe Connect.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">AgentKitAuto</p>
+      <h2>Two ways to pay for runs.</h2>
+      <p class="lead">
+        Automating Agent Kit runs with AgentKitAuto can be paid for with managed credits or by
+        bringing your own Anthropic API key.
+      </p>
+      <div class="grid two" style="margin-top: 2rem;">
+        <article class="card">
+          <h3>Managed credits</h3>
+          <p>
+            Pay-as-you-go credits, billed at roughly a 15% markup over the underlying Anthropic
+            model cost. No commitment — pay for what you run.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Bring your own Anthropic key</h3>
+          <p>
+            Connect your own Anthropic API key and pay Anthropic directly, with no platform markup.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="content-panel">
+        <h2>Ready to publish or automate?</h2>
+        <p>
+          Start free, then monetize on Market or run kits with AgentKitAuto whenever you are ready.
+        </p>
+        <div class="button-row">
+          <a class="button" href={marketUrl}>Explore AgentKitMarket</a>
+          <a class="button secondary" href={autoUrl}>See AgentKitAuto</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section:first-child {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--theme-accent) 13%, transparent), transparent 34rem),
+      transparent;
+  }
+</style>

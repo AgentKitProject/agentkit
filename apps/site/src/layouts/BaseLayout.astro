@@ -33,7 +33,8 @@ const ogImage = `https://agentkitproject.com/brand/og/${ogKey}.png`;
 // Build the nav: canonical items with Home active, plus page-specific About tab.
 const canonicalNav = navWithActive('Home', [
   ...DEFAULT_NAV,
-  { label: 'About', href: '/about' }
+  { label: 'About', href: '/about' },
+  { label: 'Pricing', href: '/pricing' }
 ]);
 
 // For the About page, override its active state based on the current path.
