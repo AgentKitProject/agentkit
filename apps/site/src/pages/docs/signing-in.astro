@@ -1,0 +1,50 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { profileUrl } from '../../data/products';
+---
+<DocsLayout
+  title="Signing in"
+  eyebrow="Get started"
+  description="Sign in once with device authorization to unlock Market download, submit, Auto, and your profile."
+>
+  <div class="docs-note">
+    <strong>Sign-in is optional.</strong> Building, validating, packaging, and importing
+    kits work fully offline with no account. You only sign in for hosted features —
+    Market download/submit and AgentKitAuto.
+  </div>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>AgentKitForge (desktop or Web Forge).</li>
+    <li>A web browser to approve the sign-in — it can be on any device, even your phone.</li>
+    <li>An <a href={profileUrl}>AgentKitProject account</a> (you can create one during sign-in).</li>
+  </ul>
+
+  <h2>Step by step (desktop Forge &amp; CLI)</h2>
+  <ol>
+    <li>In Forge, open <strong>Account</strong> (or Settings → Account) and choose <strong>Sign in</strong>. From the CLI, run <code>agentkitforge market login</code>.</li>
+    <li>Forge shows a short device code and opens your browser to the AgentKitProject sign-in page.</li>
+    <li>On any device, confirm the code matches, then sign in or create an account.</li>
+    <li>Approve access for AgentKitForge.</li>
+    <li>Return to Forge — it stores your session securely in your OS keychain and shows you as signed in.</li>
+    <li>Your session refreshes automatically and persists across restarts. Sign out any time from Account.</li>
+  </ol>
+
+  <h2>How it works</h2>
+  <p>
+    Sign-in uses the <strong>OAuth 2.0 device authorization flow</strong> against WorkOS,
+    so it works on headless machines — approve the code from your phone or another
+    computer. The access token lives in the OS secure store (macOS Keychain, Windows
+    Credential Manager, or Linux Secret Service), not a plain file, and is sent as a
+    bearer token to hosted Market routes.
+  </p>
+
+  <h2>Common mistakes</h2>
+  <ul>
+    <li>Thinking you must sign in to use Forge — local build, validate, package, and import never need an account.</li>
+    <li>Entering the device code on the wrong account.</li>
+    <li>Expecting the desktop app and CLI to share one sign-in on macOS — the Keychain entry is per-binary, so sign in to each.</li>
+  </ul>
+
+  <p>See also: <a href="/docs/profile/">Profile</a> and <a href="/docs/cli/">the CLI</a>.</p>
+</DocsLayout>

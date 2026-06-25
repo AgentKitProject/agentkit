@@ -1,0 +1,46 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { profileUrl } from '../../data/products';
+---
+<DocsLayout
+  title="Profile"
+  eyebrow="Products"
+  description="The shared AgentKitProject account and identity used across Forge, Market, and Auto."
+>
+  <p>
+    AgentKitProfile (<a href={profileUrl}>profile.agentkitproject.com</a>) is the shared
+    identity layer for the whole ecosystem. One account works across Forge, Web Forge,
+    Market, and Auto.
+  </p>
+
+  <h2>What it holds</h2>
+  <ul>
+    <li><strong>Display name</strong> — your public-facing name, used as the publisher identity when you submit kits to the Market.</li>
+    <li><strong>Handle</strong> — a unique username; your public profile lives at <code>/u/&lt;handle&gt;</code>.</li>
+    <li><strong>Avatar initials</strong> and a <strong>verified</strong> flag.</li>
+    <li>An overview of your access across the products.</li>
+  </ul>
+
+  <h2>Why it matters for Market</h2>
+  <p>
+    The Market uses your Profile display name as the publisher identity. When you submit a
+    kit, your publisher snapshot (display name, handle, avatar initials, verified) is
+    frozen into the submission and onto the published kit. A display name is
+    <strong>required</strong> to submit — set it in your profile before submitting.
+  </p>
+
+  <h2>Privacy boundaries</h2>
+  <ul>
+    <li>Public browsing of the Market is open; downloads require an account.</li>
+    <li>Email addresses are private.</li>
+    <li>Raw user IDs are never used as public display names.</li>
+  </ul>
+
+  <h2>Sign in</h2>
+  <p>
+    The web apps use WorkOS AuthKit cookie sessions in the browser; Forge and the CLI use
+    device authorization. See <a href="/docs/signing-in/">Signing in</a> and the
+    <a href="/docs/architecture/">architecture overview</a> for how the two auth paths
+    stay separate.
+  </p>
+</DocsLayout>

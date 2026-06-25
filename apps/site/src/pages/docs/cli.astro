@@ -1,0 +1,89 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout
+  title="CLI (agentkitforge)"
+  eyebrow="Tools & operations"
+  description="Validate, inspect, package, export, and run hosted-Market operations from the terminal."
+>
+  <p>
+    The <code>agentkitforge</code> CLI ships with <code>@agentkitforge/core</code> — the
+    same engine the desktop app and Web Forge use — so every command behaves identically
+    to its app counterpart. Use it in CI, pre-commit hooks, and scripts.
+  </p>
+
+  <h2>Install</h2>
+  <pre><code>npm install -g @agentkitforge/core
+# the binary is: agentkitforge</code></pre>
+  <p>
+    Most commands operate on a kit folder (the directory containing
+    <code>agentkit.yaml</code>). Market subcommands require sign-in via
+    <code>agentkitforge market login</code> (headless-friendly device auth).
+  </p>
+
+  <h2>Local commands</h2>
+  <pre><code># Validate (run before any share/export/submit)
+agentkitforge validate &lt;path&gt; --profile publishable
+
+# Inspect / summarize a folder as a kit
+agentkitforge inspect &lt;path&gt;
+agentkitforge summarize &lt;path&gt;
+
+# Create a new kit (templates: blank, financial-review)
+agentkitforge init &lt;path&gt; --template blank --id my-kit --name "My Kit"
+
+# Package to a portable .agentkit.zip
+agentkitforge package &lt;path&gt; --out dist/my-kit.agentkit.zip
+
+# Export one-file Markdown (paste-ready; NOT re-importable)
+agentkitforge export-onefile &lt;path&gt; --out dist/my-kit.onefile.md
+
+# Build AI-ready context from a kit
+agentkitforge build-context &lt;path&gt; --out context.md</code></pre>
+
+  <h2>Prepared prompts</h2>
+  <pre><code>agentkitforge list-prompts &lt;path&gt;
+agentkitforge render-prompt &lt;path&gt; &lt;prompt-id&gt; --inputs key=value
+agentkitforge validate-prompt-inputs &lt;path&gt; &lt;prompt-id&gt; --inputs key=value</code></pre>
+
+  <h2>Export to local agents</h2>
+  <pre><code>agentkitforge export-claude-code &lt;path&gt; --dest &lt;dir&gt;
+agentkitforge export-codex &lt;path&gt; --dest &lt;dir&gt;</code></pre>
+
+  <h2>Versioning &amp; drafts</h2>
+  <pre><code>agentkitforge version get|set|next &lt;path&gt; [version]
+agentkitforge load-as-draft &lt;path&gt; --out draft.json
+agentkitforge render-draft &lt;draft.json&gt; &lt;dir&gt;</code></pre>
+
+  <h2>Hosted Market</h2>
+  <pre><code># Sign in / out (device auth — approve from any browser)
+agentkitforge market login
+agentkitforge market logout
+
+# Submit for validation + admin review (no auto-publish)
+agentkitforge market submit &lt;path&gt; --profile publishable
+
+# Download &amp; import a kit by slug, id, or URL (verifies sha256)
+agentkitforge market import &lt;slug-or-id-or-url&gt;
+
+# Paid kits: check entitlement / fetch a licensed package
+agentkitforge market entitlement &lt;slug-or-id-or-url&gt;
+agentkitforge market licensed-fetch &lt;slug-or-id-or-url&gt; --out kit.agentkit.zip
+
+# Cloud favorites
+agentkitforge market favorites list|add|remove</code></pre>
+
+  <div class="docs-note">
+    <strong>Flags &amp; exact usage.</strong> Run <code>agentkitforge &lt;command&gt; --help</code>
+    for the authoritative, current flag list — the commands above reflect the CLI in
+    <code>@agentkitforge/core</code> at the time of writing.
+  </div>
+
+  <h2>Tips</h2>
+  <ul>
+    <li>Run <code>validate --profile publishable</code> before submitting to the Market.</li>
+    <li>Use the CLI in CI to catch validation regressions before they reach the Market.</li>
+    <li>Most commands expect the kit root — run them from where <code>agentkit.yaml</code> lives.</li>
+    <li><code>export-onefile</code> is not a package replacement; it cannot be re-imported as a kit.</li>
+  </ul>
+</DocsLayout>

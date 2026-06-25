@@ -1,0 +1,75 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { marketUrl } from '../../data/products';
+---
+<DocsLayout
+  title="Market"
+  eyebrow="Products"
+  description="Browse, publish, and sell Agent Kits — with organizations, private catalogs, and paid listings."
+>
+  <p>
+    AgentKitMarket (<a href={marketUrl}>market.agentkitproject.com</a>) is the catalog for
+    Agent Kits. Browse the public catalog with no account; sign in to download into Forge
+    or submit your own kits for review.
+  </p>
+
+  <h2>Browse &amp; download</h2>
+  <ol>
+    <li>Browse or search the public catalog — <strong>no sign-in required to look</strong>.</li>
+    <li>View kit details: description, publisher, version, and validation level.</li>
+    <li>Choose <strong>Download / Open in Forge</strong> and sign in if needed.</li>
+    <li>Forge retrieves the package, verifies its sha256, and adds it to My Kits with its source recorded.</li>
+    <li>Edit or export the kit; Forge tracks when a newer version is available.</li>
+  </ol>
+  <p>Downloaded kits become local edits you own. Validation levels indicate review/trust but don't guarantee fit for a specific use case.</p>
+
+  <h2>Submit a kit</h2>
+  <p>Submission goes through validation and admin review — <strong>no kit is ever published automatically</strong>.</p>
+  <ol>
+    <li>From Forge (or <code>agentkitforge market submit</code>), the kit is validated at the <code>publishable</code> profile and packaged.</li>
+    <li>The package is uploaded to a presigned URL and queued for server-side validation.</li>
+    <li>Your <a href="/docs/profile/">AgentKitProfile</a> display name is required and is frozen into the submission as the publisher identity.</li>
+    <li>An admin reviews the submission. Status flows through <code>awaiting_upload → uploaded → validating → validation_passed/failed → published | rejected | canceled | archived</code>.</li>
+  </ol>
+  <p>The server owns slug and kit-ID generation, sha256 duplicate protection, and auto-sequential <code>vN</code> versioning. See <a href="/docs/concepts/">Concepts</a> for versioning details.</p>
+
+  <h2>Organizations &amp; team roles</h2>
+  <p>
+    Beyond personal publishing, Market supports <strong>organizations</strong>. An org can
+    be personal or a <strong>team</strong>, with members and roles
+    (<strong>owner</strong> and <strong>member</strong>). Team orgs can own kits and manage
+    invitations from the org management UI.
+  </p>
+
+  <h2>Private catalogs</h2>
+  <p>
+    Kits carry a visibility setting — <strong>public</strong> or <strong>private</strong>.
+    Private kits are excluded from the public catalog and are visible only within their
+    owning org, enabling private team catalogs.
+  </p>
+
+  <h2>Paid kits</h2>
+  <p>Kit owners choose how to list each kit:</p>
+  <ul>
+    <li><strong>Free</strong> — anyone can download it.</li>
+    <li><strong>One-time</strong> — a single up-front price.</li>
+    <li><strong>Subscription</strong> — a recurring price, with an optional free trial.</li>
+  </ul>
+  <p>
+    Payments and payouts run through <strong>Stripe</strong> (Stripe Connect for seller
+    payouts). The platform fee is <strong>10%</strong> — <strong>sellers keep 90%</strong>
+    of each sale. Access to paid, non-downloadable kits is gated by buyer entitlements,
+    and entitlements track subscription lifecycle (active / expired / revoked).
+  </p>
+  <div class="docs-note">
+    <strong>Note.</strong> The commercial billing layer (Stripe webhooks, credit/entitlement
+    ledger) is delivered as an optional module. A self-hosted Market without it runs the
+    free/public catalog; paid listings require the commercial module and Stripe configured.
+  </div>
+
+  <h2>Self-hosting</h2>
+  <p>
+    Market runs on the same codebase whether hosted or self-hosted, with cloud coupling
+    behind swappable adapters. See <a href="/docs/self-hosting/">Self-hosting on Kubernetes</a>.
+  </p>
+</DocsLayout>

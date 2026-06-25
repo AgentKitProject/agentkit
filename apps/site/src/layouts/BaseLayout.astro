@@ -2,7 +2,6 @@
 import '@agentkitforge/ui/styles.css';
 import { DEFAULT_NAV, navWithActive } from '@agentkitforge/ui';
 import {
-  docsUrl,
   forgeUrl,
   githubOrgUrl,
   marketUrl,
@@ -37,8 +36,15 @@ const canonicalNav = navWithActive('Home', [
   { label: 'Pricing', href: '/pricing' }
 ]);
 
+// Repoint the shared "Docs" tab to the in-site /docs section (the docs now live
+// in this repo). DEFAULT_NAV still points other apps at the external docs domain;
+// this override is scoped to the project site only.
+const withInSiteDocs = canonicalNav.map((item) =>
+  item.label === 'Docs' ? { ...item, href: '/docs/', external: false } : item
+);
+
 // For the About page, override its active state based on the current path.
-const navItems = canonicalNav.map((item) => {
+const navItems = withInSiteDocs.map((item) => {
   if (item.href.startsWith('/')) {
     const active = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href);
     return { ...item, active };
@@ -178,7 +184,7 @@ const navItems = canonicalNav.map((item) => {
             <li><a class="ak-footer__link" href={marketUrl}>Market</a></li>
             <li><a class="ak-footer__link" href={forgeUrl}>Forge</a></li>
             <li><a class="ak-footer__link" href={webForgeUrl}>Web Forge</a></li>
-            <li><a class="ak-footer__link" href={docsUrl}>Docs</a></li>
+            <li><a class="ak-footer__link" href="/docs/">Docs</a></li>
             <li><a class="ak-footer__link" href={roadmapUrl}>Roadmap</a></li>
             <li><a class="ak-footer__link" href={profileUrl}>Account</a></li>
             <li><a class="ak-footer__link" href={githubOrgUrl} target="_blank" rel="noreferrer noopener">GitHub</a></li>

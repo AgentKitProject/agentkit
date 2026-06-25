@@ -1,0 +1,98 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { DOCS_SECTIONS } from '../../data/docs-nav';
+import { forgeUrl, marketUrl, webForgeUrl } from '../../data/products';
+
+// Drop the "Documentation home" self-link from the index cards.
+const sections = DOCS_SECTIONS.map((s) => ({
+  ...s,
+  links: s.links.filter((l) => l.href !== '/docs/')
+})).filter((s) => s.links.length > 0);
+---
+<DocsLayout
+  title="AgentKitProject documentation"
+  eyebrow="Docs"
+  description="Build, share, and automate portable Agent Kits. These docs cover the whole ecosystem — local-first by design, with optional hosted and self-hosted services."
+>
+  <p>
+    AgentKitProject is an open ecosystem for <strong>Agent Kits</strong>: portable
+    <code>.agentkit.zip</code> packages of AI instructions, skills, prompts, policies,
+    templates, and context. Build them in <a href={forgeUrl}>Forge</a> (desktop) or
+    <a href={webForgeUrl}>Web Forge</a> (browser), share and sell them on the
+    <a href={marketUrl}>Market</a>, and run them unattended with AgentKitAuto.
+  </p>
+
+  <div class="docs-note">
+    <strong>Local-first.</strong> Creating, validating, packaging, importing, and
+    exporting kits work fully offline with no account. Hosted Market and Auto features
+    are optional and require sign-in.
+  </div>
+
+  <h2>New here? Start with these</h2>
+  <ul>
+    <li><a href="/docs/what-is-an-agent-kit/">What is an Agent Kit?</a> — the core idea in two minutes.</li>
+    <li><a href="/docs/getting-started/">Getting started</a> — from opening Forge to running your first kit.</li>
+    <li><a href="/docs/concepts/">Concepts &amp; the SPEC</a> — skills, prepared prompts, policies, and the package format.</li>
+  </ul>
+
+  <h2>All documentation</h2>
+  {sections.map((section) => (
+    <section class="docs-index-section">
+      <h3>{section.title}</h3>
+      <div class="docs-card-grid">
+        {section.links.map((link) => (
+          <a class="docs-card" href={link.href}>
+            <span class="docs-card-title">{link.title}</span>
+            {link.summary && <span class="docs-card-summary">{link.summary}</span>}
+          </a>
+        ))}
+      </div>
+    </section>
+  ))}
+</DocsLayout>
+
+<style>
+  .docs-index-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .docs-card-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .docs-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.9rem 1rem;
+    text-decoration: none;
+    transition: border-color 120ms ease, transform 120ms ease;
+  }
+
+  .docs-card:hover {
+    border-color: color-mix(in srgb, var(--theme-accent) 40%, var(--border));
+    transform: translateY(-1px);
+  }
+
+  .docs-card-title {
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .docs-card-summary {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 720px) {
+    .docs-card-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

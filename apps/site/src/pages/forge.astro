@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { forgeDocsUrl, forgeUrl, githubOrgUrl } from '../data/products';
+import { forgeUrl, githubOrgUrl } from '../data/products';
 ---
 <BaseLayout
   title="AgentKitForge"
@@ -18,7 +18,7 @@ import { forgeDocsUrl, forgeUrl, githubOrgUrl } from '../data/products';
       </p>
       <div class="button-row">
         <a class="button" href={forgeUrl}>Open AgentKitForge</a>
-        <a class="button secondary" href={forgeDocsUrl}>Read Forge docs</a>
+        <a class="button secondary" href="/docs/forge-desktop/">Read Forge docs</a>
       </div>
     </div>
   </section>

@@ -1,0 +1,319 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { DOCS_SECTIONS, DOCS_FLAT } from '../data/docs-nav';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Short eyebrow above the page H1 (e.g. "Overview", "Products"). */
+  eyebrow?: string;
+}
+
+const { title, description, eyebrow } = Astro.props;
+
+// Normalize the current path (trailing slash tolerant) so the active link and
+// prev/next resolve regardless of how Astro renders the URL.
+const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
+const current = norm(Astro.url.pathname);
+
+const flatIndex = DOCS_FLAT.findIndex((l) => norm(l.href) === current);
+const prev = flatIndex > 0 ? DOCS_FLAT[flatIndex - 1] : null;
+const next =
+  flatIndex >= 0 && flatIndex < DOCS_FLAT.length - 1 ? DOCS_FLAT[flatIndex + 1] : null;
+---
+<BaseLayout title={title} description={description}>
+  <div class="docs-shell container">
+    <aside class="docs-sidebar" aria-label="Documentation navigation">
+      <nav class="docs-nav">
+        {DOCS_SECTIONS.map((section) => (
+          <div class="docs-nav-group">
+            <p class="docs-nav-title">{section.title}</p>
+            <ul>
+              {section.links.map((link) => {
+                const active = norm(link.href) === current;
+                return (
+                  <li>
+                    <a
+                      class={`docs-nav-link${active ? ' is-active' : ''}`}
+                      href={link.href}
+                      aria-current={active ? 'page' : undefined}
+                    >{link.title}</a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <article class="docs-content">
+      <header class="docs-header">
+        {eyebrow && <p class="eyebrow">{eyebrow}</p>}
+        <h1>{title}</h1>
+        {description && <p class="lead docs-lead">{description}</p>}
+      </header>
+
+      <div class="docs-prose">
+        <slot />
+      </div>
+
+      <nav class="docs-pager" aria-label="Previous and next pages">
+        {prev ? (
+          <a class="docs-pager-link prev" href={prev.href}>
+            <span class="docs-pager-dir">&larr; Previous</span>
+            <span class="docs-pager-title">{prev.title}</span>
+          </a>
+        ) : <span></span>}
+        {next ? (
+          <a class="docs-pager-link next" href={next.href}>
+            <span class="docs-pager-dir">Next &rarr;</span>
+            <span class="docs-pager-title">{next.title}</span>
+          </a>
+        ) : <span></span>}
+      </nav>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .docs-shell {
+    align-items: start;
+    display: grid;
+    gap: 2.5rem;
+    grid-template-columns: 250px minmax(0, 1fr);
+    padding-bottom: 4rem;
+    padding-top: 2.5rem;
+  }
+
+  .docs-sidebar {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+  }
+
+  .docs-nav-group + .docs-nav-group {
+    margin-top: 1.4rem;
+  }
+
+  .docs-nav-title {
+    color: var(--theme-accent-strong);
+    font-size: 0.72rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    margin: 0 0 0.5rem;
+    text-transform: uppercase;
+  }
+
+  .docs-nav ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .docs-nav-link {
+    border-left: 2px solid transparent;
+    border-radius: 0 6px 6px 0;
+    color: var(--muted);
+    display: block;
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 0.4rem 0.7rem;
+    text-decoration: none;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+
+  .docs-nav-link:hover {
+    background: var(--muted-surface);
+    color: var(--text);
+  }
+
+  .docs-nav-link.is-active {
+    background: var(--theme-soft);
+    border-left-color: var(--theme-accent);
+    color: var(--theme-accent-strong);
+    font-weight: 800;
+  }
+
+  .docs-header {
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .docs-header h1 {
+    font-size: clamp(2rem, 5vw, 2.8rem);
+  }
+
+  .docs-lead {
+    margin-top: 1rem;
+  }
+
+  /* Prose styles for the markdown-like .astro doc bodies. */
+  .docs-prose :global(h2) {
+    font-size: 1.6rem;
+    margin: 2.5rem 0 1rem;
+    scroll-margin-top: 2rem;
+  }
+
+  .docs-prose :global(h3) {
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.75rem;
+  }
+
+  .docs-prose :global(p) {
+    margin: 0 0 1rem;
+  }
+
+  .docs-prose :global(ul),
+  .docs-prose :global(ol) {
+    color: var(--muted);
+    line-height: 1.7;
+    margin: 0 0 1.2rem;
+    padding-left: 1.3rem;
+  }
+
+  .docs-prose :global(li) {
+    margin-bottom: 0.4rem;
+  }
+
+  .docs-prose :global(li::marker) {
+    color: var(--theme-accent);
+  }
+
+  .docs-prose :global(a) {
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .docs-prose :global(strong) {
+    color: var(--text);
+  }
+
+  .docs-prose :global(pre) {
+    background: var(--code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    line-height: 1.55;
+    margin: 0 0 1.4rem;
+    overflow-x: auto;
+    padding: 1rem 1.1rem;
+  }
+
+  .docs-prose :global(pre code) {
+    background: none;
+    color: var(--text);
+    font-size: 0.88rem;
+    padding: 0;
+  }
+
+  .docs-prose :global(table) {
+    border-collapse: collapse;
+    display: block;
+    margin: 0 0 1.4rem;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .docs-prose :global(th),
+  .docs-prose :global(td) {
+    border: 1px solid var(--border);
+    padding: 0.55rem 0.8rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .docs-prose :global(th) {
+    background: var(--muted-surface);
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .docs-prose :global(td) {
+    color: var(--muted);
+  }
+
+  .docs-prose :global(blockquote) {
+    border-left: 3px solid var(--theme-accent);
+    color: var(--muted);
+    margin: 0 0 1.4rem;
+    padding: 0.2rem 0 0.2rem 1rem;
+  }
+
+  /* "Status / note" callout used to flag freshness or uncertainty. */
+  .docs-prose :global(.docs-note) {
+    background: color-mix(in srgb, var(--theme-accent) 8%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--theme-accent) 28%, var(--border));
+    border-radius: 8px;
+    color: var(--muted);
+    margin: 0 0 1.4rem;
+    padding: 0.9rem 1.1rem;
+  }
+
+  .docs-prose :global(.docs-note strong) {
+    color: var(--theme-accent-strong);
+  }
+
+  .docs-pager {
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+  }
+
+  .docs-pager-link {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    max-width: 48%;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    transition: border-color 120ms ease, transform 120ms ease;
+  }
+
+  .docs-pager-link:hover {
+    border-color: color-mix(in srgb, var(--theme-accent) 40%, var(--border));
+    transform: translateY(-1px);
+  }
+
+  .docs-pager-link.next {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .docs-pager-dir {
+    color: var(--theme-accent-strong);
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .docs-pager-title {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  @media (max-width: 900px) {
+    .docs-shell {
+      grid-template-columns: 1fr;
+    }
+
+    .docs-sidebar {
+      position: static;
+    }
+
+    .docs-nav {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+    }
+  }
+</style>

@@ -1,0 +1,47 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout
+  title="Architecture overview"
+  eyebrow="Overview"
+  description="The apps, core libraries, and services that make up AgentKitProject — local-first by design, with optional cloud."
+>
+  <p>
+    AgentKitProject is <strong>local-first</strong>: building, validating, packaging,
+    importing, and exporting kits work fully offline with no account. Cloud services
+    (Market, Profile, Auto) are optional integrations layered on top — never preconditions
+    for local work.
+  </p>
+
+  <h2>The pieces</h2>
+  <ul>
+    <li><strong>Forge is the client.</strong> The <a href="/docs/forge-desktop/">desktop app</a> is React 19 + Vite in a Tauri 2 shell; <a href="/docs/web-forge/">Web Forge</a> is the hosted / self-hostable browser edition. Both build, edit, validate, package, import, and export <code>.agentkit.zip</code> kits.</li>
+    <li><strong>All non-UI Forge capability lives in <code>@agentkitforge/core</code>:</strong> validation, packaging, import/export, drafts, prepared prompts, build-context, the spec (<code>SPEC.md</code>), the <a href="/docs/cli/">CLI</a>, and the hosted-Market client. The desktop app's Rust layer is reserved for OS-shell concerns only (secure storage, deep links, dialogs, updater).</li>
+    <li><strong>Market is the catalog.</strong> A Next.js 15 web app serves the public catalog, submission UI, and admin review queue, and is the only writer to the Market backend. See <a href="/docs/market/">Market</a>.</li>
+    <li><strong>Profile is shared identity.</strong> A Next.js account + public-profile app; the canonical display name lives here. See <a href="/docs/profile/">Profile</a>.</li>
+    <li><strong>AgentKitAuto runs kits unattended</strong> in the cloud — on demand, on schedules, and from webhooks. See <a href="/docs/auto/">AgentKitAuto</a>.</li>
+    <li><strong>Shared packages:</strong> <code>@agentkitforge/ui</code> (design system used by every app) and <code>@agentkitforge/contracts</code> (the contracts-first package every cross-repo payload, route, status enum, and service URL flows through).</li>
+  </ul>
+
+  <h2>The two auth paths (they never mix)</h2>
+  <ul>
+    <li><strong>Forge device auth</strong> — Forge and the CLI sign in via an OAuth 2.0 device flow against WorkOS. The access token is stored in OS secure storage and sent as a bearer token to the Market app's <code>/api/forge/*</code> routes. Headless-friendly: approve the code from any browser.</li>
+    <li><strong>Browser AuthKit cookie sessions</strong> — the Market and Profile web apps use WorkOS AuthKit cookie sessions for their browser-facing routes.</li>
+  </ul>
+  <p>These are separate auth paths and are never conflated; a route uses one or the other, never both.</p>
+
+  <h2>Hosting</h2>
+  <p>
+    The hosted ecosystem runs on managed Kubernetes (DigitalOcean Kubernetes / DOKS). The
+    same web and worker images run on hosted or self-hosted infrastructure, with cloud
+    coupling abstracted behind swappable adapters — so you can
+    <a href="/docs/self-hosting/">self-host</a> the same code on your own cluster.
+  </p>
+
+  <div class="docs-note">
+    <strong>Where logic belongs.</strong> If it's an OS-shell concern (secure storage,
+    deep links, dialogs, updater) it lives in the desktop app's Rust layer. Everything
+    else lives in <code>@agentkitforge/core</code> so the desktop app, Web Forge, and the
+    CLI behave identically.
+  </div>
+</DocsLayout>

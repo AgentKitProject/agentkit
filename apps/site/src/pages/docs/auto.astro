@@ -1,0 +1,60 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { autoUrl } from '../../data/products';
+---
+<DocsLayout
+  title="AgentKitAuto"
+  eyebrow="Products"
+  description="Run Agent Kits unattended in the cloud — on demand, on a schedule, or from a webhook."
+>
+  <p>
+    AgentKitAuto (<a href={autoUrl}>auto.agentkitproject.com</a>) runs Agent Kits
+    autonomously — with no human in the per-step loop. Use it for scheduled jobs,
+    event-driven runs, and one-off background work.
+  </p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Signed in to AgentKitProject.</li>
+    <li>An inference path configured — managed credits or your own Anthropic key (see Billing below).</li>
+    <li>At least one kit in your library to authorize and run (it doesn't need to be published).</li>
+  </ul>
+
+  <h2>Standing approvals</h2>
+  <p>
+    Auto gates every run behind a <strong>standing approval</strong> for a kit. The
+    approval is where you set the safety envelope:
+  </p>
+  <ul>
+    <li><strong>Tool allowlist</strong> — which tools the run may use (e.g. file tools, HTTP fetch).</li>
+    <li><strong>Budget ceiling</strong> — a required <code>maxBudgetCents</code>; per-run budgets must stay within it.</li>
+    <li><strong>Network policy</strong> — default <code>deny_all</code>, or an allowlist of egress hosts. HTTP egress is only permitted when the policy is an allowlist, <code>http_fetch</code> is in the approval's tool allowlist, and the host is on the list.</li>
+  </ul>
+
+  <h2>Triggers</h2>
+  <ul>
+    <li><strong>On demand</strong> — start a run from the Auto section.</li>
+    <li><strong>Scheduled</strong> — create a cron schedule with a timezone; the next run time is computed server-side.</li>
+    <li><strong>Webhook</strong> — create an inbound webhook with a per-webhook secret (shown once); each fire is validated against the standing approval.</li>
+  </ul>
+  <p>Runs execute in isolated, ephemeral workspaces. You can cancel an active run, and optionally receive results by email or signed webhook.</p>
+
+  <h2>Billing</h2>
+  <ul>
+    <li><strong>Managed credits</strong> — pay-as-you-go credits billed at roughly a <strong>15% markup</strong> over the underlying Anthropic model cost. No commitment.</li>
+    <li><strong>Bring your own Anthropic key</strong> — connect your own key and pay Anthropic directly, with no platform markup. The key is encrypted at rest. You can set your inference-mode preference (auto / managed / BYO).</li>
+  </ul>
+
+  <h2>Common mistakes</h2>
+  <ul>
+    <li>Attempting a run without a standing approval.</li>
+    <li>Leaving the budget blank — it is required and enforced.</li>
+    <li>Assuming schedules or webhooks bypass the standing approval — they don't.</li>
+  </ul>
+
+  <h2>Self-hosting</h2>
+  <p>
+    AgentKitAuto can be self-hosted on Kubernetes today, with a Job-per-run worker. See
+    <a href="/docs/self-hosting/">Self-hosting on Kubernetes</a>.
+  </p>
+</DocsLayout>

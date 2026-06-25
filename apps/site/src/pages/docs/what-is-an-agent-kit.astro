@@ -1,0 +1,74 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { forgeUrl } from '../../data/products';
+---
+<DocsLayout
+  title="What is an Agent Kit?"
+  eyebrow="Overview"
+  description="An Agent Kit is a reusable, portable package for a specific AI workflow."
+>
+  <h2>The idea</h2>
+  <p>
+    Teams and individuals repeat the same AI workflows every day — reviews, memos,
+    checklists, triage, summaries. An <strong>Agent Kit</strong> packages the prompts,
+    skills, guardrails, templates, examples, and context that make one of those
+    workflows reusable, inspectable, and shareable.
+  </p>
+  <p>
+    Keep one distinction clear: OpenAI, Anthropic Claude, Google Gemini, and Ollama are
+    <strong>AI providers</strong> — the engines that generate text. An Agent Kit is the
+    reusable <strong>workflow package</strong> you hand to that engine. The same kit can
+    often run against different providers.
+  </p>
+
+  <h2>What a kit can contain</h2>
+  <ul>
+    <li><strong>Prepared Prompts</strong> — reusable prompts with fill-in inputs like company name, date, goal, or output style.</li>
+    <li><strong>Skills</strong> — step-by-step instructions for how the AI should complete part of the job.</li>
+    <li><strong>Policies</strong> — guardrails for what the AI should avoid, require, or escalate.</li>
+    <li><strong>Templates</strong> — output formats to follow, such as a report, memo, checklist, or summary.</li>
+    <li><strong>Examples</strong> — sample inputs and outputs that show what good results look like.</li>
+    <li><strong>Context / references</strong> — reference material the AI can use while working.</li>
+  </ul>
+  <p>
+    A kit is distributed as a single portable <code>.agentkit.zip</code> file. See
+    <a href="/docs/concepts/">Concepts &amp; the SPEC</a> for the package structure.
+  </p>
+
+  <h2>How a kit runs</h2>
+  <p>
+    When you run a kit in Forge, it collects the inputs, prepares the prompt, sends it to
+    your selected AI provider, and lets you copy or download the result. Forge Core itself
+    never calls AI providers and never executes scripts — it validates, renders, packages,
+    exports, and builds AI-ready context from kits.
+  </p>
+
+  <h2>Agent Kits vs one-off prompts</h2>
+  <table>
+    <thead>
+      <tr><th>One-off prompt</th><th>Agent Kit</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Typed once</td><td>Reusable</td></tr>
+      <tr><td>Easy to lose</td><td>Structured and versioned</td></tr>
+      <tr><td>Inconsistent</td><td>Can include inputs, templates, and guardrails</td></tr>
+      <tr><td>Hard to share</td><td>Packaged, importable, and portable across providers and tools</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Examples</h2>
+  <ul>
+    <li><strong>Financial Review Agent Kit</strong> — a prepared prompt for reviewing a monthly workbook, inputs for company name and reporting period, skills for formula review and trend analysis, policies requiring human review, and a client-ready summary template.</li>
+    <li><strong>Kubernetes SRE Agent Kit</strong> — skills for investigating pod failures, service outages, and logs; read-only policies by default; prepared prompts for incident triage; and templates for incident summaries.</li>
+    <li><strong>Client Memo Agent Kit</strong> — a prepared prompt that asks for client name, topic, and tone, plus a memo template, style examples, and policies for clarity and human review.</li>
+  </ul>
+
+  <h2>Tips</h2>
+  <ul>
+    <li>Use Agent Kits for work you repeat — not every one-off question.</li>
+    <li>Prepared Prompts make a kit easier to run because Forge can collect required inputs first.</li>
+    <li>Start narrow: a kit with one clear purpose runs more consistently than a broad one.</li>
+  </ul>
+
+  <p><a href={forgeUrl}>Get Forge</a> or read <a href="/docs/getting-started/">Getting started</a> to build your first kit.</p>
+</DocsLayout>

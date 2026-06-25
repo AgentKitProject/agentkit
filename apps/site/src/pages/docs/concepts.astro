@@ -1,0 +1,103 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+---
+<DocsLayout
+  title="Concepts & the SPEC"
+  eyebrow="Overview"
+  description="Skills, prepared prompts, policies, the .agentkit.zip package, and the Agent Kit specification."
+>
+  <p>
+    Every Agent Kit follows a public package specification owned by
+    <code>@agentkitforge/core</code> (the engine behind Forge). This page covers the core
+    concepts and the shape of a kit. The full, authoritative spec lives in
+    <code>SPEC.md</code> in <code>@agentkitforge/core</code>.
+  </p>
+
+  <h2>Core building blocks</h2>
+  <ul>
+    <li><strong>Skills</strong> — a skill is a folder under <code>skills/</code> with a <code>SKILL.md</code> describing how the AI performs part of the job, plus trigger phrases. Every kit needs at least one skill.</li>
+    <li><strong>Prepared Prompts</strong> — reusable prompt flows defined in <code>prompts/&lt;prompt-id&gt;.yaml</code> with typed inputs Forge collects before a run.</li>
+    <li><strong>Policies</strong> — guardrails (what to avoid, require, or escalate) stored under <code>policies/</code>.</li>
+    <li><strong>Templates &amp; examples</strong> — output formats (<code>templates/</code>) and sample input/output pairs (<code>examples/</code>).</li>
+    <li><strong>References &amp; context</strong> — supporting material under <code>references/</code> the kit can draw on.</li>
+    <li><strong>Workflows, evals, adapters, scripts, assets, exports</strong> — optional folders for multi-step flows, evaluation cases, integration adapters, helper scripts, binary assets, and pre-built exports.</li>
+  </ul>
+
+  <h2>The .agentkit.zip package</h2>
+  <p>
+    A kit is distributed as a single portable <code>.agentkit.zip</code> archive. The
+    canonical structure required for the <code>local-valid</code> profile is:
+  </p>
+  <pre><code>agentkit.yaml        # the package manifest
+AGENTKIT.md          # agent entrypoint
+START_HERE.md        # human entrypoint
+skills/
+skills/&lt;skill-id&gt;/SKILL.md</code></pre>
+  <p>Optional files and folders include:</p>
+  <pre><code>README.md  LICENSE  CHANGELOG.md
+workflows/  policies/  references/  templates/
+examples/  examples/prompts/  examples/inputs/  examples/outputs/
+evals/  adapters/  scripts/  assets/  exports/
+prompts/  prompts/&lt;prompt-id&gt;.yaml</code></pre>
+
+  <h2>The manifest: agentkit.yaml</h2>
+  <p>The manifest uses <code>schemaVersion: "0.1"</code> (the spec FORMAT version) and includes required fields such as:</p>
+  <pre><code>schemaVersion: "0.1"
+kind: ...
+id: ...
+name: ...
+version: "1"            # content version (see below)
+description: ...
+author:
+  name: ...
+license: ...
+entrypoints:
+  human: START_HERE.md
+  agent: AGENTKIT.md
+userExperience:
+  setupLevel: ...
+compatibility:
+  targets: [...]
+risk:
+  level: ...
+skills:
+  - id: ...
+    path: ...
+    description: ...
+    triggers: [...]</code></pre>
+
+  <h3>Content versioning</h3>
+  <p>
+    A kit's <code>version</code> is its <strong>content version</strong>: a sequential
+    positive integer (<code>1</code>, <code>2</code>, <code>3</code>, …) displayed to
+    authors as <code>vN</code> and auto-incremented when a new revision is published. It
+    is stored as a quoted string (e.g. <code>version: "1"</code>) and is distinct from
+    <code>schemaVersion</code> (the spec format version). Legacy kits carrying a semver
+    version (e.g. <code>"0.1.0"</code>) are treated as <code>v1</code> and normalized to
+    <code>"1"</code> on the next write.
+  </p>
+
+  <h2>Validation profiles</h2>
+  <p>Forge Core validates a kit against escalating profiles:</p>
+  <ul>
+    <li><strong>local-valid</strong> — the minimum to build, run, and export locally.</li>
+    <li><strong>publishable</strong> — required before submitting to the Market.</li>
+    <li><strong>trusted</strong> → <strong>verified</strong> — higher review/trust levels.</li>
+  </ul>
+
+  <h2>Package safeguards</h2>
+  <p>Packaging enforces hard limits to keep kits portable and safe:</p>
+  <ul>
+    <li>Max 2000 entries per package.</li>
+    <li>Max 100&nbsp;MB uncompressed total.</li>
+    <li>Max 25&nbsp;MB per file.</li>
+    <li>No symlinks and no path traversal.</li>
+  </ul>
+
+  <div class="docs-note">
+    <strong>Authoritative source.</strong> Field names, profiles, and limits above
+    reflect <code>SPEC.md</code> in <code>@agentkitforge/core</code> at the time of
+    writing. The spec is in public preview and the package is the source of truth — check
+    <code>SPEC.md</code> for the exact current schema.
+  </div>
+</DocsLayout>

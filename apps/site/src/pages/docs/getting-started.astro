@@ -1,0 +1,50 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { forgeUrl, webForgeUrl } from '../../data/products';
+---
+<DocsLayout
+  title="Getting started"
+  eyebrow="Get started"
+  description="Install Forge, add an AI provider, build your first kit, and run it."
+>
+  <h2>What you need</h2>
+  <ul>
+    <li><a href={forgeUrl}>AgentKitForge</a> installed (desktop), or open <a href={webForgeUrl}>Web Forge</a> in a browser.</li>
+    <li>An AI provider ready — OpenAI, Anthropic Claude, Google Gemini, Ollama, or a custom compatible endpoint.</li>
+  </ul>
+  <div class="docs-note">
+    <strong>No account needed for the desktop app.</strong> Building, validating,
+    packaging, and importing kits work fully offline. Web Forge requires a free sign-in.
+  </div>
+
+  <h2>Step by step</h2>
+  <ol>
+    <li>Open AgentKitForge and go to <strong>My Kits</strong>.</li>
+    <li>Add an AI provider in <strong>Settings</strong>.</li>
+    <li>Choose <strong>Build with AI</strong> (generate a kit from a plain-language request) or the <strong>Guided Builder</strong> (approachable forms instead of editing package files).</li>
+    <li>Create a small first kit with one clear purpose.</li>
+    <li>Open <strong>Use / Run</strong>, fill the required inputs, preview the prompt, and run the kit.</li>
+    <li>Download the generated Markdown/Text output, or package the kit for later.</li>
+  </ol>
+
+  <h2>Tips</h2>
+  <ul>
+    <li>Start with one narrow workflow — broad kits are harder to run consistently.</li>
+    <li>Use a provider with reliable structured output for Build with AI.</li>
+    <li>Package the kit only after you have run it once.</li>
+  </ul>
+
+  <h2>Common mistakes</h2>
+  <ul>
+    <li>Trying to build a very broad kit first.</li>
+    <li>Skipping provider setup.</li>
+    <li>Confusing one-file Markdown export with a full <code>.agentkit.zip</code> package — the one-file export is paste-ready but cannot be re-imported as a kit.</li>
+  </ul>
+
+  <h2>Next steps</h2>
+  <ul>
+    <li><a href="/docs/what-is-an-agent-kit/">What is an Agent Kit?</a></li>
+    <li><a href="/docs/signing-in/">Sign in</a> to unlock Market download, submit, and your profile.</li>
+    <li><a href="/docs/cli/">Use the CLI</a> to validate, package, and submit from the terminal.</li>
+  </ul>
+</DocsLayout>
