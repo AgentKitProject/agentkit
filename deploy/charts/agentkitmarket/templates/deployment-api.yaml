@@ -25,9 +25,10 @@ spec:
         fsGroup: 1001
       containers:
         - name: api
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["node", "dist/entrypoints/server.js"]
+          {{- $apiImg := .Values.api.image | default .Values.image }}
+          image: "{{ $apiImg.repository }}:{{ $apiImg.tag }}"
+          imagePullPolicy: {{ $apiImg.pullPolicy | default .Values.image.pullPolicy }}
+          command: {{ .Values.api.command | default (list "node" "dist/entrypoints/server.js") | toJson }}
           ports:
             - name: http
               containerPort: {{ .Values.api.port }}
