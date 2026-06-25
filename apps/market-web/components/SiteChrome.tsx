@@ -9,6 +9,7 @@ import {
   navWithActive,
   type NavItem,
 } from "@agentkitforge/ui";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const AGENTKIT_PROFILE_ACCOUNT_URL = "https://profile.agentkitproject.com";
 
@@ -135,12 +136,20 @@ export function SiteChrome({ signedIn, showAdmin, children }: SiteChromeProps) {
     { label: "Submit Kit", href: "/submit" },
   ];
 
-  const account = signedIn ? (
+  const accountInner = signedIn ? (
     <AccountDropdown showAdmin={showAdmin} />
   ) : (
     <Link className="ak-btn ak-btn--secondary ak-btn--sm" href="/auth/sign-in">
       Sign in / Create account
     </Link>
+  );
+
+  // Theme toggle sits alongside the existing account content in the header slot.
+  const account = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <ThemeToggle />
+      {accountInner}
+    </div>
   );
 
   return (

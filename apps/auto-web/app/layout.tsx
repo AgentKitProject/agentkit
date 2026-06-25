@@ -7,11 +7,23 @@ import "@agentkitforge/ui/styles.css";
 import "./forge.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://auto.agentkitproject.com"),
   title: "AgentKitAuto",
   description: "Autonomous Agent Kit runs — on-demand, scheduled, and webhook-triggered.",
+  openGraph: {
+    siteName: "AgentKitAuto",
+    type: "website",
+    locale: "en_US",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "AgentKitAuto" }],
+  },
+  twitter: { card: "summary_large_image", images: ["/og.png"] },
   icons: {
-    icon: "/agentkitauto-icon.png",
-    apple: "/agentkitauto-icon.png",
+    icon: [
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "/auto-logo.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
   },
 };
 

@@ -32,6 +32,115 @@ body {
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* ============================================================================
+   Dark mode — activated by [data-theme="dark"] on <html> (set pre-paint by the
+   inline script in app/layout.tsx). The framework --ak-* tokens flip
+   automatically for the SiteShell chrome; the overrides below only fix
+   app-specific hardcoded LIGHT values on large or readable surfaces so they
+   don't render light-on-light. Text falls back to the framework --ak-text
+   token (which flips), with --market-* as the light default.
+   ========================================================================== */
+html[data-theme="dark"] body {
+  color: var(--ak-text);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.6), rgba(2, 6, 23, 0.4) 20rem, var(--ak-bg)),
+    radial-gradient(circle at top left, rgba(14, 216, 210, 0.1), transparent 34rem),
+    var(--ak-bg);
+}
+
+/* App-specific surfaces that hardcode light fills/borders/text. In dark mode
+   route them through the framework tokens so they stay legible. */
+html[data-theme="dark"] .account-pill,
+html[data-theme="dark"] .account-dropdown__trigger,
+html[data-theme="dark"] .account-dropdown__menu,
+html[data-theme="dark"] .filter-bar,
+html[data-theme="dark"] .filter-chip,
+html[data-theme="dark"] .signal-grid span,
+html[data-theme="dark"] .trust-meter,
+html[data-theme="dark"] .doc-panel,
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] .license-text,
+html[data-theme="dark"] .license-modal {
+  background: var(--ak-surface);
+  color: var(--ak-text);
+  border-color: var(--ak-border);
+}
+
+html[data-theme="dark"] .account-pill,
+html[data-theme="dark"] .account-pill span,
+html[data-theme="dark"] .account-pill a,
+html[data-theme="dark"] .account-dropdown__label,
+html[data-theme="dark"] .account-dropdown__chevron,
+html[data-theme="dark"] .account-dropdown__item,
+html[data-theme="dark"] .filter-chip,
+html[data-theme="dark"] .signal-grid span,
+html[data-theme="dark"] .trust-meter,
+html[data-theme="dark"] label,
+html[data-theme="dark"] .metadata-list dt {
+  color: var(--ak-text);
+}
+
+html[data-theme="dark"] .account-dropdown__item--admin {
+  color: var(--ak-brand);
+}
+
+html[data-theme="dark"] .account-dropdown__item--signout {
+  color: var(--ak-muted);
+}
+
+html[data-theme="dark"] .preview-card,
+html[data-theme="dark"] .rule-callout,
+html[data-theme="dark"] .publisher-hero,
+html[data-theme="dark"] .entrypoint-panel,
+html[data-theme="dark"] .empty-state,
+html[data-theme="dark"] .action-card,
+html[data-theme="dark"] .table-head {
+  background: var(--ak-surface-muted);
+  border-color: var(--ak-border);
+}
+
+/* Headings/body text: framework token in dark (light keeps --market-* values). */
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3 {
+  color: var(--ak-text);
+}
+
+html[data-theme="dark"] p,
+html[data-theme="dark"] .preview-header span,
+html[data-theme="dark"] .kit-card-meta,
+html[data-theme="dark"] .kit-card-footer,
+html[data-theme="dark"] .privacy-note,
+html[data-theme="dark"] .table-row span,
+html[data-theme="dark"] .metadata-list dd,
+html[data-theme="dark"] .rule-callout,
+html[data-theme="dark"] .empty-state {
+  color: var(--ak-muted);
+}
+
+/* Header theme-toggle button — rendered into the SiteShell account slot.
+   Styled off the framework tokens so it reads in both themes. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ak-border, var(--market-line));
+  border-radius: 8px;
+  background: var(--ak-surface, #fff);
+  color: var(--ak-text, var(--market-navy));
+  cursor: pointer;
+  transition: var(--ak-transition, all 0.16s ease);
+}
+
+.theme-toggle:hover {
+  border-color: var(--ak-brand);
+  color: var(--ak-brand);
+}
+
 a {
   color: inherit;
   text-decoration: none;

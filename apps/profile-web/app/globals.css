@@ -43,6 +43,40 @@ body {
     var(--background);
 }
 
+/* Dark mode: the light teal-over-near-white gradient washes out on the dark
+   --ak-bg, so swap to a subtle dark teal tint that fades into var(--background)
+   (mirrors apps/site's dark body treatment). --background is the bridged
+   --ak-bg, which the framework already flips dark under [data-theme="dark"]. */
+html[data-theme="dark"] body {
+  background:
+    linear-gradient(180deg, rgba(47, 143, 137, 0.12), rgba(2, 6, 23, 0) 360px),
+    var(--background);
+}
+
+/* A handful of pages/components use raw Tailwind light utilities (slate/white)
+   instead of the bridged var(--*) tokens, so they don't flip automatically and
+   would render as bright islands / near-black text on the dark surface. Re-point
+   just those specific utilities to the framework tokens in dark. Surgical: the
+   bulk of the UI already uses var(--panel/--background/--foreground/...) which
+   flip with the framework dark block. */
+html[data-theme="dark"] .text-slate-900,
+html[data-theme="dark"] .text-slate-700 {
+  color: var(--ak-text);
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-slate-50 {
+  background-color: var(--ak-surface);
+}
+
+html[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--ak-surface-muted);
+}
+
+html[data-theme="dark"] .hover\:bg-white:hover {
+  background-color: var(--ak-surface-muted);
+}
+
 /* Profile pages own their own width/padding (mx-auto max-w-6xl px-5 py-…),
    so let the framework's main slot be a transparent passthrough rather than
    a second centered container. */
