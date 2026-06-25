@@ -14,9 +14,11 @@ import {
   assembleSystemPrompt,
   extractTools,
   makeObjectStorageKitResolvers,
+  serializeKitPackage,
   DEFAULT_SYSTEM_PROMPT,
   type KitPackageStore,
   type KitPackageTree,
+  type KitPackageWriter,
 } from "../src/core/services/kit-context-resolver.js";
 import {
   composeManagedGateway,
@@ -45,6 +47,27 @@ class FakeKitStore implements KitPackageStore {
   constructor(private readonly map: Map<string, KitPackageTree>) {}
   async getKitPackage(key: string): Promise<KitPackageTree | undefined> {
     return this.map.get(key);
+  }
+}
+
+/**
+ * In-memory object store implementing BOTH the reader and writer ports, going
+ * through `serializeKitPackage` on write + JSON.parse on read — so it exercises
+ * the exact on-storage layout an S3 round-trip would (no real S3). `puts` counts
+ * writes to assert idempotent re-stage / "BYO does not stage".
+ */
+class FakeObjectStore implements KitPackageStore, KitPackageWriter {
+  readonly blobs = new Map<string, string>();
+  puts = 0;
+  async putKitPackage(key: string, tree: KitPackageTree): Promise<void> {
+    this.puts += 1;
+    this.blobs.set(key, serializeKitPackage(tree));
+  }
+  async getKitPackage(key: string): Promise<KitPackageTree | undefined> {
+    const blob = this.blobs.get(key);
+    if (blob === undefined) return undefined;
+    const parsed = JSON.parse(blob) as Partial<KitPackageTree>;
+    return { files: Array.isArray(parsed.files) ? parsed.files : [] };
   }
 }
 
@@ -100,6 +123,98 @@ describe("extractTools", () => {
   it("returns no tools when tools.json is absent or malformed", () => {
     expect(extractTools({ files: [] })).toEqual([]);
     expect(extractTools({ files: [{ path: "tools.json", content: "not json" }] })).toEqual([]);
+  });
+});
+
+describe("serializeKitPackage", () => {
+  it("emits the reader's layout with files sorted by path and encoding defaulted", () => {
+    const blob = serializeKitPackage({
+      files: [
+        { path: "START_HERE.md", content: "b" },
+        { path: "AGENTKIT.md", content: "a" },
+      ],
+    });
+    expect(JSON.parse(blob)).toEqual({
+      files: [
+        { path: "AGENTKIT.md", content: "a", encoding: "utf8" },
+        { path: "START_HERE.md", content: "b", encoding: "utf8" },
+      ],
+    });
+  });
+
+  it("is deterministic regardless of input file order (idempotent bytes)", () => {
+    const a = serializeKitPackage({
+      files: [
+        { path: "skills/b/SKILL.md", content: "B" },
+        { path: "skills/a/SKILL.md", content: "A" },
+      ],
+    });
+    const b = serializeKitPackage({
+      files: [
+        { path: "skills/a/SKILL.md", content: "A" },
+        { path: "skills/b/SKILL.md", content: "B" },
+      ],
+    });
+    expect(a).toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staging WRITER ↔ reader round-trip (the missing managed-run half).
+// ---------------------------------------------------------------------------
+
+describe("KitPackageWriter ↔ reader round-trip", () => {
+  const REF = "auto-kits/run-123/package.json";
+  const pkg: KitPackageTree = {
+    files: [
+      { path: "AGENTKIT.md", content: "you are the kit" },
+      { path: "START_HERE.md", content: "start here" },
+      { path: "skills/research/SKILL.md", content: "do research" },
+      { path: "tools.json", content: JSON.stringify([{ name: "read_file" }, { name: "list_dir" }]) },
+    ],
+  };
+
+  it("a staged package is read back to the same assembled prompt + tools", async () => {
+    const store = new FakeObjectStore();
+    await store.putKitPackage(REF, pkg);
+
+    // Read back via the SAME resolvers a managed turn uses.
+    const resolvers = makeObjectStorageKitResolvers(store);
+    const s = session(REF);
+    expect(await resolvers.resolveSystemPrompt(s)).toBe(
+      "you are the kit\n\nstart here\n\ndo research",
+    );
+    expect((await resolvers.resolveTools(s)).map((t) => t.name)).toEqual(["read_file", "list_dir"]);
+  });
+
+  it("re-staging the same key is idempotent (same bytes, overwrite)", async () => {
+    const store = new FakeObjectStore();
+    await store.putKitPackage(REF, pkg);
+    const first = store.blobs.get(REF);
+    await store.putKitPackage(REF, pkg);
+    expect(store.puts).toBe(2);
+    expect(store.blobs.get(REF)).toBe(first);
+    // Still resolves to the same thing after the re-stage.
+    const resolvers = makeObjectStorageKitResolvers(store);
+    expect((await resolvers.resolveTools(session(REF))).map((t) => t.name)).toEqual([
+      "read_file",
+      "list_dir",
+    ]);
+  });
+
+  it("the writer preserves base64-encoded files for the reader to decode", async () => {
+    const store = new FakeObjectStore();
+    await store.putKitPackage("k", {
+      files: [
+        {
+          path: "AGENTKIT.md",
+          content: Buffer.from("encoded prompt").toString("base64"),
+          encoding: "base64",
+        },
+      ],
+    });
+    const resolvers = makeObjectStorageKitResolvers(store);
+    expect(await resolvers.resolveSystemPrompt(session("k"))).toBe("encoded prompt");
   });
 });
 

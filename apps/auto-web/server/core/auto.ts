@@ -494,6 +494,119 @@ async function isProtectedKit(kitRef: KitRef, opts: KitContextOptions): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// Managed-run kit-package STAGING (writer) — the counterpart to gateway-core's
+// S3KitPackageStore reader.
+//
+// A MANAGED run's kit context is resolved SERVER-SIDE by the gateway/worker
+// reader (gateway-core makeObjectStorageKitResolvers + S3KitPackageStore), which
+// reads a kit package staged in object storage at the session's
+// `systemPromptRef`. Nothing wrote that package — so here we STAGE it before
+// dispatch: serialize the run's kit into the EXACT layout the reader expects
+// (AGENTKIT.md / START_HERE.md / skills/*/SKILL.md + tools.json), upload it to
+// `auto-kits/{runId}/package.json`, and return that key as the systemPromptRef.
+//
+// SCOPE: managed runs only. A BYO run resolves its kit differently (the worker's
+// own resolve path / user key) and is NEVER staged — `stageManagedKitPackage`
+// returns undefined for BYO. When no S3 bucket is configured (dev / in-process),
+// staging is a graceful no-op (returns undefined): the in-process dispatcher
+// resolves the prompt directly via makeResolveKitContext and needs no staged
+// package.
+// ---------------------------------------------------------------------------
+
+/** The S3 object key a run's staged kit package lives at. Mirrors the
+ *  per-run input prefix convention (`auto-inputs/{runId}/...`). */
+export function kitPackageObjectKey(runId: string): string {
+  return `auto-kits/${runId}/package.json`;
+}
+
+/**
+ * Build the kit-package file tree to stage for a run, in the gateway-core reader's
+ * layout. A LOCAL kit's stored KitTree already uses the spec file paths
+ * (AGENTKIT.md, START_HERE.md, skills/<name>/SKILL.md), so we map it 1:1 and
+ * append `tools.json` derived from the approval's tool allowlist (the same tool
+ * set makeResolveKitContext surfaces). Returns undefined when there is no local
+ * kit content to stage (a Market kit: its protected prompt is resolved server-side
+ * by the worker, never staged here; a free Market kit has no local package).
+ */
+async function buildKitPackageTree(
+  run: AutoRun,
+  approval: AutoApproval,
+): Promise<{ files: { path: string; content: string; encoding?: "utf8" | "base64" }[] } | undefined> {
+  const ref = run.kitRef;
+  if (ref.source !== "local") {
+    // Market kits are resolved server-to-service by the worker (protected) or fall
+    // back to the default prompt (free); there is no local package to stage.
+    return undefined;
+  }
+  const localKitId = ref.localKitId;
+  if (!localKitId) return undefined;
+
+  const kitStore = await getKitStore();
+  const tree = await kitStore.getKitTree(run.userId, localKitId);
+  const files = (tree.files ?? []).map((f) => ({
+    path: f.path,
+    content: f.content,
+    ...(f.encoding ? { encoding: f.encoding } : {}),
+  }));
+  if (files.length === 0) return undefined;
+
+  // tools.json: the approval's allowlist, in the ToolDefinition shape the reader
+  // (gateway-core extractTools) parses. Matches makeResolveKitContext's tool set.
+  const tools: ToolDefinition[] = approval.toolAllowlist.map((name) => ({
+    name,
+    description: "",
+    inputSchema: { type: "object" },
+  }));
+  // Don't clobber a kit-authored tools.json if one already exists in the tree.
+  if (tools.length > 0 && !files.some((f) => f.path === "tools.json")) {
+    files.push({ path: "tools.json", content: JSON.stringify(tools) });
+  }
+  return { files };
+}
+
+/**
+ * STAGE a managed run's kit package to object storage and return the
+ * `systemPromptRef` (the object key) the gateway/worker reader will read it from.
+ *
+ *   - BYO run            → undefined (never staged).
+ *   - No S3 bucket       → undefined (dev / in-process; reader path not used).
+ *   - No package to stage (Market / empty) → undefined (worker resolves it).
+ *   - Otherwise          → uploads the package via gateway-core's S3KitPackageWriter
+ *                          (the counterpart to the S3KitPackageStore reader) and
+ *                          returns `auto-kits/{runId}/package.json`.
+ *
+ * Idempotent: a re-dispatched run re-stages the same key with byte-identical
+ * content (PUT overwrite). The S3 client + writer are lazy-imported so a build
+ * that never stages (in-process dev) never pulls @aws-sdk/client-s3.
+ */
+export async function stageManagedKitPackage(
+  run: AutoRun,
+  approval: AutoApproval,
+  billing: AutoBilling,
+): Promise<string | undefined> {
+  if (billing.inferenceMode !== "managed") return undefined;
+  const bucket = autoInputsBucket();
+  if (!bucket) return undefined;
+
+  const tree = await buildKitPackageTree(run, approval);
+  if (!tree) return undefined;
+
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  const { S3KitPackageWriter } = await import(
+    "@agentkitforge/gateway-core/adapters/aws/s3-kit-package-store"
+  );
+  const env = awsClientEnv();
+  const client = new S3Client({
+    region: env.region,
+    ...(env.credentials ? { credentials: env.credentials } : {}),
+  });
+  const key = kitPackageObjectKey(run.id);
+  const writer = new S3KitPackageWriter({ client, bucket });
+  await writer.putKitPackage(key, tree);
+  return key;
+}
+
+// ---------------------------------------------------------------------------
 // processAutoRun deps (billing reuse)
 // ---------------------------------------------------------------------------
 
@@ -948,6 +1061,18 @@ export async function startRun(input: {
     ...(input.deliveryConfig ? { deliveryConfig: input.deliveryConfig } : {})
   };
   const run = await storage.runs.createRun(createInput);
+
+  // ---- Stage the managed kit package (writer; the missing half) ----------
+  // A MANAGED run's kit context is read server-side by the gateway/worker from
+  // object storage at its systemPromptRef. Stage the package now so the reader
+  // finds it. No-op for BYO runs and when no S3 bucket is configured (in-process
+  // dev resolves the prompt directly). Staging failure must NOT abort the run —
+  // the resolver degrades to the default prompt on a miss — so we swallow.
+  try {
+    await stageManagedKitPackage(run, approval, billing);
+  } catch {
+    /* staged-package miss degrades to the default prompt in the reader */
+  }
 
   // ---- Dispatch (fire-and-forget) ----------------------------------------
   await dispatcher(run.id, input.kitContext, billing);

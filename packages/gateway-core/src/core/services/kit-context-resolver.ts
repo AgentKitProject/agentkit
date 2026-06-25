@@ -48,6 +48,44 @@ export interface KitPackageStore {
   getKitPackage(key: string): Promise<KitPackageTree | undefined>;
 }
 
+/**
+ * WRITER counterpart of {@link KitPackageStore}: STAGES a kit package tree into
+ * object storage at `key`, in the EXACT layout {@link KitPackageStore} reads
+ * back (a single JSON blob `{ files: [...] }`). A managed run stages its kit
+ * package before dispatch so the gateway/worker can resolve the secret system
+ * prompt + tools server-side via the reader. Implementations:
+ *   - `S3KitPackageStore` (hosted: AWS S3 / DO Spaces — same client as the reader),
+ *   - an in-memory fake (tests).
+ *
+ * `putKitPackage` is idempotent: staging the same key twice overwrites with the
+ * same bytes (object storage PUT semantics), so a re-dispatched run is safe.
+ */
+export interface KitPackageWriter {
+  putKitPackage(key: string, tree: KitPackageTree): Promise<void>;
+}
+
+/**
+ * Serializes a kit package tree to the canonical on-storage JSON the reader
+ * (`S3KitPackageStore.getKitPackage` / `makeObjectStorageKitResolvers`) parses:
+ * `{ files: [{ path, content, encoding }] }`. Files are sorted by path so the
+ * same logical package always produces byte-identical output (deterministic,
+ * idempotent re-stage). Each file's `encoding` defaults to "utf8".
+ *
+ * This is the single source of truth for the stored layout — the writer adapter
+ * and the in-memory test fake both go through it so the writer can NEVER drift
+ * from the shape the reader expects.
+ */
+export function serializeKitPackage(tree: KitPackageTree): string {
+  const files = tree.files
+    .map((f) => ({
+      path: f.path,
+      content: f.content,
+      encoding: f.encoding ?? "utf8",
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return JSON.stringify({ files });
+}
+
 // ---------------------------------------------------------------------------
 // Prompt + tool assembly
 // ---------------------------------------------------------------------------

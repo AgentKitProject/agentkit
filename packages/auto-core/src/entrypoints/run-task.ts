@@ -120,18 +120,23 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
       ...(workspaceRootDir && workspaceRootDir.trim() !== "" ? { workspaceRootDir } : {}),
     });
     // Billing policy: FREE (default) → inert ledger (BYO, never metered).
-    // "managed" billing (the Postgres credit ledger) is a COMMERCIAL feature
-    // that lives in @agentkit-commercial/gateway. We optionally load it at
-    // runtime, mirroring auto.ts's `selectLedger()` and market-core's
-    // `loadCommercial()`: when the package is present (the hosted DOKS image) we
-    // build the Postgres credit ledger over the SAME pool the worker storage
-    // uses, so Auto billing rows live in the same database as the run rows; when
-    // it is absent (public / self-host build) we degrade to the inert FREE
-    // ledger so the open-core path runs without the commercial package.
+    // "managed" billing (the Postgres credit ledger) is a COMMERCIAL feature in
+    // @agentkit-commercial/gateway, optionally loaded at runtime (mirrors
+    // auto.ts `selectLedger()` / market-core `loadCommercial()`). The credit
+    // ledger is OWNED BY THE GATEWAY SERVICE and lives in ITS database
+    // (agentkitgateway) — NOT the auto app DB — so Stripe top-ups (gateway) and
+    // run debits (this worker) hit the SAME balance. Connect a SEPARATE pool to
+    // GATEWAY_DATABASE_URL for it; the gateway pod owns/applies the ledger schema.
+    // When GATEWAY_DATABASE_URL or the commercial package is absent, degrade to
+    // the inert FREE ledger so the open-core path runs unmetered.
     const billing = (env["AUTO_SELFHOST_BILLING"] || "free").toLowerCase();
+    const gatewayDbUrl = env["GATEWAY_DATABASE_URL"];
     let ledger: CreditLedgerRepository;
-    if (billing === "managed") {
-      ledger = await loadManagedLedger(pool);
+    if (billing === "managed" && gatewayDbUrl && gatewayDbUrl.trim() !== "") {
+      const gatewayPool = new Pool({
+        connectionString: gatewayDbUrl,
+      }) as unknown as PgPool;
+      ledger = await loadManagedLedger(gatewayPool);
     } else {
       ledger = makeFreeCreditLedger();
     }
