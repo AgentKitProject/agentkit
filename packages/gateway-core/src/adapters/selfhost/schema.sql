@@ -33,10 +33,12 @@ CREATE TABLE IF NOT EXISTS gateway_sessions (
 CREATE INDEX IF NOT EXISTS idx_gateway_sessions_user
   ON gateway_sessions (user_id, created_at DESC);
 
--- Partial index for efficient expired-row sweeps.
+-- Index for efficient expired-row sweeps. A plain index on expires_at (NOT a
+-- partial index) — a predicate referencing now() is rejected by Postgres
+-- ("functions in index predicate must be marked IMMUTABLE"), and the sweep query
+-- (DELETE ... WHERE expires_at < $now) uses this index regardless.
 CREATE INDEX IF NOT EXISTS idx_gateway_sessions_expired
-  ON gateway_sessions (expires_at)
-  WHERE expires_at < EXTRACT(EPOCH FROM now())::BIGINT;
+  ON gateway_sessions (expires_at);
 
 -- ---------------------------------------------------------------------------
 -- Schema version marker (for future migrations)
