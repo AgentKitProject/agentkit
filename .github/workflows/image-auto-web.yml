@@ -1,11 +1,18 @@
-name: Build and push container image
+name: image-auto-web
+
+# Build + push the FREE/open AgentKitAuto web image to GHCR.
+# Build context is the monorepo ROOT; the Dockerfile lives in the package dir.
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    paths:
+      - "apps/auto-web/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/image-auto-web.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +21,6 @@ permissions:
 
 jobs:
   build-push:
-    # GitHub-hosted runner (not the self-hosted homelab runner) for image builds.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,17 +43,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/agentkitmarket-app
+          images: ghcr.io/${{ github.repository_owner }}/agentkitauto-app
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,format=long
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: apps/auto-web/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

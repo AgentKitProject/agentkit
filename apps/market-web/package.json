@@ -20,9 +20,6 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
-  "optionalDependencies": {
-    "@agentkit-commercial/market-web": "*"
-  },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@types/node": "^22.15.29",

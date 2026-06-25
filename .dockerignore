@@ -1,0 +1,30 @@
+# Workspace-root .dockerignore — applies to ALL image builds, since every
+# Dockerfile in this monorepo is built with the repo ROOT as the build context
+# (`docker build -f <pkg>/Dockerfile .`). Keeps the context small and prevents
+# host build artifacts / secrets from leaking into the image.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/out
+**/build
+.git
+.github
+**/.github
+**/*.tsbuildinfo
+**/coverage
+# Stale per-repo npm lockfiles left over from the pre-monorepo split. The
+# pnpm workspace uses the root pnpm-lock.yaml only; these must never be copied
+# into a build (they would confuse npm/pnpm if present).
+**/package-lock.json
+**/.env
+**/.env.*
+!**/.env.example
+**/npm-debug.log*
+**/.DS_Store
+**/README.md
+**/docs
+**/reference
+# Desktop app + static site are not containerized here.
+apps/forge-desktop
+apps/site

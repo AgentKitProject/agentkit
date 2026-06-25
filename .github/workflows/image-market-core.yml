@@ -1,11 +1,19 @@
-name: Build and push container image
+name: image-market-core
+
+# Build + push the FREE/open AgentKitMarket core image to GHCR. ONE image serves
+# BOTH the API server (default CMD) and the worker (override CMD with
+# `node dist/entrypoints/worker.js`). Build context is the monorepo ROOT.
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    paths:
+      - "packages/market-core/**"
+      - "packages/contracts/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/image-market-core.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,13 +22,12 @@ permissions:
 
 jobs:
   build-push:
-    # GitHub-hosted runner (not the self-hosted homelab runner) for image builds.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (multi-arch)
+      - name: Set up QEMU (cross-compilation for arm64)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -37,21 +44,16 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/agentkitauto-app
+          images: ghcr.io/${{ github.repository_owner }}/agentkitmarket-core
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=sha,format=short
+            type=sha,format=long
 
       - name: Build and push
-        # The Dockerfile sets ENV BUILD_STANDALONE=1 in the builder stage, so the
-        # next.config.ts `output: "standalone"` branch is taken and `node server.js`
-        # runs the self-contained bundle. No build args needed.
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: packages/market-core/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

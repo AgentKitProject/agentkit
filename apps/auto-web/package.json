@@ -34,9 +34,6 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
-  "optionalDependencies": {
-    "@agentkit-commercial/gateway": "^0.1.0"
-  },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@types/pg": "^8.20.0",
