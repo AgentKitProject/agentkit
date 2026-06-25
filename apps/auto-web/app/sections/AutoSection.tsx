@@ -17,7 +17,7 @@
 // All HTTP is the cookie path (/api/auto/*) via fetch with credentials — this is
 // the browser UI; the bearer path (/api/forge/auto/*) is for desktop/CLI clients.
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Field, Input, Pill, Select, Textarea, brandVars } from "@agentkitforge/ui";
+import { Badge, BRAND_ACCENTS, Button, Card, Field, Input, Pill, Select, Textarea, brandVars } from "@agentkitforge/ui";
 import { autoRoutes } from "@agentkitforge/contracts";
 import type { MyKitEntry, Notify } from "./shared";
 import { errMsg } from "./shared";
@@ -27,8 +27,8 @@ import { ClientTime } from "./ClientTime";
 // AgentKitAuto accent. Wrapping the section in brandVars(AUTO_GREEN) re-themes
 // every framework primitive (buttons, badges, focus rings, active nav) inside
 // it to Auto green, while the rest of the app stays Forge indigo.
-const AUTO_GREEN = "#16a34a";
-const AUTO_GREEN_STRONG = "#15803d";
+const AUTO_GREEN = BRAND_ACCENTS.auto.accent;
+const AUTO_GREEN_STRONG = BRAND_ACCENTS.auto.strong;
 
 // Phase-A sandbox tools the user can authorize. NO run_command (no autonomous shell).
 const SANDBOX_TOOLS = ["read_file", "list_dir", "write_file"] as const;
