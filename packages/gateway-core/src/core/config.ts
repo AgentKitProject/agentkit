@@ -47,6 +47,18 @@ export const PER_CALL_MAX_COST_CENTS = 100;
 /** Default gateway session TTL in seconds (4 hours). */
 export const SESSION_TTL_SECONDS = 4 * 60 * 60;
 
+/**
+ * Default model for a managed turn when neither the session nor the kit
+ * specifies one. Override via GATEWAY_DEFAULT_MODEL.
+ */
+export const DEFAULT_GATEWAY_MODEL = "claude-sonnet-4-6";
+
+/**
+ * Default max output tokens per provider round-trip when not driven by the
+ * session/kit. Override via GATEWAY_MAX_TOKENS.
+ */
+export const DEFAULT_GATEWAY_MAX_TOKENS = 4096;
+
 // ---------------------------------------------------------------------------
 // EnvConfigProvider
 // ---------------------------------------------------------------------------
@@ -88,6 +100,10 @@ export interface SelfHostGatewayConfig {
   anthropicApiKey?: string;
   /** Markup in basis points. Defaults to DEFAULT_MARKUP_BPS. */
   markupBps: number;
+  /** Default model when a session/kit does not specify one. */
+  defaultModel: string;
+  /** Default max output tokens per provider round-trip. */
+  maxTokens: number;
 }
 
 /**
@@ -107,6 +123,9 @@ export function loadSelfHostGatewayConfig(config: ConfigProvider): SelfHostGatew
   const markupRaw = config.get("GATEWAY_MARKUP_BPS");
   const markupBps = markupRaw ? Number.parseInt(markupRaw, 10) : DEFAULT_MARKUP_BPS;
 
+  const maxTokensRaw = config.get("GATEWAY_MAX_TOKENS");
+  const maxTokens = maxTokensRaw ? Number.parseInt(maxTokensRaw, 10) : DEFAULT_GATEWAY_MAX_TOKENS;
+
   return {
     postgresUrl: config.get("DATABASE_URL", true)!,
     redisUrl: config.get("REDIS_URL"),
@@ -115,5 +134,7 @@ export function loadSelfHostGatewayConfig(config: ConfigProvider): SelfHostGatew
     port: Number.isFinite(port) ? port : 8081,
     anthropicApiKey: config.get("ANTHROPIC_API_KEY"),
     markupBps: Number.isFinite(markupBps) ? markupBps : DEFAULT_MARKUP_BPS,
+    defaultModel: config.get("GATEWAY_DEFAULT_MODEL") ?? DEFAULT_GATEWAY_MODEL,
+    maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : DEFAULT_GATEWAY_MAX_TOKENS,
   };
 }

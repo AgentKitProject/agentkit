@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     model?: unknown;
     inputFiles?: unknown;
     deliveryConfig?: unknown;
+    inferenceMode?: unknown;
   };
 
   try {
@@ -65,6 +66,10 @@ export async function POST(request: Request) {
     // Phase D: opt-in result delivery (email + signed webhook). Validated here
     // (https-only webhook, basic email format) → AutoValidationError → 400.
     const deliveryConfig = parseDeliveryConfig(body.deliveryConfig);
+    // Phase 2 BYO: optional per-run inference-mode override ("managed" | "byo").
+    // Absent → the user's account preference applies. Anything else is ignored.
+    const inferenceModeOverride =
+      body.inferenceMode === "managed" || body.inferenceMode === "byo" ? body.inferenceMode : undefined;
 
     const run = await startRun({
       userId,
@@ -75,6 +80,7 @@ export async function POST(request: Request) {
       ...(files ? { files } : {}),
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
       ...(deliveryConfig ? { deliveryConfig } : {}),
+      ...(inferenceModeOverride ? { inferenceModeOverride } : {}),
       // Cookie path: kit-context resolution uses the cookie forwarding store for
       // protected/Market kits (no forwarded bearer here).
       kitContext: {}

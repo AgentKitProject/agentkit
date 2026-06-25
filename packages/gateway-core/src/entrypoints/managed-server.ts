@@ -38,11 +38,35 @@ import type { ManagedTurnDeps } from "../core/services/managed-turn.js";
 import type { CreateGatewaySessionDeps, EntitlementCheck } from "../core/services/gateway-session.js";
 import type { StreamingTurnDeps } from "../core/services/streaming-turn.js";
 import type { GatewayRouterDeps } from "../core/router.js";
-import { EnvConfigProvider, loadSelfHostGatewayConfig } from "../core/config.js";
+import {
+  DEFAULT_GATEWAY_MAX_TOKENS,
+  DEFAULT_GATEWAY_MODEL,
+  EnvConfigProvider,
+  loadSelfHostGatewayConfig,
+} from "../core/config.js";
 import { InMemoryCreditLedgerRepository } from "../adapters/memory/credit-ledger.js";
 import { PostgresSessionStore, type PgPool } from "../adapters/selfhost/postgres.js";
 import { createManagedAnthropicProvider } from "../adapters/anthropic/index.js";
+import {
+  makeObjectStorageKitResolvers,
+  type KitPackageStore,
+} from "../core/services/kit-context-resolver.js";
 import { createGatewayHttpServer, type AuthenticateRequest } from "./server.js";
+
+// Re-export the kit-context resolver surface so a host wiring this entrypoint can
+// build / inject an object-storage KitPackageStore from one import (seam #1).
+export {
+  makeObjectStorageKitResolvers,
+  assembleSystemPrompt,
+  extractTools,
+  DEFAULT_SYSTEM_PROMPT,
+} from "../core/services/kit-context-resolver.js";
+export type {
+  KitPackageStore,
+  KitPackageTree,
+  KitPackageFile,
+  KitContextResolvers,
+} from "../core/services/kit-context-resolver.js";
 
 // ---------------------------------------------------------------------------
 // Optional commercial overlay surface (typed via the ambient .d.ts; no hard dep)
@@ -168,13 +192,24 @@ export interface ComposeManagedGatewayOptions {
   /** Clock. Defaults to `() => new Date().toISOString()`. */
   now?: () => string;
   /**
+   * Object-storage backing for server-side kit-context resolution (seam #1).
+   * When provided, the system prompt + the kit's tools are read from the kit
+   * package keyed by the session's `systemPromptRef` (AWS S3 / DO Spaces) and
+   * assembled server-side — so a managed run actually has its kit context.
+   *
+   * `resolveSystemPrompt` / `resolveTools` below override this when supplied
+   * (tests / a host with its own resolution). When NEITHER a store nor explicit
+   * resolvers are given, the Phase-1 fallback applies: the system prompt is the
+   * stored `systemPromptRef` verbatim and no tools.
+   */
+  kitPackageStore?: KitPackageStore;
+  /**
    * Resolves the secret system prompt for a session (server-side only; never
-   * emitted to the client). Phase 1 default: returns the stored
-   * `systemPromptRef` verbatim. The hosted resolver (reads the kit package from
-   * object storage) is a later phase.
+   * emitted to the client). Overrides `kitPackageStore`. When neither is set the
+   * Phase-1 fallback returns the stored `systemPromptRef` verbatim.
    */
   resolveSystemPrompt?: (session: GatewaySession) => Promise<string>;
-  /** Resolves the kit's tools for a session. Phase 1 default: none. */
+  /** Resolves the kit's tools for a session. Overrides `kitPackageStore`. */
   resolveTools?: (session: GatewaySession) => Promise<ToolDefinition[]>;
   /** Optional per-session entitlement gate (Tier-3). Defaults to allow-all. */
   entitlementCheck?: EntitlementCheck;
@@ -227,6 +262,22 @@ export async function composeManagedGateway(
   const chatProvider = options.chatProvider ?? createManagedAnthropicProvider();
   const sessions = new PostgresSessionStore(options.pool);
 
+  // Seam #1: server-side kit-context resolution. Explicit resolvers win; else an
+  // object-storage store (S3 / Spaces) reads the kit package keyed by the
+  // session's systemPromptRef; else the Phase-1 verbatim fallback.
+  const storeResolvers = options.kitPackageStore
+    ? makeObjectStorageKitResolvers(options.kitPackageStore)
+    : undefined;
+  const resolveSystemPrompt =
+    options.resolveSystemPrompt ??
+    storeResolvers?.resolveSystemPrompt ??
+    (async (session: GatewaySession) => session.systemPromptRef);
+  const resolveTools = options.resolveTools ?? storeResolvers?.resolveTools;
+
+  // Seam #3: default model / maxTokens driven from options → config defaults.
+  const model = options.model ?? DEFAULT_GATEWAY_MODEL;
+  const maxTokens = options.maxTokens ?? DEFAULT_GATEWAY_MAX_TOKENS;
+
   const managedTurnDeps: ManagedTurnDeps = {
     chatProvider,
     ledger,
@@ -244,13 +295,12 @@ export async function composeManagedGateway(
     chatProvider,
     sessions,
     ledger,
-    resolveSystemPrompt:
-      options.resolveSystemPrompt ?? (async (session) => session.systemPromptRef),
+    resolveSystemPrompt,
     now,
-    model: options.model ?? "claude-sonnet-4-6",
-    maxTokens: options.maxTokens ?? 4096,
+    model,
+    maxTokens,
     ...(options.markupBps !== undefined ? { markupBps: options.markupBps } : {}),
-    ...(options.resolveTools ? { resolveTools: options.resolveTools } : {}),
+    ...(resolveTools ? { resolveTools } : {}),
   };
 
   return {
@@ -307,14 +357,17 @@ export async function startManagedGatewayServer(
   const composeOptions: ComposeManagedGatewayOptions = {
     pool,
     markupBps: options.markupBps ?? config.markupBps,
+    // Seam #3: drive default model / maxTokens from the gateway config
+    // (GATEWAY_DEFAULT_MODEL / GATEWAY_MAX_TOKENS) when the caller doesn't.
+    model: options.model ?? config.defaultModel,
+    maxTokens: options.maxTokens ?? config.maxTokens,
     ...stripUndefined({
       chatProvider: options.chatProvider,
       now: options.now,
+      kitPackageStore: options.kitPackageStore,
       resolveSystemPrompt: options.resolveSystemPrompt,
       resolveTools: options.resolveTools,
       entitlementCheck: options.entitlementCheck,
-      model: options.model,
-      maxTokens: options.maxTokens,
       commercialImporter: options.commercialImporter,
       skipSchema: options.skipSchema,
     }),

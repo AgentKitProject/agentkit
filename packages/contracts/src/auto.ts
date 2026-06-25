@@ -591,7 +591,10 @@ export const autoRoutes = {
   schedules: () => "/api/auto/schedules",
   schedule: (id: string) => `/api/auto/schedules/${encodeURIComponent(id)}`,
   webhooks: () => "/api/auto/webhooks",
-  webhook: (id: string) => `/api/auto/webhooks/${encodeURIComponent(id)}`
+  webhook: (id: string) => `/api/auto/webhooks/${encodeURIComponent(id)}`,
+  /** BYO Anthropic key + inference-mode preference (cookie path). GET status,
+   *  PUT set/update, DELETE clear. */
+  byoKey: () => "/api/auto/byo-key"
 } as const;
 
 /** Seam B — Forge device-auth routes (/api/forge/auto/*, Bearer JWT). */

@@ -225,11 +225,19 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
   const [apprNetHosts, setApprNetHosts] = useState(""); // newline/comma-separated host patterns
   const [apprHttpFetch, setApprHttpFetch] = useState(false);
 
+  // BYO key + inference-mode preference state (Phase 2).
+  const [byoHasKey, setByoHasKey] = useState(false);
+  const [byoMode, setByoMode] = useState<"auto" | "managed" | "byo">("auto");
+  const [byoKeyInput, setByoKeyInput] = useState("");
+  const [byoBusy, setByoBusy] = useState(false);
+
   // Run form state.
   const [runKitId, setRunKitId] = useState("");
   const [runPrompt, setRunPrompt] = useState("");
   const [runBudgetUsd, setRunBudgetUsd] = useState("0.50");
   const [runBusy, setRunBusy] = useState(false);
+  // Phase 2: per-run inference-mode override ("" = use account preference).
+  const [runInferenceMode, setRunInferenceMode] = useState<"" | "managed" | "byo">("");
   // Phase C: user-provided input files staged via presigned upload then attached
   // to the run as a manifest. Selected files are uploaded on run start.
   const [runInputFiles, setRunInputFiles] = useState<File[]>([]);
@@ -293,12 +301,25 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
     }
   }, [notify]);
 
+  const loadByo = useCallback(async () => {
+    try {
+      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
+        autoRoutes.byoKey()
+      );
+      setByoHasKey(status.hasKey);
+      setByoMode(status.inferenceMode);
+    } catch (e) {
+      notify(errMsg(e), true);
+    }
+  }, [notify]);
+
   useEffect(() => {
     void loadApprovals();
     void loadRuns();
     void loadSchedules();
     void loadWebhooks();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks]);
+    void loadByo();
+  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo]);
 
   // Poll the open run + the list while a run is active.
   useEffect(() => {
@@ -375,6 +396,63 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
     }
   };
 
+  // ---- BYO key + inference-mode preference (Phase 2) ----
+  const saveByoKey = async () => {
+    const key = byoKeyInput.trim();
+    if (!key) return notify("Enter your Anthropic API key.", true);
+    setByoBusy(true);
+    try {
+      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
+        autoRoutes.byoKey(),
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ apiKey: key })
+        }
+      );
+      setByoHasKey(status.hasKey);
+      setByoMode(status.inferenceMode);
+      setByoKeyInput("");
+      notify("Anthropic key saved (encrypted at rest).");
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setByoBusy(false);
+    }
+  };
+
+  const clearByoKey = async () => {
+    setByoBusy(true);
+    try {
+      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
+        autoRoutes.byoKey(),
+        { method: "DELETE" }
+      );
+      setByoHasKey(status.hasKey);
+      setByoMode(status.inferenceMode);
+      notify("Anthropic key cleared. Runs use managed credits.");
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setByoBusy(false);
+    }
+  };
+
+  const saveByoMode = async (mode: "auto" | "managed" | "byo") => {
+    setByoMode(mode);
+    try {
+      await jsonFetch(autoRoutes.byoKey(), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inferenceMode: mode })
+      });
+      notify("Inference preference saved.");
+    } catch (e) {
+      notify(errMsg(e), true);
+      void loadByo();
+    }
+  };
+
   const startRun = async () => {
     if (!runKitId) return notify("Pick a kit (one with a standing approval).", true);
     if (!runPrompt.trim()) return notify("Enter a task for the run.", true);
@@ -424,13 +502,15 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
           input: { prompt: runPrompt },
           budgetCents: cents,
           ...(inputFiles && inputFiles.length > 0 ? { inputFiles } : {}),
-          ...(deliveryConfig ? { deliveryConfig } : {})
+          ...(deliveryConfig ? { deliveryConfig } : {}),
+          ...(runInferenceMode ? { inferenceMode: runInferenceMode } : {})
         })
       });
       notify("Run started.");
       setRunPrompt("");
       setRunInputFiles([]);
       setRunDelivery(EMPTY_DELIVERY);
+      setRunInferenceMode("");
       setOpenRunId(id);
       await loadRuns();
     } catch (e) {
@@ -692,6 +772,47 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
           )}
         </div>
 
+        {/* ---- Inference & billing (BYO key) — Phase 2 ---- */}
+        <h3 style={{ marginTop: 24 }}>Inference &amp; billing</h3>
+        <p className="form-copy">
+          Choose how your runs pay for inference. <strong>Managed credits</strong> use the platform key
+          (debited from your prepaid balance). <strong>Bring your own key</strong> runs on your own
+          Anthropic key — no credit debit. Your key is encrypted at rest and never shown again.
+        </p>
+        <Field label="Inference mode">
+          <Select value={byoMode} onChange={(e) => void saveByoMode(e.target.value as "auto" | "managed" | "byo")}>
+            <option value="auto">Automatic (use my key when set, else managed)</option>
+            <option value="managed">Managed credits (platform key)</option>
+            <option value="byo" disabled={!byoHasKey}>
+              My own key{byoHasKey ? "" : " (add a key first)"}
+            </option>
+          </Select>
+        </Field>
+        <Field label={byoHasKey ? "Replace your Anthropic API key" : "Your Anthropic API key"}>
+          <Input
+            type="password"
+            autoComplete="off"
+            value={byoKeyInput}
+            onChange={(e) => setByoKeyInput(e.target.value)}
+            placeholder={byoHasKey ? "sk-ant-… (a key is on file)" : "sk-ant-…"}
+          />
+          {byoHasKey && (
+            <p className="form-copy" style={{ marginTop: 6 }}>
+              <Pill tone="brand">key on file</Pill> Your runs can use it. Leave blank to keep it.
+            </p>
+          )}
+        </Field>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button disabled={byoBusy} loading={byoBusy} onClick={() => void saveByoKey()}>
+            {byoHasKey ? "Replace key" : "Save key"}
+          </Button>
+          {byoHasKey && (
+            <Button variant="secondary" disabled={byoBusy} onClick={() => void clearByoKey()}>
+              Clear key
+            </Button>
+          )}
+        </div>
+
         {/* ---- Start a run ---- */}
         <h3 style={{ marginTop: 24 }}>Start a run</h3>
         <Field label="Kit (must have an approval)">
@@ -711,6 +832,16 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
         </Field>
         <Field label="This run's budget (USD, required)">
           <Input type="number" min="0.01" step="0.01" value={runBudgetUsd} onChange={(e) => setRunBudgetUsd(e.target.value)} />
+        </Field>
+        {/* ---- Inference mode for THIS run (Phase 2) ---- */}
+        <Field label="Inference for this run">
+          <Select value={runInferenceMode} onChange={(e) => setRunInferenceMode(e.target.value as "" | "managed" | "byo")}>
+            <option value="">Use my account preference</option>
+            <option value="managed">Managed credits (this run)</option>
+            <option value="byo" disabled={!byoHasKey}>
+              My own key (this run){byoHasKey ? "" : " — add a key first"}
+            </option>
+          </Select>
         </Field>
         {/* ---- Input files (Phase C) ---- */}
         <Field label="Input files (optional)">

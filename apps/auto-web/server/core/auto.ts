@@ -395,6 +395,10 @@ export async function resolveAutoBilling(args: {
   kitRef: KitRef;
   isCloudRun: boolean;
   kitContext: KitContextOptions;
+  /** Per-run inference-mode override. When omitted, the user's account
+   *  preference ("auto" | "managed" | "byo") applies; "auto"/unset = use the BYO
+   *  key when one is configured, else managed (the historical behavior). */
+  inferenceModeOverride?: "managed" | "byo";
 }): Promise<AutoBilling> {
   const managed = (): AutoBilling => ({
     inferenceMode: "managed",
@@ -418,8 +422,19 @@ export async function resolveAutoBilling(args: {
     return managed();
   }
 
-  // Resolve the user's default BYO provider. Anthropic-type only in Phase A.
-  const stored = await (await getUserSettingsStore()).resolveProvider(args.userId);
+  // Effective inference-mode choice: a per-run override wins, else the user's
+  // account preference. "managed" forces the platform credit path even when a BYO
+  // key exists; "byo"/"auto" fall through to BYO-key resolution below.
+  const { byoProviderId, getInferenceModePreference } = await import("@/server/core/auto-byo");
+  const effectiveMode =
+    args.inferenceModeOverride ?? (await getInferenceModePreference(args.userId));
+  if (effectiveMode === "managed") {
+    return managed();
+  }
+
+  // Resolve the user's BYO Anthropic key (the well-known BYO provider record).
+  // Anthropic-type only in Phase A.
+  const stored = await (await getUserSettingsStore()).resolveProvider(args.userId, byoProviderId());
   if (stored && stored.providerType === "anthropic" && stored.apiKey) {
     return byo(
       new AnthropicChatProvider({
@@ -844,6 +859,10 @@ export async function startRun(input: {
   scheduleId?: string;
   /** The AutoWebhook that produced this run (only with trigger "webhook"). */
   webhookId?: string;
+  /** Per-run inference-mode override ("managed" | "byo"). Absent → the user's
+   *  account preference applies. A protected/paid kit ignores this (forced
+   *  managed). */
+  inferenceModeOverride?: "managed" | "byo";
 }): Promise<AutoRun> {
   if (typeof input.prompt !== "string" || input.prompt.trim().length === 0) {
     throw new AutoValidationError("A run input prompt is required.");
@@ -877,7 +896,8 @@ export async function startRun(input: {
     userId: input.userId,
     kitRef: input.kitRef,
     isCloudRun: isCloudRunDispatcher(),
-    kitContext: input.kitContext
+    kitContext: input.kitContext,
+    ...(input.inferenceModeOverride ? { inferenceModeOverride: input.inferenceModeOverride } : {})
   });
 
   // ---- BYO cloud-run compute-fee balance pre-check -----------------------
@@ -1021,17 +1041,23 @@ export async function resolveWorkerContext(runId: string): Promise<WorkerContext
 
   // Resolve the BYO decision the SAME way resolveAutoBilling does, but surface the
   // raw provider config (apiKey/baseUrl) instead of a constructed ChatProvider so
-  // the worker can build its own. PROTECTED/paid kits FORCE managed.
+  // the worker can build its own. PROTECTED/paid kits FORCE managed; the account
+  // inference-mode preference ("managed" forces the platform credit path) is
+  // honored identically to the in-process path.
   let inferenceMode: "managed" | "byo" = "managed";
   let byoProvider: { apiKey: string; baseUrl?: string } | undefined;
   if (!(await isProtectedKit(run.kitRef, serviceOpts))) {
-    const stored = await (await getUserSettingsStore()).resolveProvider(run.userId);
-    if (stored && stored.providerType === "anthropic" && stored.apiKey) {
-      inferenceMode = "byo";
-      byoProvider = {
-        apiKey: stored.apiKey,
-        ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
-      };
+    const { byoProviderId, getInferenceModePreference } = await import("@/server/core/auto-byo");
+    const effectiveMode = await getInferenceModePreference(run.userId);
+    if (effectiveMode !== "managed") {
+      const stored = await (await getUserSettingsStore()).resolveProvider(run.userId, byoProviderId());
+      if (stored && stored.providerType === "anthropic" && stored.apiKey) {
+        inferenceMode = "byo";
+        byoProvider = {
+          apiKey: stored.apiKey,
+          ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
+        };
+      }
     }
   }
 
