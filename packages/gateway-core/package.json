@@ -17,6 +17,10 @@
     "./entrypoints/server": {
       "types": "./dist/entrypoints/server.d.ts",
       "default": "./dist/entrypoints/server.js"
+    },
+    "./entrypoints/managed-server": {
+      "types": "./dist/entrypoints/managed-server.d.ts",
+      "default": "./dist/entrypoints/managed-server.js"
     }
   },
   "files": [
@@ -42,6 +46,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/pg": "^8.11.10",
+    "pg-mem": "^3.0.5",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14"
   },

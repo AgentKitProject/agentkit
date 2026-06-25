@@ -121,15 +121,17 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
     });
     // Billing policy: FREE (default) → inert ledger (BYO, never metered).
     // "managed" billing (the Postgres credit ledger) is a COMMERCIAL feature
-    // and lives in @agentkit-commercial/gateway; the open-source build supports
-    // only the free / BYO path.
+    // that lives in @agentkit-commercial/gateway. We optionally load it at
+    // runtime, mirroring auto.ts's `selectLedger()` and market-core's
+    // `loadCommercial()`: when the package is present (the hosted DOKS image) we
+    // build the Postgres credit ledger over the SAME pool the worker storage
+    // uses, so Auto billing rows live in the same database as the run rows; when
+    // it is absent (public / self-host build) we degrade to the inert FREE
+    // ledger so the open-core path runs without the commercial package.
     const billing = (env["AUTO_SELFHOST_BILLING"] || "free").toLowerCase();
     let ledger: CreditLedgerRepository;
     if (billing === "managed") {
-      throw new Error(
-        "AUTO_SELFHOST_BILLING=managed requires the commercial managed credit ledger " +
-          "(@agentkit-commercial/gateway), which is not bundled in the open-source build.",
-      );
+      ledger = await loadManagedLedger(pool);
     } else {
       ledger = makeFreeCreditLedger();
     }
@@ -151,6 +153,47 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
     env,
   );
   return { storage, ledger, emailSender };
+}
+
+/**
+ * The optional commercial gateway overlay surface this worker consumes. Only the
+ * `createPostgresCreditLedger` factory is needed here (the schema is applied by
+ * the web app / gateway composition root, and `ensureAutoSchema` already runs
+ * for the Auto tables). Kept as a narrow local type so the worker doesn't take a
+ * hard dependency on the private package's types.
+ */
+interface CommercialGatewayModule {
+  createPostgresCreditLedger(pool: PgPool): CreditLedgerRepository;
+}
+
+/** Importer seam so tests can inject a fake / force the absent path. */
+type CommercialImporter = () => Promise<CommercialGatewayModule>;
+
+const defaultCommercialImporter: CommercialImporter = () =>
+  // The private package is ABSENT in the public / self-host build, so this
+  // dynamic import fails there; the caller's try/catch degrades to the free
+  // ledger. The hosted DOKS image installs @agentkit-commercial/gateway, so the
+  // import resolves and the managed Postgres credit ledger is wired in.
+  import("@agentkit-commercial/gateway") as Promise<CommercialGatewayModule>;
+
+/**
+ * Optionally loads the commercial managed Postgres credit ledger over the
+ * worker's pool. Present (hosted) → the metered Postgres ledger; absent
+ * (public / self-host) → the inert FREE ledger (never debits). Mirrors
+ * `selectLedger()` in apps/auto-web/server/core/auto.ts and
+ * `loadCommercial()` in market-core's server entrypoint.
+ */
+export async function loadManagedLedger(
+  pool: PgPool,
+  importer: CommercialImporter = defaultCommercialImporter,
+): Promise<CreditLedgerRepository> {
+  try {
+    const mod = await importer();
+    return mod.createPostgresCreditLedger(pool);
+  } catch {
+    // Commercial package absent (public / self-host) → free ledger (never debits).
+    return makeFreeCreditLedger();
+  }
 }
 
 /**

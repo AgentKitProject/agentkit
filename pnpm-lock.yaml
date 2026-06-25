@@ -494,6 +494,9 @@ importers:
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
+      pg-mem:
+        specifier: ^3.0.5
+        version: 3.0.14
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
