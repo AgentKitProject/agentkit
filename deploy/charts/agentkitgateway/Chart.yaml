@@ -1,0 +1,13 @@
+apiVersion: v2
+name: agentkitgateway
+description: Hosted managed-inference Gateway (internal in-cluster inference + ledger service)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - agentkit
+  - gateway
+  - inference
+home: https://agentkitproject.com
+sources:
+  - https://github.com/AgentKitProject/agentkit

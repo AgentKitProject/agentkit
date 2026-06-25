@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # Suffix-less name: with Release.Name "agentkitgateway" this Service is
+  # reachable in-cluster as http://agentkitgateway (used by the Market Stripe
+  # webhook). Internal only — no ingress.
+  name: {{ include "agentkitgateway.fullname" . }}
+  labels:
+    {{- include "agentkitgateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "agentkitgateway.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

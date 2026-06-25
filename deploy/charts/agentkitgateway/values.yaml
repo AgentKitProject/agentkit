@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Image
+#
+# The hosted managed-inference gateway (@agentkit-commercial/gateway-hosted).
+# A Node HTTP server that listens on PORT (default 8081), runs non-root, and
+# applies its own DB schema at startup under a Postgres advisory lock (so
+# multiple replicas are safe — only one applies the schema at a time).
+#
+# This image is PRIVATE — set imagePullSecrets below to a synced ghcr pull
+# secret.
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/agentkitproject/agentkitgateway-hosted
+  tag: "latest"      # override with a release tag for reproducible deploys
+  pullPolicy: IfNotPresent
+
+# Pull secrets for the private registry (e.g. a synced ghcr pull secret).
+# REQUIRED for this private image — leave empty only if your nodes already have
+# registry credentials.
+imagePullSecrets: []
+#  - name: ghcr-pull-secret-infisical
+
+# ---------------------------------------------------------------------------
+# Gateway server
+# ---------------------------------------------------------------------------
+replicaCount: 2
+
+# Container listen port. Must match config.port below (PORT env). Default 8081.
+port: 8081
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Internal-only Service. The gateway is NOT user-facing: it is called in-cluster
+# by the Market Stripe webhook (Stripe→ledger topup) and by other internal
+# callers at http://agentkitgateway. There is intentionally NO ingress.
+service:
+  type: ClusterIP
+  # External Service port. Routed to the container's targetPort (port above).
+  port: 80
+
+# ---------------------------------------------------------------------------
+# Application config (non-secret, goes into the ConfigMap, envFrom'd in)
+# ---------------------------------------------------------------------------
+config:
+  # HTTP listen port — must match .port above. Maps to PORT.
+  port: "8081"
+  # Comma-separated CORS origins (API_ALLOWED_ORIGINS); empty to allow none.
+  allowedOrigins: ""
+  # Markup applied over upstream inference cost, in basis points
+  # (GATEWAY_MARKUP_BPS). Empty → app default.
+  markupBps: ""
+  # Default model id (GATEWAY_DEFAULT_MODEL). Empty → app default.
+  defaultModel: ""
+  # Per-request max tokens cap (GATEWAY_MAX_TOKENS). Empty → app default.
+  maxTokens: ""
+  # ---- Optional object storage (S3 / DO Spaces); non-secret pieces ----
+  # Bucket name (S3_BUCKET).
+  s3Bucket: ""
+  # Endpoint URL (S3_ENDPOINT), e.g. https://nyc3.digitaloceanspaces.com
+  s3Endpoint: ""
+  # Region (S3_REGION).
+  s3Region: ""
+  # Key prefix (S3_PREFIX).
+  s3Prefix: ""
+  # Force path-style URLs (S3_FORCE_PATH_STYLE) — "true" for MinIO/path-style.
+  s3ForcePathStyle: ""
+
+# ---------------------------------------------------------------------------
+# Secrets
+#
+# The gateway reads its secret config via envFrom a single Secret. Provide it
+# with secrets.existingSecret (e.g. a SealedSecret / Infisical-synced Secret).
+# The chart does NOT generate gateway secrets — they must be supplied.
+#
+# Required keys in the referenced Secret:
+#   DATABASE_URL      Postgres for the agentkitgateway DB. Use
+#                     sslmode=verify-ca and
+#                     sslrootcert=/etc/db-ca/ca-certificate.crt (see
+#                     database.caSecret below).
+#   GATEWAY_API_KEY   Caller auth for the gateway's session/inference routes.
+#   ANTHROPIC_API_KEY Upstream inference provider key.
+#   WORKOS_CLIENT_ID  WorkOS client id (token verification).
+#
+# Optional keys (set only if used):
+#   GATEWAY_SERVICE_KEY   Gates the Stripe→ledger topup endpoint. Without it
+#                         the topup endpoint is effectively disabled.
+#   S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY   Object-storage credentials.
+# ---------------------------------------------------------------------------
+secrets:
+  # Externally-managed Secret to source ALL gateway secret env from (envFrom
+  # secretRef). REQUIRED — there is no chart-managed fallback Secret.
+  existingSecret: ""
+
+# ---------------------------------------------------------------------------
+# Database TLS
+#
+# Postgres CA certificate for sslmode=verify-ca. When caSecret is set, the named
+# k8s Secret (key "ca-certificate.crt") is mounted read-only at /etc/db-ca/ on
+# the gateway container, so DATABASE_URL's
+# sslrootcert=/etc/db-ca/ca-certificate.crt resolves. On the DOKS cluster this
+# is the shared "do-pg-ca" Secret. Leave empty to mount nothing.
+# ---------------------------------------------------------------------------
+database:
+  caSecret: ""
