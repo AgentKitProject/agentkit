@@ -38,10 +38,27 @@ const DEFAULT_AUTH: AuthenticateRequest = (req) => {
   return undefined;
 };
 
+/**
+ * An optional pre-route hook, run BEFORE the WorkOS/user auth gate. It lets a
+ * host serve internal, separately-authenticated endpoints (e.g. the
+ * service-key-gated credit-topup endpoint) that must NOT go through per-user
+ * auth. Return a handled response to short-circuit; return undefined to fall
+ * through to the normal authenticated router.
+ */
+export type PreRouteHandler = (
+  req: IncomingMessage,
+  ctx: { path: string; method: string; body: unknown },
+) => Promise<{ status: number; body: unknown } | undefined> | { status: number; body: unknown } | undefined;
+
 export interface GatewayServerOptions {
   router: GatewayRouterDeps;
   authenticate?: AuthenticateRequest;
   port?: number;
+  /**
+   * Optional internal endpoints handled before the user-auth gate. Used by the
+   * managed server to mount the service-key-gated credit-topup endpoint.
+   */
+  preRoute?: PreRouteHandler;
 }
 
 /**
@@ -52,7 +69,7 @@ export function createGatewayHttpServer(options: GatewayServerOptions): Server {
   const authenticate = options.authenticate ?? DEFAULT_AUTH;
 
   return createServer((req, res) => {
-    void handle(req, res, options.router, authenticate).catch((err) => {
+    void handle(req, res, options.router, authenticate, options.preRoute).catch((err) => {
       // Last-resort error guard so a thrown handler never hangs the socket.
       if (!res.headersSent) {
         res.writeHead(500, { "content-type": "application/json" });
@@ -84,16 +101,28 @@ async function handle(
   res: ServerResponse,
   router: GatewayRouterDeps,
   authenticate: AuthenticateRequest,
+  preRoute?: PreRouteHandler,
 ): Promise<void> {
+  const path = (req.url ?? "/").split("?")[0]!;
+  const body = await readJsonBody(req);
+
+  // Pre-route hook (internal, separately-authenticated endpoints) runs BEFORE
+  // the per-user auth gate. A handled response short-circuits.
+  if (preRoute) {
+    const handled = await preRoute(req, { path, method: req.method ?? "GET", body });
+    if (handled) {
+      res.writeHead(handled.status, { "content-type": "application/json" });
+      res.end(handled.body === null ? "" : JSON.stringify(handled.body));
+      return;
+    }
+  }
+
   const userId = await authenticate(req);
   if (!userId) {
     res.writeHead(401, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "unauthorized" }));
     return;
   }
-
-  const path = (req.url ?? "/").split("?")[0]!;
-  const body = await readJsonBody(req);
 
   // For streaming routes, begin the SSE response BEFORE driving the router so
   // events flush to the client as they arrive. The router signals a pre-stream

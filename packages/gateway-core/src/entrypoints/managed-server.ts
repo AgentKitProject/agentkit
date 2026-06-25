@@ -51,7 +51,14 @@ import {
   makeObjectStorageKitResolvers,
   type KitPackageStore,
 } from "../core/services/kit-context-resolver.js";
-import { createGatewayHttpServer, type AuthenticateRequest } from "./server.js";
+import { createGatewayHttpServer, type AuthenticateRequest, type PreRouteHandler } from "./server.js";
+import {
+  CREDIT_TOPUP_PATH,
+  extractServiceKey,
+  handleCreditTopup,
+  type CreditTopupDeps,
+} from "./credit-topup.js";
+import { MIN_TOPUP_CENTS } from "../core/config.js";
 
 // Re-export the kit-context resolver surface so a host wiring this entrypoint can
 // build / inject an object-storage KitPackageStore from one import (seam #1).
@@ -326,6 +333,35 @@ export interface StartManagedGatewayServerOptions
   authenticate: AuthenticateRequest;
   /** Listen port. Defaults to the config PORT (8081). */
   port?: number;
+  /**
+   * Shared service key gating the internal `POST /gateway/credits/topup`
+   * endpoint (the Stripe-webhook → ledger seam). Defaults to the config
+   * `GATEWAY_SERVICE_KEY`. Undefined/empty → the endpoint is inert (503).
+   */
+  serviceKey?: string;
+  /** Minimum allowed topup in cents. Defaults to MIN_TOPUP_CENTS. */
+  minTopupCents?: number;
+}
+
+/**
+ * Builds the pre-route handler that serves the service-key-gated credit-topup
+ * endpoint (`POST /gateway/credits/topup`) before the per-user auth gate. Returns
+ * undefined for every other path so the request falls through to the normal
+ * authenticated router. Exported for unit testing.
+ */
+export function makeCreditTopupPreRoute(deps: CreditTopupDeps): PreRouteHandler {
+  return async (req, ctx) => {
+    if (ctx.path !== CREDIT_TOPUP_PATH) return undefined;
+    if (ctx.method !== "POST") {
+      return { status: 405, body: { error: "method_not_allowed" } };
+    }
+    const providedKey = extractServiceKey({
+      authorization: req.headers["authorization"],
+      serviceKeyHeader: req.headers["x-gateway-service-key"],
+    });
+    const response = await handleCreditTopup(deps, providedKey, ctx.body);
+    return { status: response.status, body: response.body };
+  };
 }
 
 export interface StartedManagedGateway {
@@ -375,9 +411,21 @@ export async function startManagedGatewayServer(
 
   const composed = await composeManagedGateway(composeOptions);
 
+  // Internal, service-key-gated credit-topup endpoint (Stripe-webhook → ledger).
+  // Reuses the composed credit ledger (commercial Postgres in the hosted image,
+  // in-memory otherwise) — the gateway stays the only holder of its DB creds.
+  const serviceKey = options.serviceKey ?? config.serviceKey;
+  const preRoute = makeCreditTopupPreRoute({
+    ledger: composed.ledger,
+    serviceKey,
+    minCents: options.minTopupCents ?? MIN_TOPUP_CENTS,
+    ...(options.now ? { now: options.now } : {}),
+  });
+
   const server = createGatewayHttpServer({
     router: { ...composed.routerDeps, createEmitter: makePlaceholderEmitter },
     authenticate: options.authenticate,
+    preRoute,
   });
 
   const port = options.port ?? config.port;

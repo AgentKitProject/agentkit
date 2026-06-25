@@ -26,6 +26,10 @@
       "types": "./dist/entrypoints/workos-auth.d.ts",
       "default": "./dist/entrypoints/workos-auth.js"
     },
+    "./entrypoints/credit-topup": {
+      "types": "./dist/entrypoints/credit-topup.d.ts",
+      "default": "./dist/entrypoints/credit-topup.js"
+    },
     "./adapters/aws/s3-kit-package-store": {
       "types": "./dist/adapters/aws/s3-kit-package-store.d.ts",
       "default": "./dist/adapters/aws/s3-kit-package-store.js"

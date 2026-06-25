@@ -104,6 +104,12 @@ export interface SelfHostGatewayConfig {
   defaultModel: string;
   /** Default max output tokens per provider round-trip. */
   maxTokens: number;
+  /**
+   * Shared service key gating the internal credit-topup endpoint (the Stripe
+   * webhook → ledger seam). Server-to-server only, separate from per-user auth.
+   * Undefined → the credit-topup endpoint is inert (rejects with 503).
+   */
+  serviceKey?: string;
 }
 
 /**
@@ -136,5 +142,6 @@ export function loadSelfHostGatewayConfig(config: ConfigProvider): SelfHostGatew
     markupBps: Number.isFinite(markupBps) ? markupBps : DEFAULT_MARKUP_BPS,
     defaultModel: config.get("GATEWAY_DEFAULT_MODEL") ?? DEFAULT_GATEWAY_MODEL,
     maxTokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : DEFAULT_GATEWAY_MAX_TOKENS,
+    serviceKey: config.get("GATEWAY_SERVICE_KEY"),
   };
 }
