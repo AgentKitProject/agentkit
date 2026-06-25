@@ -43,7 +43,8 @@ COPY packages/auto-core/package.json     packages/auto-core/package.json
 COPY packages/gateway-core/package.json  packages/gateway-core/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild
 COPY . .
-RUN pnpm --filter @agentkitforge/auto-core deploy --prod --legacy /out
+RUN pnpm --filter "@agentkitforge/auto-core..." build \
+ && pnpm --filter @agentkitforge/auto-core deploy --prod --legacy --ignore-scripts /out
 
 # ---------------------------------------------------------------------------- #
 # runtime — dist + production node_modules; root PID 1 (entrypoint drops to node)

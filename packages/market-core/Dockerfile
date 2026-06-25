@@ -35,8 +35,9 @@ WORKDIR /repo
 # builder — install the full workspace, build market-core (+ its workspace deps),
 # then `pnpm deploy` a self-contained production tree (dist + pruned prod
 # node_modules with workspace deps inlined, no symlinks) into /out.
-# `pnpm deploy` runs the package's `prepare` (= build), so dist + schema.sql are
-# produced inside /out. --legacy makes deploy work for a workspace-member target.
+# Build the package + its workspace deps first (so @agentkitforge/contracts et al.
+# have dist for tsc), then `pnpm deploy --ignore-scripts` copies the built dist +
+# schema.sql into /out without recompiling. --legacy works for a workspace member.
 # ---------------------------------------------------------------------------- #
 FROM base AS builder
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
@@ -52,7 +53,8 @@ COPY packages/auto-core/package.json     packages/auto-core/package.json
 COPY packages/gateway-core/package.json  packages/gateway-core/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild
 COPY . .
-RUN pnpm --filter @agentkitforge/market-core deploy --prod --legacy /out
+RUN pnpm --filter "@agentkitforge/market-core..." build \
+ && pnpm --filter @agentkitforge/market-core deploy --prod --legacy --ignore-scripts /out
 
 # ---------------------------------------------------------------------------- #
 # runtime — dist + production node_modules only, non-root.
