@@ -33,7 +33,7 @@ spec:
         - name: web
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["node", "server.js"]
+          command: ["node", "apps/profile-web/server.js"]
           ports:
             - name: http
               containerPort: {{ .Values.web.port }}

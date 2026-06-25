@@ -34,7 +34,7 @@ spec:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["node", "--experimental-strip-types", "scripts/migrate.mts"]
+          command: ["node", "--experimental-strip-types", "apps/profile-web/scripts/migrate.mts"]
           env:
             - name: DATABASE_URL
               valueFrom:

@@ -35,7 +35,7 @@ spec:
         - name: web
           image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
           imagePullPolicy: {{ .Values.web.image.pullPolicy }}
-          command: ["node", "server.js"]
+          command: ["node", "apps/market-web/server.js"]
           ports:
             - name: http
               containerPort: {{ .Values.web.port }}
