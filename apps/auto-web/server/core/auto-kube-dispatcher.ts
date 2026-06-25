@@ -148,6 +148,13 @@ function workerEnv(
   put("S3_ACCESS_KEY_ID", env.S3_ACCESS_KEY_ID);
   put("S3_SECRET_ACCESS_KEY", env.S3_SECRET_ACCESS_KEY);
   put("AWS_REGION", env.AWS_REGION);
+  // Phase C staged input-file hydration reads from AUTO_INPUTS_BUCKET (falling
+  // back to S3_BUCKET in auto-core's adapter). Forward both it and the
+  // path-style flag so a worker Job hydrates uploaded inputs from the SAME
+  // bucket the web app presigned them into; without this, runs that carry
+  // `inputFiles` silently skip hydration on the worker.
+  put("AUTO_INPUTS_BUCKET", env.AUTO_INPUTS_BUCKET || env.S3_BUCKET);
+  put("S3_FORCE_PATH_STYLE", env.S3_FORCE_PATH_STYLE);
   // Workspace dir under the writable scratch emptyDir (read-only root fs).
   put("AUTO_WORKSPACE_DIR", env.AUTO_WORKSPACE_DIR || DEFAULT_WORKSPACE_DIR);
 

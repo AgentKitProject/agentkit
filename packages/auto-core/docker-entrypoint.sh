@@ -20,19 +20,39 @@
 # no volume mounted), we skip the chown and just drop to node — auto-core then
 # falls back to its os.tmpdir() default when AUTO_WORKSPACE_DIR is unset. This
 # keeps the image runnable outside the hardened Fargate task def.
+#
+# TWO container-security models share this image:
+#   - Fargate: starts as ROOT, mounts /scratch root-owned. We must chown /scratch
+#     to `node` (uid 1000), then drop to node via gosu.
+#   - Kubernetes (self-host + hosted DOKS): the Job pod sets runAsNonRoot:true,
+#     runAsUser:1000, capabilities.drop:[ALL], and `fsGroup:1000` so the kubelet
+#     makes the /scratch emptyDir GROUP-writable by node — NO chown is needed (and
+#     a non-root `chown -R` would EPERM and, under `set -e`, abort the whole
+#     entrypoint before the worker ever starts). So we run the chown ONLY when we
+#     are actually root; otherwise we trust fsGroup and skip straight to the worker.
 set -eu
 
 SCRATCH_ROOT="/scratch"
 WORKSPACE_DIR="${AUTO_WORKSPACE_DIR:-}"
 
 if [ -d "$SCRATCH_ROOT" ]; then
-  # Create the workspace subtree (if AUTO_WORKSPACE_DIR points under /scratch)
-  # and hand the whole scratch mount to the non-root worker user.
+  # Create the workspace subtree (if AUTO_WORKSPACE_DIR points under /scratch) so
+  # FsWorkspaceStore can make per-run dirs under it. mkdir -p is safe for both
+  # models (root, or node under a group-writable mount).
   if [ -n "$WORKSPACE_DIR" ]; then
     mkdir -p "$WORKSPACE_DIR"
   fi
-  chown -R node:node "$SCRATCH_ROOT"
+  # Root-only: hand the whole scratch mount to the non-root worker user. Under k8s
+  # (non-root + fsGroup) this is skipped — the mount is already group-writable.
+  if [ "$(id -u)" = "0" ]; then
+    chown -R node:node "$SCRATCH_ROOT"
+  fi
 fi
 
-# Drop to the non-root `node` user for the actual worker process.
-exec gosu node "$@"
+# Drop to the non-root `node` user for the actual worker process. When already
+# running as a non-root user (k8s runAsUser), `gosu node` would attempt a setuid
+# the dropped-capabilities pod can't perform, so only re-exec via gosu when root.
+if [ "$(id -u)" = "0" ]; then
+  exec gosu node "$@"
+fi
+exec "$@"
