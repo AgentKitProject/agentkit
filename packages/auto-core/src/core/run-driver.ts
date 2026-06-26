@@ -18,16 +18,25 @@
  *     called DIRECTLY — the credit ledger is NOT touched for inference (the user
  *     is billed by their provider). spentInferenceCents stays 0.
  *
- * PER-MINUTE CLOUD-RUN FEE: charged ONLY when
- *   isCloudRun && inferenceMode === "byo" && cloudRunCentsPerMin > 0
- * (we run their job on our compute but collect no inference markup). The run
- * reserves an up-front hold for the estimated minutes derived from the budget
- * (estimatedMin = floor(budgetCents / cloudRunCentsPerMin), which also caps the
- * run's wall-clock), and settles ceil(actual minutes) * cloudRunCentsPerMin at
- * completion / cancel / failure / budget-stop. It uses the SAME
- * CreditLedgerRepository (reserveHold/settleHold) — no separate ledger. For ALL
- * other combinations (managed cloud, local/desktop, self-host) there is NO
- * separate compute debit.
+ * AUTO v2 RUN FEE (invocation + active-minute): the platform margin moved off
+ * per-token markup (now 0 — tokens pass through at cost) onto a RUN-based compute
+ * charge that applies to EVERY hosted run, managed OR BYO:
+ *   - a flat INVOCATION fee, debited ONCE at run start (invocationFeeCents), and
+ *   - a per-ACTIVE-MINUTE fee, ceil(wall-clock minutes) * activeMinuteRateCents,
+ *     settled at completion / cancel / failure / budget-stop.
+ * The active-minute mechanism is the generalization of the old cloud-run compute
+ * fee (same reserveHold/settleHold pattern on the SAME CreditLedgerRepository).
+ * The run reserves an up-front hold covering invocation + the budget-derived
+ * estimated active-minutes (estimatedMin = ceil(budgetCents / rate), which also
+ * caps the run's wall-clock), settles the ACTUAL invocation + ceil(actualMin) *
+ * rate, and releases the overshoot.
+ *
+ * OPEN-CORE / SELF-HOST SAFETY: both rates default to 0. They are only non-zero
+ * when the consumer (run-task) resolves them from the private
+ * @agentkit-commercial/gateway package on the HOSTED managed path. With the
+ * commercial package absent (public build) or the FREE self-host ledger, the
+ * rates are 0 and the entire v2-fee path is skipped — the ledger is never
+ * touched, so a self-host pays nothing.
  *
  * Per turn:
  *   1. before the turn — check spentInferenceCents < budgetCents (else
@@ -63,12 +72,20 @@ export interface RunAutoRunResult {
   status: "succeeded" | "failed" | "canceled" | "budget_exceeded";
   result?: AutoRunResult;
   error?: string;
-  /** Total cents debited across all turns of this run (inference + compute). */
+  /** Total cents debited for this run (inference + invocation + active-minutes). */
   spentCents: number;
   /** Cents debited for model inference only (0 in BYO mode). */
   spentInferenceCents: number;
-  /** Cents debited for the per-minute cloud-run compute fee (BYO cloud only). */
+  /**
+   * Cents debited for the Auto v2 run compute fee: the flat invocation fee plus
+   * the per-active-minute fee. 0 when the v2 rates are disabled (open-core /
+   * self-host FREE). Persisted into the run's `spentComputeCents` column.
+   */
   spentComputeCents: number;
+  /** Cents debited for the flat invocation fee alone (subset of compute). */
+  spentInvocationCents: number;
+  /** Cents debited for the active-minute fee alone (subset of compute). */
+  spentActiveMinuteCents: number;
   /** Number of tool-execution rounds driven. */
   toolRounds: number;
 }
@@ -97,6 +114,18 @@ export interface RunAutoRunDeps {
   markupBps?: number;
   /** Per-turn max output tokens. Default 4096. */
   maxTokens?: number;
+  /**
+   * Auto v2 flat invocation fee in US cents, debited ONCE at run start. Default
+   * 0 (disabled) — non-zero only on the HOSTED managed path where run-task
+   * resolves it from @agentkit-commercial/gateway. 0 → no invocation debit.
+   */
+  invocationFeeCents?: number;
+  /**
+   * Auto v2 per-active-minute fee in US cents (run start → completion wall-clock).
+   * Default 0 (disabled) — non-zero only on the HOSTED managed path. 0 → no
+   * active-minute debit. Applies to ALL runs (managed AND BYO) when non-zero.
+   */
+  activeMinuteRateCents?: number;
 }
 
 export interface RunAutoRunArgs {
@@ -154,37 +183,46 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   }
 
   // Inference spend is the budget-gated quantity. (In BYO mode it stays 0 — the
-  // budget then only bounds the cloud-run minutes below.)
+  // budget then only bounds the active-minute fee below.)
   let spentInferenceCents = run.spentCents;
-  let spentComputeCents = 0;
+  let spentInvocationCents = 0;
+  let spentActiveMinuteCents = 0;
   const budgetCents = run.budgetCents;
 
-  // ---- Per-minute cloud-run compute fee (BYO + cloud only) ------------------
-  const cloudRunCentsPerMin = run.cloudRunCentsPerMin ?? 0;
-  const chargeCompute =
-    run.isCloudRun === true && inferenceMode === "byo" && cloudRunCentsPerMin > 0;
-  // Estimated minutes derived from the budget; ALSO caps the run's wall-clock.
-  const estimatedMin = chargeCompute
-    ? Math.floor(budgetCents / cloudRunCentsPerMin)
-    : 0;
+  // ---- Auto v2 run compute fee (invocation + active-minute) -----------------
+  // Generalizes the old per-minute cloud-run fee: applies to ALL runs (managed
+  // AND BYO) at the v2 rates. Both rates default to 0 (open-core / self-host
+  // FREE), in which case the entire fee path is skipped and the ledger is never
+  // touched. The rates are non-zero only on the hosted managed path, where
+  // run-task resolves them from @agentkit-commercial/gateway.
+  const invocationFeeCents = Math.max(0, deps.invocationFeeCents ?? 0);
+  const activeMinuteRateCents = Math.max(0, deps.activeMinuteRateCents ?? 0);
+  const chargeRunFee = invocationFeeCents > 0 || activeMinuteRateCents > 0;
+  // Budget-derived cap on active minutes (also caps the run's wall-clock). When
+  // the active-minute rate is 0 there is no minute-derived cap (only the
+  // invocation fee applies). ceil so a partial budget still funds a whole minute.
+  const estimatedMin =
+    activeMinuteRateCents > 0 ? Math.ceil(budgetCents / activeMinuteRateCents) : 0;
   const startedAtIso = now();
-  let computeHoldId: string | undefined;
+  let runFeeHoldId: string | undefined;
 
-  /** Settle the metered cloud-run minutes (idempotent — runs once). Settles the
-   *  up-front hold with ceil(actual minutes) * rate and folds the fee into the
-   *  run's persisted total spend. */
-  const settleCompute = async (): Promise<void> => {
-    if (computeHoldId === undefined) return;
-    const holdId = computeHoldId;
-    computeHoldId = undefined;
+  /** Settle the v2 ACTIVE-MINUTE fee (idempotent — runs once): the up-front hold
+   *  is settled with ceil(actual active minutes) * rate, capped by the
+   *  budget-derived estimate, releasing the overshoot. The invocation fee is a
+   *  separate up-front debit (see below) and is NOT part of this settle. Folds
+   *  the active-minute fee into the run's persisted total spend. */
+  const settleActiveMinutes = async (): Promise<void> => {
+    if (runFeeHoldId === undefined) return;
+    const holdId = runFeeHoldId;
+    runFeeHoldId = undefined;
     let minutes = elapsedMinutes(startedAtIso, now());
     if (estimatedMin > 0) minutes = Math.min(minutes, estimatedMin);
-    const cents = Math.ceil(minutes) * cloudRunCentsPerMin;
-    await ledger.settleHold(holdId, cents, now(), `auto-run:${run.id}:compute`);
-    spentComputeCents = cents;
-    // Fold the compute fee into the persisted total spend (spentCents = the sum
-    // of inference + compute). Inference debits already went through recordSpend.
-    if (cents > 0) await runs.recordSpend(run.id, cents);
+    const activeMinuteCents =
+      activeMinuteRateCents > 0 ? Math.ceil(minutes) * activeMinuteRateCents : 0;
+    // Idempotent active-minute sourceRef; settles the hold (releases overshoot).
+    await ledger.settleHold(holdId, activeMinuteCents, now(), `auto-active-${run.id}`);
+    spentActiveMinuteCents = activeMinuteCents;
+    if (activeMinuteCents > 0) await runs.recordSpend(run.id, activeMinuteCents);
   };
 
   // Seed the conversation with the user's task.
@@ -199,10 +237,15 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     status: RunAutoRunResult["status"],
     extra: { error?: string } = {},
   ): Promise<RunAutoRunResult> => {
-    // Settle the cloud-run compute hold on ANY terminal outcome (completion,
+    // Settle the v2 active-minute hold on ANY terminal outcome (completion,
     // cancel, failure, budget). Best-effort so a ledger hiccup can't mask the
-    // run's real terminal status.
-    await settleCompute().catch(() => {});
+    // run's real terminal status. (The invocation fee was already debited at run
+    // start.)
+    await settleActiveMinutes().catch(() => {});
+
+    // spentComputeCents = the full v2 run fee (invocation + active-minutes); it
+    // is what the run's spent_compute_cents column persists.
+    const spentComputeCents = spentInvocationCents + spentActiveMinuteCents;
 
     let result: AutoRunResult | undefined;
     if (status === "succeeded" || status === "budget_exceeded" || status === "canceled") {
@@ -224,6 +267,8 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       spentCents: spentInferenceCents + spentComputeCents,
       spentInferenceCents,
       spentComputeCents,
+      spentInvocationCents,
+      spentActiveMinuteCents,
       toolRounds,
     };
   };
@@ -256,15 +301,33 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   };
 
   try {
-    if (chargeCompute) {
-      // Reserve the up-front hold for the budget-derived estimated minutes.
-      // Insufficient balance → reserveHold throws; the catch below records the
-      // run as failed. (web-forge pre-checks this before dispatch for a clean
-      // 402, but the worker path is defended here too.)
+    if (chargeRunFee) {
+      // Up-front v2 run fee. Insufficient balance → debit/reserveHold throws; the
+      // catch below records the run as failed. (web-forge pre-checks this before
+      // dispatch for a clean 402, but the worker path is defended here too.)
       await ledger.ensureAccount(run.userId, now());
-      const holdCents = estimatedMin * cloudRunCentsPerMin;
+
+      // 1) Invocation fee: a single idempotent debit at run start. The
+      //    `auto-invocation-{runId}` sourceRef makes a retried run a no-op
+      //    double-charge-wise (the ledger dedupes on sourceRef). Debited here so
+      //    even a 0-minute run still pays the flat fee.
+      if (invocationFeeCents > 0) {
+        await ledger.debit(
+          run.userId,
+          invocationFeeCents,
+          now(),
+          "Auto run invocation fee",
+          `auto-invocation-${run.id}`,
+        );
+        spentInvocationCents = invocationFeeCents;
+        await runs.recordSpend(run.id, invocationFeeCents);
+      }
+
+      // 2) Active-minute fee: reserve the up-front hold for the budget-derived
+      //    estimated minutes; settled with the ACTUAL ceil(minutes) at finalize.
+      const holdCents = estimatedMin * activeMinuteRateCents;
       if (holdCents > 0) {
-        computeHoldId = await ledger.reserveHold(run.userId, holdCents, now());
+        runFeeHoldId = await ledger.reserveHold(run.userId, holdCents, now());
       }
     }
 
@@ -275,12 +338,18 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
         return await finalize("canceled");
       }
       // Guard: budget cap (before spending more). In managed mode this is the
-      // inference spend; in BYO cloud mode budget bounds the compute minutes.
+      // inference spend; in BYO mode budget bounds the active-minute wall-clock.
       if (spentInferenceCents >= budgetCents) {
         return await finalize("budget_exceeded");
       }
-      // Guard: cloud-run wall-clock cap derived from the budget (BYO cloud only).
-      if (chargeCompute && estimatedMin > 0 && elapsedMinutes(startedAtIso, now()) >= estimatedMin) {
+      // Guard: v2 active-minute wall-clock cap derived from the budget. Applies
+      // whenever the active-minute fee is active (managed AND BYO) so a run can't
+      // bill more active minutes than the budget funds.
+      if (
+        activeMinuteRateCents > 0 &&
+        estimatedMin > 0 &&
+        elapsedMinutes(startedAtIso, now()) >= estimatedMin
+      ) {
         return await finalize("budget_exceeded");
       }
 
@@ -295,8 +364,12 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       const turn = await runTurn(request);
 
       // Record the actual metered inference spend for this turn (0 for BYO).
+      // Accumulate the INFERENCE total locally (recordSpend tracks the run's
+      // overall spentCents, which now also includes the v2 invocation/active-min
+      // fees, so its return must NOT be used as the inference subtotal).
       if (turn.debitedCents > 0) {
-        spentInferenceCents = await runs.recordSpend(run.id, turn.debitedCents);
+        spentInferenceCents += turn.debitedCents;
+        await runs.recordSpend(run.id, turn.debitedCents);
       }
 
       const content = turn.response.content;

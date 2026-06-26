@@ -81,6 +81,13 @@ interface BackendDeps {
   storage: AutoStorageDeps;
   ledger: CreditLedgerRepository;
   emailSender: EmailSender;
+  /**
+   * True when the active ledger is the COMMERCIAL managed credit ledger (hosted /
+   * metered). False when it is the inert FREE ledger (open-core / self-host).
+   * Gates the Auto v2 run fee: fees are resolved + applied ONLY on the managed
+   * path, so a free deployment never touches the ledger and pays nothing.
+   */
+  managed: boolean;
 }
 
 /**
@@ -132,17 +139,20 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
     const billing = (env["AUTO_SELFHOST_BILLING"] || "free").toLowerCase();
     const gatewayDbUrl = env["GATEWAY_DATABASE_URL"];
     let ledger: CreditLedgerRepository;
+    let managed = false;
     if (billing === "managed" && gatewayDbUrl && gatewayDbUrl.trim() !== "") {
       const gatewayPool = new Pool({
         connectionString: gatewayDbUrl,
       }) as unknown as PgPool;
-      ledger = await loadManagedLedger(gatewayPool);
+      // loadManagedLedger degrades to the FREE ledger when the commercial package
+      // is absent; `managed` reflects whether the metered ledger actually loaded.
+      ({ ledger, managed } = await loadManagedLedgerWithFlag(gatewayPool));
     } else {
       ledger = makeFreeCreditLedger();
     }
     // SMTP email sender: active when SMTP_HOST + SMTP_FROM are set in env;
     // inert (skipped) otherwise — webhook delivery still works regardless.
-    return { storage, ledger, emailSender: makeSelfHostEmailSender() };
+    return { storage, ledger, emailSender: makeSelfHostEmailSender(), managed };
   }
 
   // AWS (hosted) — storage uses the task role (default credential chain) + the
@@ -157,7 +167,8 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
     { clientConfig: { region: env["FORGE_AWS_REGION"] || env["AWS_REGION"] || "us-east-1" } },
     env,
   );
-  return { storage, ledger, emailSender };
+  // AWS path runs the free / BYO ledger → not managed (no v2 fee).
+  return { storage, ledger, emailSender, managed: false };
 }
 
 /**
@@ -169,6 +180,18 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
  */
 interface CommercialGatewayModule {
   createPostgresCreditLedger(pool: PgPool): CreditLedgerRepository;
+  /**
+   * Auto v2 run-based pricing (commercial moat): the flat invocation fee + the
+   * per-active-minute rate, in US cents. Absent in the public build → the worker
+   * defaults to 0/0 (no v2 fee).
+   */
+  getAutoV2Pricing?: () => { invocationFeeCents: number; activeMinuteRateCents: number };
+}
+
+/** The Auto v2 run-fee rates the worker applies (US cents). 0 → disabled. */
+export interface AutoV2Rates {
+  invocationFeeCents: number;
+  activeMinuteRateCents: number;
 }
 
 /** Importer seam so tests can inject a fake / force the absent path. */
@@ -192,13 +215,67 @@ export async function loadManagedLedger(
   pool: PgPool,
   importer: CommercialImporter = defaultCommercialImporter,
 ): Promise<CreditLedgerRepository> {
+  return (await loadManagedLedgerWithFlag(pool, importer)).ledger;
+}
+
+/**
+ * Like `loadManagedLedger`, but also reports whether the COMMERCIAL managed
+ * ledger actually loaded (`managed: true`) vs degrading to the inert FREE ledger
+ * (`managed: false`). The `managed` flag gates the Auto v2 run fee so a free
+ * deployment never applies it.
+ */
+export async function loadManagedLedgerWithFlag(
+  pool: PgPool,
+  importer: CommercialImporter = defaultCommercialImporter,
+): Promise<{ ledger: CreditLedgerRepository; managed: boolean }> {
   try {
     const mod = await importer();
-    return mod.createPostgresCreditLedger(pool);
+    return { ledger: mod.createPostgresCreditLedger(pool), managed: true };
   } catch {
     // Commercial package absent (public / self-host) → free ledger (never debits).
-    return makeFreeCreditLedger();
+    return { ledger: makeFreeCreditLedger(), managed: false };
   }
+}
+
+/**
+ * Resolves the Auto v2 run-fee rates (invocation + active-minute) from the
+ * commercial gateway overlay. Present (hosted) → the moat rates; absent (public /
+ * self-host) OR `enabled === false` → 0/0 (no v2 fee). The `enabled` gate is the
+ * managed-vs-free decision: even if the commercial package is importable, a free
+ * deployment must pay nothing, so the caller passes `enabled: deps.managed`.
+ *
+ * Env overrides (operator/test escape hatch): AUTO_INVOCATION_FEE_CENTS and
+ * AUTO_ACTIVE_MINUTE_RATE_CENTS take precedence over the commercial defaults.
+ */
+export async function loadAutoV2Rates(
+  enabled: boolean,
+  env: Env = process.env,
+  importer: CommercialImporter = defaultCommercialImporter,
+): Promise<AutoV2Rates> {
+  if (!enabled) return { invocationFeeCents: 0, activeMinuteRateCents: 0 };
+
+  let invocationFeeCents = 0;
+  let activeMinuteRateCents = 0;
+  try {
+    const mod = await importer();
+    const pricing = mod.getAutoV2Pricing?.();
+    if (pricing) {
+      invocationFeeCents = Math.max(0, pricing.invocationFeeCents);
+      activeMinuteRateCents = Math.max(0, pricing.activeMinuteRateCents);
+    }
+  } catch {
+    // Commercial package absent → 0/0 (defensive; `enabled` should already be
+    // false on the public build, but never charge if the moat numbers are gone).
+  }
+
+  // Env override escape hatch (still hosted-managed-gated by `enabled`).
+  if (env["AUTO_INVOCATION_FEE_CENTS"] !== undefined) {
+    invocationFeeCents = Math.max(0, parseIntEnv(env, "AUTO_INVOCATION_FEE_CENTS", 0));
+  }
+  if (env["AUTO_ACTIVE_MINUTE_RATE_CENTS"] !== undefined) {
+    activeMinuteRateCents = Math.max(0, parseIntEnv(env, "AUTO_ACTIVE_MINUTE_RATE_CENTS", 0));
+  }
+  return { invocationFeeCents, activeMinuteRateCents };
 }
 
 /**
@@ -217,7 +294,13 @@ export async function runTask(env: Env = process.env): Promise<void> {
   // self-host). Phase D (hardened isolation): AUTO_WORKSPACE_DIR points per-run
   // workspaces at the writable scratch mount under a read-only root filesystem;
   // when unset both backends fall back to os.tmpdir() (backward-compatible).
-  const { storage, ledger, emailSender } = await buildBackendDeps(env);
+  const { storage, ledger, emailSender, managed } = await buildBackendDeps(env);
+
+  // Auto v2 run fee (invocation + active-minute), in US cents. Resolved from the
+  // commercial gateway overlay and gated on `managed`: the free / open-core ledger
+  // (managed === false) yields 0/0 so a self-host pays nothing and the ledger is
+  // never touched for fees.
+  const v2Rates = await loadAutoV2Rates(managed, env);
 
   // Platform (managed) provider. In self-host FREE mode every run is BYO so this
   // is never exercised; it stays inert (throws) when ANTHROPIC_API_KEY is unset.
@@ -245,7 +328,10 @@ export async function runTask(env: Env = process.env): Promise<void> {
     });
   }
 
-  const markupBps = parseIntEnv(env, "AUTO_MARKUP_BPS", 2500);
+  // Auto v2: tokens pass through AT COST (no markup). The platform margin is the
+  // run-based compute charge (invocation + active-minute) resolved below. Still
+  // env-overridable via AUTO_MARKUP_BPS for a deployment that wants a token margin.
+  const markupBps = parseIntEnv(env, "AUTO_MARKUP_BPS", 0);
 
   const deps: ProcessAutoRunDeps = {
     storage,
@@ -256,6 +342,8 @@ export async function runTask(env: Env = process.env): Promise<void> {
     resolveKitContext: toResolveKitContext(payload),
     now: () => new Date().toISOString(),
     markupBps,
+    invocationFeeCents: v2Rates.invocationFeeCents,
+    activeMinuteRateCents: v2Rates.activeMinuteRateCents,
     // Opt-in result delivery (Phase D). The email sender is backend-specific:
     // SES (hosted, inert until SES_SENDER set) or the SMTP sender (selfhost,
     // inert until SMTP_HOST + SMTP_FROM are set). Webhook delivery uses global

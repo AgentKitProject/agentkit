@@ -214,7 +214,10 @@ describe("runManagedTurn", () => {
     const expectedDebit = computeDebitCents(usage, MODEL, DEFAULT_MARKUP_BPS);
     const expectedHold = computeMaxHoldCents(800, 1024, MODEL, DEFAULT_MARKUP_BPS);
     expect(result.debitedCents).toBe(expectedDebit);
-    expect(expectedHold).toBeGreaterThan(expectedDebit); // hold was conservative
+    // The conservative worst-case hold is never below the actual debit. (With the
+    // v2 default markup of 0, ceil-rounding can make the two tie for these token
+    // counts, so this is >= rather than a strict >.)
+    expect(expectedHold).toBeGreaterThanOrEqual(expectedDebit);
 
     // Balance == 5000 - actual debit; nothing left held (overshoot returned).
     expect(result.balanceCents).toBe(5000 - expectedDebit);

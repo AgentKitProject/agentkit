@@ -26,7 +26,11 @@ import {
   type CreditLedgerRepository,
   type PgPool,
 } from "@agentkitforge/gateway-core";
-import { loadManagedLedger } from "../src/entrypoints/run-task.js";
+import {
+  loadManagedLedger,
+  loadManagedLedgerWithFlag,
+  loadAutoV2Rates,
+} from "../src/entrypoints/run-task.js";
 
 const NOW = "2026-06-25T00:00:00.000Z";
 
@@ -153,5 +157,70 @@ describe("worker managed-ledger optional load (G4)", () => {
     // Spend paths fail loudly — a misconfigured managed run can NEVER silently
     // grant unmetered inference on the free ledger.
     await expect(ledger.reserveHold("u1", 100, NOW)).rejects.toThrow();
+  });
+});
+
+describe("loadManagedLedgerWithFlag", () => {
+  it("reports managed=true when the commercial ledger loads", async () => {
+    const { managed } = await loadManagedLedgerWithFlag(fakePool, async () => ({
+      createPostgresCreditLedger: () => new RecordingLedger(),
+    }));
+    expect(managed).toBe(true);
+  });
+
+  it("reports managed=false when the commercial package is absent", async () => {
+    const { ledger, managed } = await loadManagedLedgerWithFlag(fakePool, async () => {
+      throw new Error("Cannot find module '@agentkit-commercial/gateway'");
+    });
+    expect(managed).toBe(false);
+    // Degraded to the inert FREE ledger (spend paths throw).
+    await expect(ledger.reserveHold("u1", 100, NOW)).rejects.toThrow();
+  });
+});
+
+describe("loadAutoV2Rates", () => {
+  const commercialPricing = async () => ({
+    createPostgresCreditLedger: () => new RecordingLedger(),
+    getAutoV2Pricing: () => ({ invocationFeeCents: 1, activeMinuteRateCents: 1 }),
+  });
+
+  it("returns 0/0 when not enabled (open-core / self-host FREE), without importing", async () => {
+    let imported = false;
+    const rates = await loadAutoV2Rates(false, {}, async () => {
+      imported = true;
+      return commercialPricing().then((m) => m);
+    });
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
+    expect(imported).toBe(false); // disabled → never even imports the moat numbers
+  });
+
+  it("resolves the commercial v2 rates when enabled (hosted managed)", async () => {
+    const rates = await loadAutoV2Rates(true, {}, commercialPricing);
+    expect(rates).toEqual({ invocationFeeCents: 1, activeMinuteRateCents: 1 });
+  });
+
+  it("returns 0/0 when enabled but the commercial package is absent (defensive)", async () => {
+    const rates = await loadAutoV2Rates(true, {}, async () => {
+      throw new Error("Cannot find module '@agentkit-commercial/gateway'");
+    });
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
+  });
+
+  it("env overrides take precedence over the commercial defaults (still gated on enabled)", async () => {
+    const rates = await loadAutoV2Rates(
+      true,
+      { AUTO_INVOCATION_FEE_CENTS: "3", AUTO_ACTIVE_MINUTE_RATE_CENTS: "7" },
+      commercialPricing,
+    );
+    expect(rates).toEqual({ invocationFeeCents: 3, activeMinuteRateCents: 7 });
+  });
+
+  it("env overrides do NOT bypass the disabled gate (free stays free)", async () => {
+    const rates = await loadAutoV2Rates(
+      false,
+      { AUTO_INVOCATION_FEE_CENTS: "3", AUTO_ACTIVE_MINUTE_RATE_CENTS: "7" },
+      commercialPricing,
+    );
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
   });
 });

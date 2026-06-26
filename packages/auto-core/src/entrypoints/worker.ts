@@ -64,8 +64,19 @@ export interface ProcessAutoRunDeps {
    * `inferenceMode` is used (default "managed"). Markup applies in managed mode.
    */
   inferenceMode?: InferenceMode;
-  /** Markup in bps for managed turns (Auto's own rate, e.g. 2500). */
+  /** Markup in bps for managed turns (Auto's own rate; v2 default 0 = at cost). */
   markupBps?: number;
+  /**
+   * Auto v2 flat invocation fee (US cents), debited once at run start. Default 0
+   * (disabled). Non-zero only on the HOSTED managed path (resolved by run-task
+   * from @agentkit-commercial/gateway); 0 keeps open-core / self-host free.
+   */
+  invocationFeeCents?: number;
+  /**
+   * Auto v2 per-active-minute fee (US cents). Default 0 (disabled). Non-zero only
+   * on the HOSTED managed path; 0 keeps open-core / self-host free.
+   */
+  activeMinuteRateCents?: number;
   maxTokens?: number;
   maxToolRounds?: number;
   /**
@@ -171,6 +182,12 @@ export async function processAutoRun(
         now,
         inferenceMode,
         ...(deps.markupBps !== undefined ? { markupBps: deps.markupBps } : {}),
+        ...(deps.invocationFeeCents !== undefined
+          ? { invocationFeeCents: deps.invocationFeeCents }
+          : {}),
+        ...(deps.activeMinuteRateCents !== undefined
+          ? { activeMinuteRateCents: deps.activeMinuteRateCents }
+          : {}),
         ...(deps.maxTokens !== undefined ? { maxTokens: deps.maxTokens } : {}),
       },
       ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
