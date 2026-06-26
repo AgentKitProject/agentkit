@@ -38,6 +38,7 @@ import {
   generateWebhookSecret,
   hashWebhookSecret,
   inputObjectKey,
+  loadAutoV2Rates,
   makeAutoDeps,
   makeFreeCreditLedger,
   nextFireAfter,
@@ -50,6 +51,7 @@ import {
   type AutoApproval,
   type AutoBackend,
   type AutoRun,
+  type AutoV2Rates,
   type AutoRunInputFileRef,
   type AutoSchedule,
   type AutoStorageDeps,
@@ -71,6 +73,7 @@ import {
   AnthropicChatProvider,
   createManagedAnthropicProvider,
   type ChatProvider,
+  type CreditLedgerRepository,
   type ToolDefinition
 } from "@agentkitforge/gateway-core";
 import { randomUUID } from "node:crypto";
@@ -79,7 +82,7 @@ import { awsClientEnv } from "@/server/aws-client";
 import { getAppUrl } from "@/lib/url-config";
 import { fargateDispatcher } from "@/server/core/auto-fargate-dispatcher";
 import { kubeJobDispatcher } from "@/server/core/auto-kube-dispatcher";
-import { getBalanceCents, getCreditLedger } from "@/server/core/gateway";
+import { getCreditLedger } from "@/server/core/gateway";
 import { creditLedgerBackend, isSelfHost, isSelfHostManagedBilling } from "@/lib/self-host";
 import { getUserSettingsStore } from "@/server/store/user-settings";
 import { getKitStore } from "@/server/store/index";
@@ -180,6 +183,19 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/**
+ * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — the bucket the
+ * ledger keys a user's monthly FREE active-minute allowance by. MUST match
+ * auto-core's run-driver `utcYearMonth` (UTC, same format) so the pre-flight's
+ * free-minute read and the driver's depletion address the SAME month row.
+ */
+function utcYearMonth(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
 function markupBps(): number | undefined {
   const raw = process.env.GATEWAY_MARKUP_BPS;
   if (!raw) return undefined;
@@ -202,19 +218,121 @@ export function autoMarkupBps(): number {
 }
 
 /**
- * Per-minute cloud-run compute fee, in US cents. This fee is charged ONLY on
- * BYO + cloud (Fargate/hosted) Auto runs — we run their job on our compute but
- * collect no inference markup. The default (1¢/min) is a documented placeholder
- * and TUNABLE via AUTO_CLOUD_RUN_CENTS_PER_MIN. It never affects managed runs
- * (compute is bundled into the 25% markup), local/desktop, or self-host runs.
+ * Resolves the Auto v2 run-fee rates (flat invocation fee + per-active-minute
+ * rate + monthly free-minute allowance) for THIS deployment, in US cents.
+ *
+ * The rates are gated on `creditLedgerBackend()`: a "free" backend (open-core /
+ * self-host default) yields 0/0/0 so a self-host pays nothing and the v2-fee
+ * path is never entered — matching run-task's `managed` gate. A metered backend
+ * ("dynamo" / "postgres", i.e. hosted or self-host-managed billing) resolves the
+ * commercial moat rates via auto-core's shared `loadAutoV2Rates` (the SAME
+ * resolver the worker uses, so app + worker bill identically). Env overrides
+ * (AUTO_INVOCATION_FEE_CENTS / AUTO_ACTIVE_MINUTE_RATE_CENTS /
+ * AUTO_FREE_ACTIVE_MINUTES_PER_MONTH) are honored by the resolver.
+ *
+ * Cached per process: the rates are deployment constants (commercial pricing +
+ * env), so we resolve them once and reuse — the in-process dispatcher and the
+ * pre-flight check share the same numbers.
  */
-function cloudRunCentsPerMin(): number {
-  const raw = process.env.AUTO_CLOUD_RUN_CENTS_PER_MIN;
-  if (raw) {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+let v2RatesPromise: Promise<AutoV2Rates> | null = null;
+export function autoV2Rates(): Promise<AutoV2Rates> {
+  if (!v2RatesPromise) {
+    const enabled = creditLedgerBackend() !== "free";
+    v2RatesPromise = loadAutoV2Rates(enabled);
   }
-  return 1; // placeholder default — tunable
+  return v2RatesPromise;
+}
+
+/** Test/ops seam: drop the cached v2 rates so a test that mutates the env (or the
+ *  ledger backend) re-resolves them. */
+export function resetAutoV2RatesCache(): void {
+  v2RatesPromise = null;
+}
+
+/**
+ * The MINIMUM credit cost (US cents) a run must be able to afford up front,
+ * given the resolved v2 rates and the user's REMAINING free active-minutes this
+ * month. This is the pre-flight gate: every metered run pays at least the flat
+ * invocation fee plus — when no free active-minutes remain — one active-minute.
+ *
+ *   estimate = invocationFeeCents
+ *            + (freeMinutesRemaining > 0 ? 0 : activeMinuteRateCents)
+ *
+ * The first active-minute is FREE when the user still has free allowance, so we
+ * only require balance for the active-minute when the allowance is exhausted.
+ * The invocation fee is never free-tiered, so it always counts. With both rates
+ * 0 (self-host FREE) the estimate is 0 → no balance is required.
+ */
+export function estimateMinRunCostCents(rates: AutoV2Rates, freeMinutesRemaining: number): number {
+  const invocation = Math.max(0, rates.invocationFeeCents);
+  const activeMinute = Math.max(0, rates.activeMinuteRateCents);
+  const firstMinuteCost = freeMinutesRemaining > 0 ? 0 : activeMinute;
+  return invocation + firstMinuteCost;
+}
+
+/** A user's Auto v2 billing snapshot for the UI (balance + free-minute state). */
+export interface AutoBillingSummary {
+  /** True when this deployment meters runs (hosted / managed). False on a FREE
+   *  self-host — then balance/free-minutes are not surfaced (runs are unmetered). */
+  metered: boolean;
+  /** Available prepaid credit balance, in US cents. */
+  balanceCents: number;
+  /** Free active-minutes the user has REMAINING this UTC month. */
+  freeMinutesRemaining: number;
+  /** The monthly free active-minute allowance (e.g. 60). */
+  freeMinutesPerMonth: number;
+  /** The flat per-run invocation fee, in US cents (for the UI to explain cost). */
+  invocationFeeCents: number;
+  /** The per-active-minute rate, in US cents. */
+  activeMinuteRateCents: number;
+}
+
+/**
+ * Reads a user's Auto v2 billing snapshot: prepaid balance + remaining free
+ * active-minutes this month, plus the rates (so the UI can explain a run's cost
+ * and link to buy credits). Read-only EXCEPT it ensureAccount's so a BYO user
+ * who never topped up still resolves a 0 balance (and gets an account row ready
+ * for their first run's charge). On a FREE backend (self-host) returns
+ * `metered: false` with zeros — the UI then hides the credits affordance since
+ * runs are unmetered.
+ *
+ * `ledgerOverride` is a test/ops seam: when supplied it is used instead of the
+ * backend-selected ledger (the routes never pass it). The pre-flight check in
+ * `startRun` runs the SAME ensureAccount + free-minute read against the
+ * production ledger, so this function's metered branch exercises that logic.
+ */
+export async function getBillingSummary(
+  userId: string,
+  ledgerOverride?: CreditLedgerRepository
+): Promise<AutoBillingSummary> {
+  const rates = await autoV2Rates();
+  const metered = rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0;
+  if (!metered) {
+    return {
+      metered: false,
+      balanceCents: 0,
+      freeMinutesRemaining: 0,
+      freeMinutesPerMonth: rates.freeActiveMinutesPerMonth,
+      invocationFeeCents: rates.invocationFeeCents,
+      activeMinuteRateCents: rates.activeMinuteRateCents
+    };
+  }
+  const ledger = ledgerOverride ?? (await selectLedger());
+  // BYO account auto-creation: a BYO user has no account row until first run; make
+  // one so the balance read is well-defined and the future charge has a target.
+  await ledger.ensureAccount(userId, now());
+  const account = await ledger.getAccount(userId);
+  const balanceCents = account?.availableBalanceCents ?? 0;
+  const freeUsed = await ledger.getFreeMinutesUsed(userId, utcYearMonth(now()));
+  const freeMinutesRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
+  return {
+    metered: true,
+    balanceCents,
+    freeMinutesRemaining,
+    freeMinutesPerMonth: rates.freeActiveMinutesPerMonth,
+    invocationFeeCents: rates.invocationFeeCents,
+    activeMinuteRateCents: rates.activeMinuteRateCents
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -369,10 +487,13 @@ export interface AutoBilling {
   inferenceMode: "managed" | "byo";
   /** Built only in BYO mode (user's Anthropic key); else undefined. */
   byoChatProvider?: ChatProvider;
-  /** True when the active dispatcher runs on OUR hosted compute (Fargate). */
+  /**
+   * True when the active dispatcher runs on OUR hosted compute (Fargate / k8s).
+   * Persisted on the run record (`is_cloud_run`) for provenance. Auto v2 no
+   * longer keys the compute fee off this — the v2 invocation + active-minute fee
+   * applies to EVERY metered run (managed AND BYO) regardless of where it runs.
+   */
   isCloudRun: boolean;
-  /** Per-minute cloud-run fee (cents). Only billed on BYO + cloud runs. */
-  cloudRunCentsPerMin: number;
 }
 
 /**
@@ -402,15 +523,13 @@ export async function resolveAutoBilling(args: {
 }): Promise<AutoBilling> {
   const managed = (): AutoBilling => ({
     inferenceMode: "managed",
-    isCloudRun: args.isCloudRun,
-    cloudRunCentsPerMin: cloudRunCentsPerMin()
+    isCloudRun: args.isCloudRun
   });
 
   const byo = (provider?: ChatProvider): AutoBilling => ({
     inferenceMode: "byo",
     ...(provider ? { byoChatProvider: provider } : {}),
-    isCloudRun: args.isCloudRun,
-    cloudRunCentsPerMin: cloudRunCentsPerMin()
+    isCloudRun: args.isCloudRun
   });
 
   // PROTECTED/paid kit → FORCE managed (never run a protected kit on a BYO key).
@@ -664,6 +783,7 @@ async function buildProcessDeps(
   opts: KitContextOptions,
   billing: AutoBilling
 ): Promise<ProcessAutoRunDeps> {
+  const rates = await autoV2Rates();
   return {
     storage,
     // PLATFORM Anthropic key — same managed provider the gateway uses. On
@@ -681,9 +801,22 @@ async function buildProcessDeps(
     ledger: await selectLedger(),
     resolveKitContext: makeResolveKitContext(opts),
     now,
-    // Auto MANAGED inference is marked up at AUTO_MARKUP_BPS (25%), NOT the
-    // interactive gateway's 15%.
-    markupBps: autoMarkupBps()
+    // Auto v2 token markup. When the v2 run fee is active (metered backend),
+    // tokens pass through AT COST (markup 0) — the platform margin is the
+    // invocation + active-minute fee threaded below. The legacy AUTO_MARKUP_BPS
+    // (25%) is honored only on a FREE backend / when an operator explicitly wants
+    // a token margin (env override inside autoMarkupBps). Mirrors run-task's v2
+    // default (markup 0) so the in-process dispatcher bills like the worker.
+    markupBps: rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0 ? 0 : autoMarkupBps(),
+    // Auto v2 run fee (invocation + active-minute + monthly free allowance), in
+    // US cents. Resolved from the commercial seam and gated on the ledger backend
+    // (free → 0/0/0, no fee). Applies to EVERY metered run (managed AND BYO):
+    // BYO inference stays unbilled (the user pays their provider) but BYO DOES
+    // incur the v2 run fee. The driver skips the entire fee path when all rates
+    // are 0, so a self-host pays nothing.
+    invocationFeeCents: rates.invocationFeeCents,
+    activeMinuteRateCents: rates.activeMinuteRateCents,
+    freeActiveMinutesPerMonth: rates.freeActiveMinutesPerMonth
   };
 }
 
@@ -802,9 +935,10 @@ export class AutoValidationError extends Error {
 }
 
 /**
- * Thrown when a BYO + cloud Auto run cannot be started because the user lacks
- * the small prepaid balance needed to cover the per-minute cloud-run fee's
- * up-front hold. Routes map this to a 402 (Payment Required).
+ * Thrown when a metered Auto run cannot be started because the user lacks the
+ * small prepaid balance needed to cover the v2 run fee's minimum (the flat
+ * invocation fee plus the first billable active-minute). Applies to managed AND
+ * BYO runs. Routes map this to a 402 (Payment Required).
  */
 export class InsufficientComputeBalanceError extends Error {
   readonly requiredCents: number;
@@ -1013,21 +1147,37 @@ export async function startRun(input: {
     ...(input.inferenceModeOverride ? { inferenceModeOverride: input.inferenceModeOverride } : {})
   });
 
-  // ---- BYO cloud-run compute-fee balance pre-check -----------------------
-  // A BYO + cloud run incurs a per-minute compute fee debited from prepaid
-  // credits. Require enough balance to cover at least the first metered minute's
-  // up-front hold; reject cleanly BEFORE starting so the user isn't left with a
-  // run that fails on reserveHold.
-  if (
-    billing.inferenceMode === "byo" &&
-    billing.isCloudRun &&
-    billing.cloudRunCentsPerMin > 0
-  ) {
-    const balance = await getBalanceCents(input.userId);
-    if (balance < billing.cloudRunCentsPerMin) {
+  // ---- Auto v2 run-fee balance pre-check ---------------------------------
+  // Every METERED run (managed AND BYO) incurs the v2 run fee: a flat invocation
+  // fee debited at start + a per-active-minute fee. Require enough prepaid
+  // balance to cover the MINIMUM (invocation + the first active-minute, the
+  // latter waived while free minutes remain this month) BEFORE starting, so the
+  // user gets a clean 402 instead of a run that fails on the driver's debit /
+  // reserveHold. This gates BYO the SAME as managed — a BYO user pays their own
+  // provider for tokens but still owes the v2 run fee, so they need a balance.
+  //
+  // BYO ACCOUNT AUTO-CREATION: a BYO user may have never topped up, so no ledger
+  // account row exists yet. We ensureAccount here (idempotent) so the balance
+  // read is well-defined and the driver's later debit has an account to charge.
+  // On a FREE backend (self-host) the rates are 0 → estimate 0 → no gate, and we
+  // skip the ledger entirely (the free ledger ensureAccount is a harmless no-op).
+  const rates = await autoV2Rates();
+  if (rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0) {
+    const ledger = await selectLedger();
+    // Auto-create the account (BYO users have no row until first run) so the
+    // balance read + the driver's debit have a target. Idempotent.
+    await ledger.ensureAccount(input.userId, now());
+    const account = await ledger.getAccount(input.userId);
+    const balance = account?.availableBalanceCents ?? 0;
+    // Free active-minutes remaining this UTC month (the first active-minute is
+    // free while any remain, so it doesn't count toward the minimum estimate).
+    const freeUsed = await ledger.getFreeMinutesUsed(input.userId, utcYearMonth(now()));
+    const freeRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
+    const requiredCents = estimateMinRunCostCents(rates, freeRemaining);
+    if (requiredCents > 0 && balance < requiredCents) {
       throw new InsufficientComputeBalanceError(
-        "Web Auto requires a small prepaid balance for the per-minute cloud-run fee. Top up to continue.",
-        billing.cloudRunCentsPerMin,
+        "Web Auto requires a small prepaid balance for the run fee (invocation + active-minutes). Add credits to continue.",
+        requiredCents,
         balance
       );
     }
@@ -1046,7 +1196,6 @@ export async function startRun(input: {
     createdAt: now(),
     inferenceMode: billing.inferenceMode,
     isCloudRun: billing.isCloudRun,
-    cloudRunCentsPerMin: billing.cloudRunCentsPerMin,
     // Phase B provenance: scheduler-fired runs carry trigger "schedule" +
     // scheduleId; on-demand runs default to "on_demand" (back-compat).
     trigger: input.trigger ?? "on_demand",

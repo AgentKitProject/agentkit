@@ -38,6 +38,17 @@ const HTTP_FETCH_TOOL = "http_fetch";
 
 type KitRef = { source: "local"; localKitId: string };
 
+// Auto v2 billing snapshot returned by GET /api/auto/billing (mirrors the
+// server's AutoBillingSummary). metered:false on a FREE self-host (unmetered).
+type AutoBillingSummary = {
+  metered: boolean;
+  balanceCents: number;
+  freeMinutesRemaining: number;
+  freeMinutesPerMonth: number;
+  invocationFeeCents: number;
+  activeMinuteRateCents: number;
+};
+
 // Phase C: network egress policy (deny_all default, or an allowlist of hosts).
 type NetworkPolicy = { mode: "deny_all" } | { mode: "allowlist"; hosts: string[] };
 
@@ -231,6 +242,13 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
   const [byoKeyInput, setByoKeyInput] = useState("");
   const [byoBusy, setByoBusy] = useState(false);
 
+  // Auto v2 billing snapshot (balance + remaining free active-minutes). Null
+  // until loaded; metered:false on a FREE self-host (then the credits affordance
+  // is hidden — runs are unmetered). Applies to BYO users too: a BYO run still
+  // incurs the v2 run fee (invocation + active-minutes), so they see balance +
+  // free minutes + the buy-credits link the same as managed users.
+  const [billing, setBilling] = useState<AutoBillingSummary | null>(null);
+
   // Run form state.
   const [runKitId, setRunKitId] = useState("");
   const [runPrompt, setRunPrompt] = useState("");
@@ -313,13 +331,25 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     }
   }, [notify]);
 
+  // Auto v2 billing snapshot. Failure is non-fatal (the endpoint already degrades
+  // to an unmetered snapshot); leave billing null and the credits panel hides.
+  const loadBilling = useCallback(async () => {
+    try {
+      const summary = await jsonFetch<AutoBillingSummary>("/api/auto/billing");
+      setBilling(summary);
+    } catch {
+      /* non-fatal — credits panel stays hidden */
+    }
+  }, []);
+
   useEffect(() => {
     void loadApprovals();
     void loadRuns();
     void loadSchedules();
     void loadWebhooks();
     void loadByo();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo]);
+    void loadBilling();
+  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadBilling]);
 
   // Poll the open run + the list while a run is active.
   useEffect(() => {
@@ -513,6 +543,8 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
       setRunInferenceMode("");
       setOpenRunId(id);
       await loadRuns();
+      // The run consumes free minutes / balance — refresh the billing snapshot.
+      void loadBilling();
     } catch (e) {
       notify(errMsg(e), true);
     } finally {
@@ -777,8 +809,39 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
         <p className="form-copy">
           Choose how your runs pay for inference. <strong>Managed credits</strong> use the platform key
           (debited from your prepaid balance). <strong>Bring your own key</strong> runs on your own
-          Anthropic key — no credit debit. Your key is encrypted at rest and never shown again.
+          Anthropic key — no inference debit. Your key is encrypted at rest and never shown again.
         </p>
+        {/* Auto v2 run fee: surfaced when this deployment meters runs (hosted).
+            Applies to BYO too — a BYO run pays nothing for inference but still
+            owes the per-run fee, so BYO users see balance + free minutes here. On
+            a FREE self-host `billing.metered` is false and this panel is hidden
+            (runs are unmetered). */}
+        {billing?.metered && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 8,
+              margin: "0 0 12px"
+            }}
+          >
+            <Pill tone="brand">balance: ${(billing.balanceCents / 100).toFixed(2)}</Pill>
+            <Pill tone={billing.freeMinutesRemaining > 0 ? "brand" : "neutral"}>
+              {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free min left this month
+            </Pill>
+          </div>
+        )}
+        {billing?.metered && (
+          <p className="form-copy" style={{ marginTop: 0 }}>
+            Each run costs a {billing.invocationFeeCents}¢ start fee plus {billing.activeMinuteRateCents}¢
+            per active minute (the first {billing.freeMinutesPerMonth} active minutes each month are free).
+            This applies to bring-your-own-key runs too — you still pay your own provider for tokens.
+          </p>
+        )}
+        {/* Buy credits → the existing Market credits page (no new page). Shown
+            whenever a Market URL is configured; metered deployments especially
+            need it (BYO included). */}
         {marketUrl && (
           <div style={{ marginBottom: 12 }}>
             <a href={`${marketUrl}/account/credits`} style={{ textDecoration: "none" }}>
