@@ -80,5 +80,16 @@ export function makeFreeCreditLedger(): CreditLedgerRepository {
     async listTransactions(): Promise<CreditTransaction[]> {
       return [];
     },
+    // Auto v2 free active-minute allowance: self-host is unmetered, so no usage
+    // is ever tracked (always 0 used) and every run is fully free (0 billable
+    // active-minutes). These are read-shaped no-ops — unlike the spend paths they
+    // do NOT throw, because the run-driver may consult them on every settle even
+    // when the v2 rates are 0; returning "all free" keeps a self-host un-metered.
+    async getFreeMinutesUsed(): Promise<number> {
+      return 0;
+    },
+    async consumeFreeActiveMinutes(): Promise<number> {
+      return 0;
+    },
   };
 }

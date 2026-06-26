@@ -61,6 +61,16 @@ class FundedLedger implements CreditLedgerRepository {
   async listTransactions() {
     return [];
   }
+  async getFreeMinutesUsed() {
+    return 0;
+  }
+  async consumeFreeActiveMinutes(
+    _userId: string,
+    _yearMonth: string,
+    runActiveMinutes: number,
+  ) {
+    return runActiveMinutes;
+  }
 }
 
 const resolveKitContext: ResolveKitContext = async () => ({

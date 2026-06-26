@@ -126,6 +126,16 @@ export interface RunAutoRunDeps {
    * active-minute debit. Applies to ALL runs (managed AND BYO) when non-zero.
    */
   activeMinuteRateCents?: number;
+  /**
+   * Auto v2 FREE active-minute allowance per user per calendar-month (Slice 2).
+   * The first `freeActiveMinutesPerMonth` active-minutes a user consumes in a UTC
+   * month are NOT charged the active-minute fee (the INVOCATION fee is NOT
+   * free-tiered). Default 0 (no free tier) — non-zero only on the HOSTED managed
+   * path where run-task resolves it from @agentkit-commercial/gateway. Only the
+   * active-MINUTE fee is reduced; depletion is tracked per user/month in the
+   * ledger and is idempotent per run.
+   */
+  freeActiveMinutesPerMonth?: number;
 }
 
 export interface RunAutoRunArgs {
@@ -159,6 +169,20 @@ function elapsedMinutes(startIso: string, endIso: string): number {
   const ms = Date.parse(endIso) - Date.parse(startIso);
   if (!Number.isFinite(ms) || ms <= 0) return 0;
   return ms / 60_000;
+}
+
+/**
+ * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — the bucket for a
+ * user's free active-minute allowance (Auto v2 Slice 2). UTC so the monthly
+ * reset is deterministic regardless of deployment/user timezone. The run's
+ * START time keys the allowance, so a run straddling a month boundary depletes
+ * the month it began in (consistent with the up-front hold).
+ */
+function utcYearMonth(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 }
 
 /**
@@ -197,6 +221,10 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   // run-task resolves them from @agentkit-commercial/gateway.
   const invocationFeeCents = Math.max(0, deps.invocationFeeCents ?? 0);
   const activeMinuteRateCents = Math.max(0, deps.activeMinuteRateCents ?? 0);
+  // Auto v2 Slice 2: per-user, per-calendar-month FREE active-minute allowance.
+  // 0 → no free tier. Only the active-MINUTE fee is reduced; the invocation fee
+  // is never free-tiered.
+  const freeActiveMinutesPerMonth = Math.max(0, deps.freeActiveMinutesPerMonth ?? 0);
   const chargeRunFee = invocationFeeCents > 0 || activeMinuteRateCents > 0;
   // Budget-derived cap on active minutes (also caps the run's wall-clock). When
   // the active-minute rate is 0 there is no minute-derived cap (only the
@@ -217,8 +245,29 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     runFeeHoldId = undefined;
     let minutes = elapsedMinutes(startedAtIso, now());
     if (estimatedMin > 0) minutes = Math.min(minutes, estimatedMin);
+    // Whole active-minutes this run consumed (the billing unit). ceil so any
+    // partial minute counts as a full one — matches the up-front hold estimate.
+    const runActiveMinutes = activeMinuteRateCents > 0 ? Math.ceil(minutes) : 0;
+
+    // Auto v2 Slice 2: apply the per-user monthly FREE active-minute allowance.
+    // consumeFreeActiveMinutes atomically computes how many of this run's
+    // active-minutes fall OUTSIDE the remaining free allowance (billableMinutes)
+    // and depletes the month's usage by runActiveMinutes — IDEMPOTENTLY per
+    // run.id, so a re-settle / retry neither double-charges nor double-depletes.
+    // With freeActiveMinutesPerMonth === 0 (no free tier) every minute is
+    // billable; the FREE self-host ledger returns 0 billable (un-metered).
+    let billableMinutes = runActiveMinutes;
+    if (runActiveMinutes > 0) {
+      billableMinutes = await ledger.consumeFreeActiveMinutes(
+        run.userId,
+        utcYearMonth(startedAtIso),
+        runActiveMinutes,
+        freeActiveMinutesPerMonth,
+        run.id,
+      );
+    }
     const activeMinuteCents =
-      activeMinuteRateCents > 0 ? Math.ceil(minutes) * activeMinuteRateCents : 0;
+      activeMinuteRateCents > 0 ? billableMinutes * activeMinuteRateCents : 0;
     // Idempotent active-minute sourceRef; settles the hold (releases overshoot).
     await ledger.settleHold(holdId, activeMinuteCents, now(), `auto-active-${run.id}`);
     spentActiveMinuteCents = activeMinuteCents;

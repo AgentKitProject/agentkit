@@ -106,6 +106,36 @@ class TrackingLedger implements CreditLedgerRepository {
   async listTransactions() {
     return [];
   }
+
+  // Auto v2 Slice 2: per-(user, month) free-minute usage + per-run idempotency,
+  // mirroring InMemoryCreditLedgerRepository so the run-driver's free-tier path
+  // is exercised against a realistic ledger.
+  freeUsage = new Map<string, number>();
+  private freeRuns = new Map<string, number>();
+  consumeFreeCalls: { runId: string; runActiveMinutes: number; freeAllowance: number; yearMonth: string }[] = [];
+  async getFreeMinutesUsed(userId: string, yearMonth: string) {
+    return this.freeUsage.get(`${userId}\x00${yearMonth}`) ?? 0;
+  }
+  async consumeFreeActiveMinutes(
+    userId: string,
+    yearMonth: string,
+    runActiveMinutes: number,
+    freeAllowance: number,
+    runId: string,
+  ) {
+    this.consumeFreeCalls.push({ runId, runActiveMinutes, freeAllowance, yearMonth });
+    const prior = this.freeRuns.get(runId);
+    if (prior !== undefined) return prior;
+    const minutes = Math.max(0, Math.trunc(runActiveMinutes));
+    const allowance = Math.max(0, Math.trunc(freeAllowance));
+    const key = `${userId}\x00${yearMonth}`;
+    const used = this.freeUsage.get(key) ?? 0;
+    const freeRemaining = Math.max(0, allowance - used);
+    const billable = Math.max(0, minutes - freeRemaining);
+    this.freeUsage.set(key, used + minutes);
+    this.freeRuns.set(runId, billable);
+    return billable;
+  }
 }
 
 /** A clock that returns a fixed base time, advanceable by whole minutes. */
@@ -488,5 +518,120 @@ describe("Auto v2 billing: open-core / self-host FREE (fees disabled)", () => {
     expect(out.spentInvocationCents).toBe(0);
     expect(out.spentActiveMinuteCents).toBe(0);
     expect(out.spentInferenceCents).toBe(computeDebitCents(USAGE, "claude-sonnet-4-6", 0));
+  });
+});
+
+describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
+  const RATE = 1; // cents/min
+  const FREE = 60; // free minutes/month
+
+  /** Run a single BYO run that consumes `activeMin` whole minutes, with a given
+   *  free allowance, on a shared ledger. The run's id/month/budget are
+   *  parameterized so a test can drive several runs in (or across) months. */
+  async function runWith(opts: {
+    ledger: TrackingLedger;
+    activeMin: number;
+    freeAllowance: number;
+    runId: string;
+    baseIso?: string;
+    budgetCents?: number;
+  }) {
+    const baseMs = Date.parse(opts.baseIso ?? "2026-06-18T00:00:00.000Z");
+    const { runs, workspace, run } = await setup({
+      budgetCents: opts.budgetCents ?? 100_000,
+      inferenceMode: "byo",
+    });
+    run.id = opts.runId;
+    run.createdAt = new Date(baseMs).toISOString();
+    const clock = makeClock(baseMs);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req) => {
+      clock.advanceMinutes(opts.activeMin);
+      return origSend(req);
+    };
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger: opts.ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+        freeActiveMinutesPerMonth: opts.freeAllowance,
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    return out;
+  }
+
+  it("within the free allowance: no active-minute charge, usage incremented", async () => {
+    const ledger = new TrackingLedger();
+    const out = await runWith({ ledger, activeMin: 10, freeAllowance: FREE, runId: "run-a" });
+    expect(out.spentActiveMinuteCents).toBe(0);
+    // The hold is still settled (with 0) — releases the up-front overshoot.
+    const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-a")!;
+    expect(settle.cents).toBe(0);
+    // Usage depleted by the run's whole active-minutes.
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(10);
+  });
+
+  it("straddling the boundary: only the minutes past the allowance are billed", async () => {
+    const ledger = new TrackingLedger();
+    // First run uses 55 of the 60 free minutes (no charge).
+    const first = await runWith({ ledger, activeMin: 55, freeAllowance: FREE, runId: "run-a" });
+    expect(first.spentActiveMinuteCents).toBe(0);
+    // Second run is 12 minutes: 5 free remaining + 7 billable * 1¢ = 7¢.
+    const second = await runWith({ ledger, activeMin: 12, freeAllowance: FREE, runId: "run-b" });
+    expect(second.spentActiveMinuteCents).toBe(7 * RATE);
+    expect(ledger.settles.some((s) => s.sourceRef === "auto-active-run-b" && s.cents === 7)).toBe(true);
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(67);
+  });
+
+  it("allowance exhausted: the whole run is billed", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-a" }); // exhaust
+    const out = await runWith({ ledger, activeMin: 8, freeAllowance: FREE, runId: "run-b" });
+    expect(out.spentActiveMinuteCents).toBe(8 * RATE);
+  });
+
+  it("calendar-month rollover resets the allowance (UTC year-month)", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-jun", baseIso: "2026-06-18T00:00:00.000Z" }); // June exhausted
+    const july = await runWith({ ledger, activeMin: 10, freeAllowance: FREE, runId: "run-jul", baseIso: "2026-07-02T00:00:00.000Z" });
+    expect(july.spentActiveMinuteCents).toBe(0); // July starts fresh
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(60);
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-07")).toBe(10);
+  });
+
+  it("freeActiveMinutesPerMonth 0 (no free tier) bills every minute, same as Slice 1", async () => {
+    const ledger = new TrackingLedger();
+    const out = await runWith({ ledger, activeMin: 4, freeAllowance: 0, runId: "run-a" });
+    expect(out.spentActiveMinuteCents).toBe(4 * RATE);
+  });
+
+  it("re-settling the same run is idempotent (no double-deplete, same billable)", async () => {
+    // The run-driver settles once per run instance; a worker RETRY re-runs the
+    // ledger depletion for the same runId. The ledger keys on runId, so the
+    // second application replays the first result and does not bump usage again.
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 70, freeAllowance: FREE, runId: "run-r" }); // 60 free + 10 billable
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70);
+    const replay = await ledger.consumeFreeActiveMinutes("u1", "2026-06", 70, FREE, "run-r");
+    expect(replay).toBe(10); // same billable as the first application
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70); // unchanged
+  });
+
+  it("passes the run id and UTC year-month to the ledger for per-run idempotent depletion", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 3, freeAllowance: FREE, runId: "run-x", baseIso: "2026-06-18T00:00:00.000Z" });
+    const call = ledger.consumeFreeCalls.find((c) => c.runId === "run-x")!;
+    expect(call).toBeDefined();
+    expect(call.runActiveMinutes).toBe(3);
+    expect(call.freeAllowance).toBe(FREE);
+    expect(call.yearMonth).toBe("2026-06");
   });
 });

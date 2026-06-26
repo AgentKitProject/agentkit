@@ -182,16 +182,26 @@ interface CommercialGatewayModule {
   createPostgresCreditLedger(pool: PgPool): CreditLedgerRepository;
   /**
    * Auto v2 run-based pricing (commercial moat): the flat invocation fee + the
-   * per-active-minute rate, in US cents. Absent in the public build → the worker
-   * defaults to 0/0 (no v2 fee).
+   * per-active-minute rate, in US cents, plus the per-user monthly FREE
+   * active-minute allowance (Slice 2). Absent in the public build → the worker
+   * defaults to 0 fees / 0 free minutes (no v2 fee, un-metered).
    */
-  getAutoV2Pricing?: () => { invocationFeeCents: number; activeMinuteRateCents: number };
+  getAutoV2Pricing?: () => {
+    invocationFeeCents: number;
+    activeMinuteRateCents: number;
+    freeActiveMinutesPerMonth?: number;
+  };
 }
 
 /** The Auto v2 run-fee rates the worker applies (US cents). 0 → disabled. */
 export interface AutoV2Rates {
   invocationFeeCents: number;
   activeMinuteRateCents: number;
+  /**
+   * Per-user, per-calendar-month FREE active-minute allowance (Slice 2). 0 → no
+   * free tier. Only ever non-zero on the hosted managed path.
+   */
+  freeActiveMinutesPerMonth: number;
 }
 
 /** Importer seam so tests can inject a fake / force the absent path. */
@@ -244,27 +254,34 @@ export async function loadManagedLedgerWithFlag(
  * managed-vs-free decision: even if the commercial package is importable, a free
  * deployment must pay nothing, so the caller passes `enabled: deps.managed`.
  *
- * Env overrides (operator/test escape hatch): AUTO_INVOCATION_FEE_CENTS and
- * AUTO_ACTIVE_MINUTE_RATE_CENTS take precedence over the commercial defaults.
+ * Env overrides (operator/test escape hatch): AUTO_INVOCATION_FEE_CENTS,
+ * AUTO_ACTIVE_MINUTE_RATE_CENTS, and AUTO_FREE_ACTIVE_MINUTES_PER_MONTH take
+ * precedence over the commercial defaults.
  */
 export async function loadAutoV2Rates(
   enabled: boolean,
   env: Env = process.env,
   importer: CommercialImporter = defaultCommercialImporter,
 ): Promise<AutoV2Rates> {
-  if (!enabled) return { invocationFeeCents: 0, activeMinuteRateCents: 0 };
+  if (!enabled) {
+    return { invocationFeeCents: 0, activeMinuteRateCents: 0, freeActiveMinutesPerMonth: 0 };
+  }
 
   let invocationFeeCents = 0;
   let activeMinuteRateCents = 0;
+  let freeActiveMinutesPerMonth = 0;
   try {
     const mod = await importer();
     const pricing = mod.getAutoV2Pricing?.();
     if (pricing) {
       invocationFeeCents = Math.max(0, pricing.invocationFeeCents);
       activeMinuteRateCents = Math.max(0, pricing.activeMinuteRateCents);
+      // Free allowance is optional on the module shape (older overlays may omit
+      // it); default to 0 (no free tier) when absent.
+      freeActiveMinutesPerMonth = Math.max(0, pricing.freeActiveMinutesPerMonth ?? 0);
     }
   } catch {
-    // Commercial package absent → 0/0 (defensive; `enabled` should already be
+    // Commercial package absent → 0/0/0 (defensive; `enabled` should already be
     // false on the public build, but never charge if the moat numbers are gone).
   }
 
@@ -275,7 +292,10 @@ export async function loadAutoV2Rates(
   if (env["AUTO_ACTIVE_MINUTE_RATE_CENTS"] !== undefined) {
     activeMinuteRateCents = Math.max(0, parseIntEnv(env, "AUTO_ACTIVE_MINUTE_RATE_CENTS", 0));
   }
-  return { invocationFeeCents, activeMinuteRateCents };
+  if (env["AUTO_FREE_ACTIVE_MINUTES_PER_MONTH"] !== undefined) {
+    freeActiveMinutesPerMonth = Math.max(0, parseIntEnv(env, "AUTO_FREE_ACTIVE_MINUTES_PER_MONTH", 0));
+  }
+  return { invocationFeeCents, activeMinuteRateCents, freeActiveMinutesPerMonth };
 }
 
 /**
@@ -344,6 +364,7 @@ export async function runTask(env: Env = process.env): Promise<void> {
     markupBps,
     invocationFeeCents: v2Rates.invocationFeeCents,
     activeMinuteRateCents: v2Rates.activeMinuteRateCents,
+    freeActiveMinutesPerMonth: v2Rates.freeActiveMinutesPerMonth,
     // Opt-in result delivery (Phase D). The email sender is backend-specific:
     // SES (hosted, inert until SES_SENDER set) or the SMTP sender (selfhost,
     // inert until SMTP_HOST + SMTP_FROM are set). Webhook delivery uses global

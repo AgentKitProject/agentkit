@@ -254,6 +254,12 @@ function makeMemoryLedger(
       const sorted = [...transactions].reverse();
       return limit ? sorted.slice(0, limit) : sorted;
     },
+    async getFreeMinutesUsed() {
+      return 0;
+    },
+    async consumeFreeActiveMinutes(_uid, _ym, runActiveMinutes) {
+      return runActiveMinutes;
+    },
   };
 
   return { ledger, state: { account, holds, transactions } };

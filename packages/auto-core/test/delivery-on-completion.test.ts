@@ -38,6 +38,8 @@ class FundedLedger implements CreditLedgerRepository {
   async releaseHold() { return this.getAccount(); }
   async getHold() { return undefined; }
   async listTransactions() { return []; }
+  async getFreeMinutesUsed() { return 0; }
+  async consumeFreeActiveMinutes(_u: string, _ym: string, runActiveMinutes: number) { return runActiveMinutes; }
 }
 
 const resolveKitContext: ResolveKitContext = async () => ({ systemPrompt: "sys", tools: [], toolNames: [] });

@@ -62,6 +62,17 @@ class FundedLedger implements CreditLedgerRepository {
   async listTransactions() {
     return [];
   }
+  async getFreeMinutesUsed() {
+    return 0;
+  }
+  async consumeFreeActiveMinutes(
+    _userId: string,
+    _yearMonth: string,
+    runActiveMinutes: number,
+  ) {
+    // No free tier in this test ledger → every minute billable.
+    return runActiveMinutes;
+  }
 }
 
 const approval: AutoApproval = {

@@ -30,6 +30,14 @@ export class InMemoryCreditLedgerRepository implements CreditLedgerRepository {
   readonly txns: CreditTransaction[] = [];
   private holdSeq = 0;
   private txnSeq = 0;
+  /** Auto v2 free active-minute usage, keyed "userId\x00yearMonth" → minutes. */
+  private readonly freeMinuteUsage = new Map<string, number>();
+  /**
+   * Idempotency record for consumeFreeActiveMinutes, keyed by runId → the
+   * billableMinutes returned on first application. A re-settle of the same run
+   * replays this value and writes nothing further (no double-deplete).
+   */
+  private readonly freeMinuteRuns = new Map<string, number>();
 
   async getAccount(userId: string): Promise<CreditAccount | undefined> {
     return this.accounts.get(userId);
@@ -119,5 +127,37 @@ export class InMemoryCreditLedgerRepository implements CreditLedgerRepository {
 
   async listTransactions(userId: string, limit = 50): Promise<CreditTransaction[]> {
     return this.txns.filter((t) => t.userId === userId).slice().reverse().slice(0, limit);
+  }
+
+  private usageKey(userId: string, yearMonth: string): string {
+    return `${userId}\x00${yearMonth}`;
+  }
+
+  async getFreeMinutesUsed(userId: string, yearMonth: string): Promise<number> {
+    return this.freeMinuteUsage.get(this.usageKey(userId, yearMonth)) ?? 0;
+  }
+
+  async consumeFreeActiveMinutes(
+    userId: string,
+    yearMonth: string,
+    runActiveMinutes: number,
+    freeAllowance: number,
+    runId: string,
+  ): Promise<number> {
+    // Idempotent replay: a re-settle of the same run returns its first result
+    // and writes nothing further (no double-deplete, no double-charge).
+    const prior = this.freeMinuteRuns.get(runId);
+    if (prior !== undefined) return prior;
+
+    const minutes = Math.max(0, Math.trunc(runActiveMinutes));
+    const allowance = Math.max(0, Math.trunc(freeAllowance));
+    const key = this.usageKey(userId, yearMonth);
+    const usedThisMonth = this.freeMinuteUsage.get(key) ?? 0;
+    const freeRemaining = Math.max(0, allowance - usedThisMonth);
+    const billableMinutes = Math.max(0, minutes - freeRemaining);
+
+    this.freeMinuteUsage.set(key, usedThisMonth + minutes);
+    this.freeMinuteRuns.set(runId, billableMinutes);
+    return billableMinutes;
   }
 }

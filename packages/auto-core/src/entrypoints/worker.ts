@@ -77,6 +77,13 @@ export interface ProcessAutoRunDeps {
    * on the HOSTED managed path; 0 keeps open-core / self-host free.
    */
   activeMinuteRateCents?: number;
+  /**
+   * Auto v2 FREE active-minute allowance per user per calendar-month (Slice 2).
+   * The first N active-minutes a user consumes in a UTC month are NOT charged the
+   * active-minute fee (the invocation fee is always charged). Default 0 (no free
+   * tier). Non-zero only on the HOSTED managed path; 0 keeps self-host un-metered.
+   */
+  freeActiveMinutesPerMonth?: number;
   maxTokens?: number;
   maxToolRounds?: number;
   /**
@@ -187,6 +194,9 @@ export async function processAutoRun(
           : {}),
         ...(deps.activeMinuteRateCents !== undefined
           ? { activeMinuteRateCents: deps.activeMinuteRateCents }
+          : {}),
+        ...(deps.freeActiveMinutesPerMonth !== undefined
+          ? { freeActiveMinutesPerMonth: deps.freeActiveMinutesPerMonth }
           : {}),
         ...(deps.maxTokens !== undefined ? { maxTokens: deps.maxTokens } : {}),
       },

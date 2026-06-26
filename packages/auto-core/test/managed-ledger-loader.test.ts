@@ -181,46 +181,67 @@ describe("loadManagedLedgerWithFlag", () => {
 describe("loadAutoV2Rates", () => {
   const commercialPricing = async () => ({
     createPostgresCreditLedger: () => new RecordingLedger(),
-    getAutoV2Pricing: () => ({ invocationFeeCents: 1, activeMinuteRateCents: 1 }),
+    // Slice 2: the moat pricing also carries the monthly free-minute allowance.
+    getAutoV2Pricing: () => ({
+      invocationFeeCents: 1,
+      activeMinuteRateCents: 1,
+      freeActiveMinutesPerMonth: 60,
+    }),
   });
 
-  it("returns 0/0 when not enabled (open-core / self-host FREE), without importing", async () => {
+  it("returns 0/0/0 when not enabled (open-core / self-host FREE), without importing", async () => {
     let imported = false;
     const rates = await loadAutoV2Rates(false, {}, async () => {
       imported = true;
       return commercialPricing().then((m) => m);
     });
-    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0, freeActiveMinutesPerMonth: 0 });
     expect(imported).toBe(false); // disabled → never even imports the moat numbers
   });
 
-  it("resolves the commercial v2 rates when enabled (hosted managed)", async () => {
+  it("resolves the commercial v2 rates + free allowance when enabled (hosted managed)", async () => {
     const rates = await loadAutoV2Rates(true, {}, commercialPricing);
-    expect(rates).toEqual({ invocationFeeCents: 1, activeMinuteRateCents: 1 });
+    expect(rates).toEqual({ invocationFeeCents: 1, activeMinuteRateCents: 1, freeActiveMinutesPerMonth: 60 });
   });
 
-  it("returns 0/0 when enabled but the commercial package is absent (defensive)", async () => {
+  it("defaults the free allowance to 0 when the overlay omits it (older overlay)", async () => {
+    const rates = await loadAutoV2Rates(true, {}, async () => ({
+      createPostgresCreditLedger: () => new RecordingLedger(),
+      getAutoV2Pricing: () => ({ invocationFeeCents: 1, activeMinuteRateCents: 1 }),
+    }));
+    expect(rates).toEqual({ invocationFeeCents: 1, activeMinuteRateCents: 1, freeActiveMinutesPerMonth: 0 });
+  });
+
+  it("returns 0/0/0 when enabled but the commercial package is absent (defensive)", async () => {
     const rates = await loadAutoV2Rates(true, {}, async () => {
       throw new Error("Cannot find module '@agentkit-commercial/gateway'");
     });
-    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0, freeActiveMinutesPerMonth: 0 });
   });
 
   it("env overrides take precedence over the commercial defaults (still gated on enabled)", async () => {
     const rates = await loadAutoV2Rates(
       true,
-      { AUTO_INVOCATION_FEE_CENTS: "3", AUTO_ACTIVE_MINUTE_RATE_CENTS: "7" },
+      {
+        AUTO_INVOCATION_FEE_CENTS: "3",
+        AUTO_ACTIVE_MINUTE_RATE_CENTS: "7",
+        AUTO_FREE_ACTIVE_MINUTES_PER_MONTH: "120",
+      },
       commercialPricing,
     );
-    expect(rates).toEqual({ invocationFeeCents: 3, activeMinuteRateCents: 7 });
+    expect(rates).toEqual({ invocationFeeCents: 3, activeMinuteRateCents: 7, freeActiveMinutesPerMonth: 120 });
   });
 
   it("env overrides do NOT bypass the disabled gate (free stays free)", async () => {
     const rates = await loadAutoV2Rates(
       false,
-      { AUTO_INVOCATION_FEE_CENTS: "3", AUTO_ACTIVE_MINUTE_RATE_CENTS: "7" },
+      {
+        AUTO_INVOCATION_FEE_CENTS: "3",
+        AUTO_ACTIVE_MINUTE_RATE_CENTS: "7",
+        AUTO_FREE_ACTIVE_MINUTES_PER_MONTH: "120",
+      },
       commercialPricing,
     );
-    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0 });
+    expect(rates).toEqual({ invocationFeeCents: 0, activeMinuteRateCents: 0, freeActiveMinutesPerMonth: 0 });
   });
 });
