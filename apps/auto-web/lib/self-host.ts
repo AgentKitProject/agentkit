@@ -187,14 +187,16 @@ export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
   if (!isSelfHost(env)) {
     return {
       projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL) ?? "https://agentkitproject.com",
-      marketUrl: getMarketBaseUrl(env) ?? "https://market.agentkitproject.com",
+      // Public BROWSER url (not AGENTKITMARKET_BASE_URL, which is the in-cluster
+      // service url for server-side calls). Mirrors the other NEXT_PUBLIC_* links.
+      marketUrl: trimmed(env.NEXT_PUBLIC_MARKET_URL) ?? "https://market.agentkitproject.com",
       forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL) ?? "https://forge.agentkitproject.com",
       profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL) ?? "https://profile.agentkitproject.com"
     };
   }
   // Self-host: only surface links the operator explicitly configures. The Market
-  // link follows the configured Market URL (own Market) when present.
-  const market = getMarketBaseUrl(env);
+  // browser link follows NEXT_PUBLIC_MARKET_URL (public), not the server-side base.
+  const market = trimmed(env.NEXT_PUBLIC_MARKET_URL);
   return {
     projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL),
     ...(market ? { marketUrl: market } : {}),
