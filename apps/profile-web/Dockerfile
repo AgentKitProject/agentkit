@@ -17,7 +17,7 @@
 # (serverExternalPackages) so it is traced into the standalone node_modules.
 # ---------------------------------------------------------------------------- #
 
-ARG NODE_VERSION=22-slim
+ARG NODE_VERSION=24.18.0-slim
 ARG PNPM_VERSION=11.9.0
 
 FROM node:${NODE_VERSION} AS base

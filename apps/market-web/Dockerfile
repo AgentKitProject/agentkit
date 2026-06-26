@@ -18,7 +18,7 @@
 # rather than failing, so --frozen-lockfile installs cleanly without it.
 # ---------------------------------------------------------------------------- #
 
-ARG NODE_VERSION=22-slim
+ARG NODE_VERSION=24.18.0-slim
 ARG PNPM_VERSION=11.9.0
 
 # ---------------------------------------------------------------------------- #
