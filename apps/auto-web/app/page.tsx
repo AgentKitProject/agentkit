@@ -15,6 +15,7 @@
 // `redirect()` to the active provider's sign-in flow.
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { getAuthProvider } from "@/lib/auth-provider";
+import { getPublicConfig } from "@/lib/self-host";
 import { redirect } from "next/navigation";
 import { AutoApp } from "./AutoApp";
 
@@ -33,5 +34,6 @@ export default async function Page() {
       redirect(url);
     }
   }
-  return <AutoApp user={{ id: user.id, email: user.email }} />;
+  const { links } = getPublicConfig();
+  return <AutoApp user={{ id: user.id, email: user.email }} marketUrl={links.marketUrl} />;
 }

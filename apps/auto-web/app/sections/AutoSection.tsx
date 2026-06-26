@@ -209,7 +209,7 @@ function DeliverySection({
   );
 }
 
-export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Notify }) {
+export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; notify: Notify; marketUrl?: string }) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
@@ -779,6 +779,13 @@ export function AutoSection({ kits, notify }: { kits: MyKitEntry[]; notify: Noti
           (debited from your prepaid balance). <strong>Bring your own key</strong> runs on your own
           Anthropic key — no credit debit. Your key is encrypted at rest and never shown again.
         </p>
+        {marketUrl && (
+          <div style={{ marginBottom: 12 }}>
+            <a href={`${marketUrl}/account/credits`} style={{ textDecoration: "none" }}>
+              <Button variant="secondary" size="sm">Buy credits</Button>
+            </a>
+          </div>
+        )}
         <Field label="Inference mode">
           <Select value={byoMode} onChange={(e) => void saveByoMode(e.target.value as "auto" | "managed" | "byo")}>
             <option value="auto">Automatic (use my key when set, else managed)</option>
