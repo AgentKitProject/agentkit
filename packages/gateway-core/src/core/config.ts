@@ -7,8 +7,11 @@
  * provider API key for managed mode, and gateway-specific tuning knobs.
  *
  * Pricing constants:
- *   MARKUP_BPS   default 1500 (= 15%). Override via env GATEWAY_MARKUP_BPS.
- *                Sized for break-even on Anthropic pass-through cost + infra.
+ *   MARKUP_BPS   default 0 (= no token markup). Override via env GATEWAY_MARKUP_BPS.
+ *                Auto v2 bills compute per-run (invocation + active-minute) and
+ *                passes inference tokens through AT COST, so the default markup is
+ *                0. Raise it via GATEWAY_MARKUP_BPS for a deployment that wants a
+ *                token margin (e.g. the standalone gateway product).
  *   MIN_TOPUP_CENTS  minimum topup amount (default $5.00 = 500 cents).
  *   PER_CALL_MAX_COST_CENTS  hard per-call cost cap before we refuse (default $1.00 = 100 cents).
  *
@@ -27,12 +30,14 @@ import type { ConfigProvider } from "./ports.js";
 
 /**
  * Default markup in basis points (1 bps = 0.01%).
- * 1500 bps = 15%. Override via GATEWAY_MARKUP_BPS env var.
+ * 0 bps = no token markup (tokens billed AT COST). Override via GATEWAY_MARKUP_BPS.
  *
- * Rationale: break-even on Anthropic API cost + S3/DynamoDB infra overhead.
- * Adjust upward if adding Stripe payment-processing fees (~2.9% + 30¢/txn).
+ * Auto v2 rationale: the platform margin moved off per-token markup onto a
+ * RUN-based compute charge (a flat invocation fee + a per-active-minute rate),
+ * so managed inference passes through at cost and the default markup is 0. A
+ * deployment that wants a token margin sets GATEWAY_MARKUP_BPS (e.g. 1500 = 15%).
  */
-export const DEFAULT_MARKUP_BPS = 1500;
+export const DEFAULT_MARKUP_BPS = 0;
 
 /** Minimum credit topup in US cents (= $5.00). Prevents micro-transactions. */
 export const MIN_TOPUP_CENTS = 500;

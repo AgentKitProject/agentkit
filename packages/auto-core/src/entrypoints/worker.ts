@@ -64,8 +64,26 @@ export interface ProcessAutoRunDeps {
    * `inferenceMode` is used (default "managed"). Markup applies in managed mode.
    */
   inferenceMode?: InferenceMode;
-  /** Markup in bps for managed turns (Auto's own rate, e.g. 2500). */
+  /** Markup in bps for managed turns (Auto's own rate; v2 default 0 = at cost). */
   markupBps?: number;
+  /**
+   * Auto v2 flat invocation fee (US cents), debited once at run start. Default 0
+   * (disabled). Non-zero only on the HOSTED managed path (resolved by run-task
+   * from @agentkit-commercial/gateway); 0 keeps open-core / self-host free.
+   */
+  invocationFeeCents?: number;
+  /**
+   * Auto v2 per-active-minute fee (US cents). Default 0 (disabled). Non-zero only
+   * on the HOSTED managed path; 0 keeps open-core / self-host free.
+   */
+  activeMinuteRateCents?: number;
+  /**
+   * Auto v2 FREE active-minute allowance per user per calendar-month (Slice 2).
+   * The first N active-minutes a user consumes in a UTC month are NOT charged the
+   * active-minute fee (the invocation fee is always charged). Default 0 (no free
+   * tier). Non-zero only on the HOSTED managed path; 0 keeps self-host un-metered.
+   */
+  freeActiveMinutesPerMonth?: number;
   maxTokens?: number;
   maxToolRounds?: number;
   /**
@@ -171,6 +189,15 @@ export async function processAutoRun(
         now,
         inferenceMode,
         ...(deps.markupBps !== undefined ? { markupBps: deps.markupBps } : {}),
+        ...(deps.invocationFeeCents !== undefined
+          ? { invocationFeeCents: deps.invocationFeeCents }
+          : {}),
+        ...(deps.activeMinuteRateCents !== undefined
+          ? { activeMinuteRateCents: deps.activeMinuteRateCents }
+          : {}),
+        ...(deps.freeActiveMinutesPerMonth !== undefined
+          ? { freeActiveMinutesPerMonth: deps.freeActiveMinutesPerMonth }
+          : {}),
         ...(deps.maxTokens !== undefined ? { maxTokens: deps.maxTokens } : {}),
       },
       ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),

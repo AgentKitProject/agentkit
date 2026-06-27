@@ -251,7 +251,13 @@ function makeMemoryLedger(
     },
     async listTransactions() {
       return [...transactions].reverse();
-    }
+    },
+    async getFreeMinutesUsed() {
+      return 0;
+    },
+    async consumeFreeActiveMinutes(_uid: string, _ym: string, runActiveMinutes: number) {
+      return runActiveMinutes;
+    },
   };
   return { ledger, transactions };
 }

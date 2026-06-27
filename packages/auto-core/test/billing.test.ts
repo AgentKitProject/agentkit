@@ -1,14 +1,17 @@
 /**
- * AgentKitAuto billing model — markup + per-minute cloud-run fee.
+ * AgentKitAuto v2 billing model — run-based fees (invocation + active-minute).
  *
- * Deterministic + offline: a scripted FakeChatProvider, a funded tracking
- * ledger, and a controllable ISO clock. Asserts:
- *   - managed Auto turns debit inference at AUTO markup (2500), not 1500;
- *   - BYO mode skips the inference debit (ledger inference-untouched);
- *   - cloud + BYO debits the per-minute fee (hold reserved up-front, settled on
- *     completion AND on cancel/failure);
- *   - local + BYO = zero compute debit;
- *   - managed cloud = zero SEPARATE compute debit (only the inference markup).
+ * Auto v2 replaced the per-token markup with a RUN-based compute charge:
+ *   - a flat INVOCATION fee, debited ONCE at run start (idempotent sourceRef
+ *     `auto-invocation-{runId}`);
+ *   - a per-ACTIVE-MINUTE fee, ceil(wall-clock minutes) * rate, reserved up-front
+ *     and settled at finalize (sourceRef `auto-active-{runId}`).
+ * Both apply to EVERY run (managed AND BYO). Token inference is billed AT COST
+ * (markup 0). The fees are 0 (the whole path skipped) on the open-core / self-host
+ * FREE path so a self-host pays nothing.
+ *
+ * Deterministic + offline: a scripted FakeChatProvider, a funded tracking ledger,
+ * and a controllable ISO clock.
  */
 
 import { describe, expect, it } from "vitest";
@@ -48,15 +51,24 @@ interface SettleCall {
   sourceRef?: string;
 }
 
-/** Funded ledger that records every reserve/settle so tests can assert the
- *  exact debited amounts (inference markup + compute fee). */
+interface DebitCall {
+  cents: number;
+  description?: string;
+  sourceRef?: string;
+}
+
+/** Funded ledger that records every reserve/settle/debit so tests can assert the
+ *  exact debited amounts (invocation fee + active-minute fee). */
 class TrackingLedger implements CreditLedgerRepository {
   reserves: { cents: number }[] = [];
   settles: SettleCall[] = [];
   releases: string[] = [];
+  debits: DebitCall[] = [];
   private seq = 0;
   /** When set, reserveHold throws to simulate insufficient funds. */
   rejectReserve = false;
+  /** When set, the up-front invocation debit throws to simulate insufficient funds. */
+  rejectDebit = false;
 
   async getAccount() {
     return ACCOUNT;
@@ -70,7 +82,9 @@ class TrackingLedger implements CreditLedgerRepository {
   async topup() {
     return ACCOUNT;
   }
-  async debit() {
+  async debit(_userId: string, amountCents: number, _now: string, description?: string, sourceRef?: string) {
+    if (this.rejectDebit) throw new Error("condition check failed: balance");
+    this.debits.push({ cents: amountCents, description, sourceRef });
     return ACCOUNT;
   }
   async reserveHold(_userId: string, maxCostCents: number) {
@@ -91,6 +105,36 @@ class TrackingLedger implements CreditLedgerRepository {
   }
   async listTransactions() {
     return [];
+  }
+
+  // Auto v2 Slice 2: per-(user, month) free-minute usage + per-run idempotency,
+  // mirroring InMemoryCreditLedgerRepository so the run-driver's free-tier path
+  // is exercised against a realistic ledger.
+  freeUsage = new Map<string, number>();
+  private freeRuns = new Map<string, number>();
+  consumeFreeCalls: { runId: string; runActiveMinutes: number; freeAllowance: number; yearMonth: string }[] = [];
+  async getFreeMinutesUsed(userId: string, yearMonth: string) {
+    return this.freeUsage.get(`${userId}\x00${yearMonth}`) ?? 0;
+  }
+  async consumeFreeActiveMinutes(
+    userId: string,
+    yearMonth: string,
+    runActiveMinutes: number,
+    freeAllowance: number,
+    runId: string,
+  ) {
+    this.consumeFreeCalls.push({ runId, runActiveMinutes, freeAllowance, yearMonth });
+    const prior = this.freeRuns.get(runId);
+    if (prior !== undefined) return prior;
+    const minutes = Math.max(0, Math.trunc(runActiveMinutes));
+    const allowance = Math.max(0, Math.trunc(freeAllowance));
+    const key = `${userId}\x00${yearMonth}`;
+    const used = this.freeUsage.get(key) ?? 0;
+    const freeRemaining = Math.max(0, allowance - used);
+    const billable = Math.max(0, minutes - freeRemaining);
+    this.freeUsage.set(key, used + minutes);
+    this.freeRuns.set(runId, billable);
+    return billable;
   }
 }
 
@@ -113,14 +157,7 @@ const APPROVAL: AutoApproval = {
   revokedAt: null,
 };
 
-async function setup(
-  opts: {
-    budgetCents: number;
-    inferenceMode?: InferenceMode;
-    isCloudRun?: boolean;
-    cloudRunCentsPerMin?: number;
-  },
-) {
+async function setup(opts: { budgetCents: number; inferenceMode?: InferenceMode }) {
   const runs = new InMemoryRunRepo();
   const workspace = new InMemoryWorkspace();
   const workspaceId = await workspace.createWorkspace("run-1");
@@ -135,10 +172,6 @@ async function setup(
     spentInferenceCents: 0,
     spentComputeCents: 0,
     inferenceMode: opts.inferenceMode ?? "managed",
-    ...(opts.isCloudRun !== undefined ? { isCloudRun: opts.isCloudRun } : {}),
-    ...(opts.cloudRunCentsPerMin !== undefined
-      ? { cloudRunCentsPerMin: opts.cloudRunCentsPerMin }
-      : {}),
     model: "claude-sonnet-4-6",
     createdAt: "2026-06-18T00:00:00.000Z",
     auditLog: [],
@@ -149,44 +182,52 @@ async function setup(
 }
 
 const USAGE = { inputTokens: 100, outputTokens: 100, cachedReadTokens: 0, cachedWriteTokens: 0 };
-/** Large usage so 1500 vs 2500 bps produce distinct cent amounts (> 1¢ floor). */
+/** Large usage so distinct markups produce distinct cent amounts (> 1¢ floor). */
 const BIG_USAGE = { inputTokens: 1_000_000, outputTokens: 1_000_000, cachedReadTokens: 0, cachedWriteTokens: 0 };
 
-describe("Auto billing: markup", () => {
-  it("managed turns debit inference at the AUTO markup (2500), not 1500", async () => {
-    const AUTO_BPS = 2500;
+// The slice-1 commercial v2 rates (mirrors @agentkit-commercial/gateway).
+const INVOCATION = 1; // cents
+const ACTIVE_MIN = 1; // cents/min
+
+const invocationSettles = (l: TrackingLedger) =>
+  l.debits.filter((d) => d.sourceRef === "auto-invocation-run-1");
+const activeSettles = (l: TrackingLedger) =>
+  l.settles.filter((s) => s.sourceRef === "auto-active-run-1");
+const inferenceSettles = (l: TrackingLedger) =>
+  l.settles.filter((s) => !s.sourceRef?.startsWith("auto-active-"));
+
+describe("Auto v2 billing: token markup", () => {
+  it("managed turns bill inference AT COST (markup 0) when no markup is passed", async () => {
     const { runs, workspace, run } = await setup({ budgetCents: 100_000_000 });
     const ledger = new TrackingLedger();
     const provider = new FakeChatProvider([bigTextResponse("done")]);
     const clock = makeClock();
     const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
 
+    // No markupBps passed → run-driver forwards none → runManagedTurn uses the
+    // gateway DEFAULT_MARKUP_BPS, which is now 0 (tokens at cost).
     const out = await runAutoRun({
       run,
       approval: APPROVAL,
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "managed", markupBps: AUTO_BPS, maxTokens: 1_000_000 },
+      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "managed", maxTokens: 1_000_000 },
     });
 
     expect(out.status).toBe("succeeded");
-    // The settled inference debit equals computeDebitCents at 2500, and differs
-    // from the gateway's 1500 — proving Auto uses its own rate.
-    const expected2500 = computeDebitCents(BIG_USAGE, "claude-sonnet-4-6", 2500);
-    const expected1500 = computeDebitCents(BIG_USAGE, "claude-sonnet-4-6", 1500);
-    expect(expected2500).toBeGreaterThan(expected1500);
-    const inferenceSettles = ledger.settles.filter((s) => !s.sourceRef?.endsWith(":compute"));
-    expect(inferenceSettles).toHaveLength(1);
-    expect(inferenceSettles[0]!.cents).toBe(expected2500);
-    expect(out.spentInferenceCents).toBe(expected2500);
+    const atCost = computeDebitCents(BIG_USAGE, "claude-sonnet-4-6", 0);
+    expect(inferenceSettles(ledger)).toHaveLength(1);
+    expect(inferenceSettles(ledger)[0]!.cents).toBe(atCost);
+    expect(out.spentInferenceCents).toBe(atCost);
+    // No v2 fee rates passed → no run fee.
     expect(out.spentComputeCents).toBe(0);
   });
 });
 
-describe("Auto billing: BYO inference", () => {
-  it("BYO mode skips the inference debit entirely (ledger inference-untouched)", async () => {
-    const { runs, workspace, run } = await setup({ budgetCents: 1_000_000, inferenceMode: "byo" });
+describe("Auto v2 billing: invocation fee", () => {
+  it("debits the invocation fee ONCE at run start with the idempotent sourceRef", async () => {
+    const { runs, workspace, run } = await setup({ budgetCents: 100_000 });
     const ledger = new TrackingLedger();
     const provider = new FakeChatProvider([textResponse("done")]);
     const clock = makeClock();
@@ -198,32 +239,63 @@ describe("Auto billing: BYO inference", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", markupBps: 2500, maxTokens: 100 },
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "managed", maxTokens: 100,
+        invocationFeeCents: INVOCATION, activeMinuteRateCents: 0,
+      },
     });
 
     expect(out.status).toBe("succeeded");
-    expect(provider.calls).toBe(1); // the BYO provider WAS called
-    expect(ledger.reserves).toHaveLength(0); // no hold for inference
-    expect(ledger.settles).toHaveLength(0);
-    expect(out.spentInferenceCents).toBe(0);
-    expect(out.spentComputeCents).toBe(0);
+    const inv = invocationSettles(ledger);
+    expect(inv).toHaveLength(1);
+    expect(inv[0]!.cents).toBe(INVOCATION);
+    expect(inv[0]!.sourceRef).toBe("auto-invocation-run-1");
+    // No active-minute rate → no active-minute hold/settle. (The managed
+    // inference path still reserves+settles its own hold — not a v2 run fee.)
+    expect(activeSettles(ledger)).toHaveLength(0);
+    expect(out.spentInvocationCents).toBe(INVOCATION);
+    expect(out.spentActiveMinuteCents).toBe(0);
+    expect(out.spentComputeCents).toBe(INVOCATION);
+  });
+
+  it("charges the invocation fee even on a 0-minute run", async () => {
+    const { runs, workspace, run } = await setup({ budgetCents: 100_000 });
+    const ledger = new TrackingLedger();
+    const provider = new FakeChatProvider([textResponse("done")]); // clock never advances
+    const clock = makeClock();
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "managed", maxTokens: 100,
+        invocationFeeCents: INVOCATION, activeMinuteRateCents: ACTIVE_MIN,
+      },
+    });
+
+    expect(out.status).toBe("succeeded");
+    expect(out.spentInvocationCents).toBe(INVOCATION);
+    // 0 elapsed minutes → ceil(0) * rate = 0.
+    expect(out.spentActiveMinuteCents).toBe(0);
+    expect(activeSettles(ledger)[0]!.cents).toBe(0);
   });
 });
 
-describe("Auto billing: per-minute cloud-run fee", () => {
-  it("cloud + BYO debits the per-minute fee (hold reserved, settled on completion)", async () => {
+describe("Auto v2 billing: active-minute fee", () => {
+  it("reserves a budget-derived hold up-front and settles ceil(minutes) * rate", async () => {
     const RATE = 5; // cents/min
-    const { runs, workspace, run } = await setup({
-      budgetCents: 100, // estimatedMin = floor(100/5) = 20
-      inferenceMode: "byo",
-      isCloudRun: true,
-      cloudRunCentsPerMin: RATE,
-    });
+    const { runs, workspace, run } = await setup({ budgetCents: 100 }); // estMin = ceil(100/5) = 20
     const ledger = new TrackingLedger();
     const clock = makeClock();
     const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
 
-    // Advance the clock ~3.5 minutes of wall-clock during the model call.
+    // Advance the clock ~3.5 minutes during the model call.
     const slowProvider = new FakeChatProvider([textResponse("done")]);
     const origSend = slowProvider.sendMessage.bind(slowProvider);
     slowProvider.sendMessage = async (req) => {
@@ -237,32 +309,68 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: slowProvider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", cloudRunCentsPerMin: RATE, maxTokens: 100 },
+      deps: {
+        chatProvider: slowProvider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+      },
     });
 
     expect(out.status).toBe("succeeded");
-    // Up-front hold = estimatedMin (20) * rate (5) = 100.
+    // Up-front hold = estMin (20) * rate (5) = 100.
     expect(ledger.reserves).toHaveLength(1);
     expect(ledger.reserves[0]!.cents).toBe(100);
-    // Settled compute = ceil(3.5) * 5 = 20.
-    const computeSettles = ledger.settles.filter((s) => s.sourceRef?.endsWith(":compute"));
-    expect(computeSettles).toHaveLength(1);
-    expect(computeSettles[0]!.cents).toBe(20);
-    expect(out.spentComputeCents).toBe(20);
+    // Settled active-minutes = ceil(3.5) * 5 = 20.
+    const active = activeSettles(ledger);
+    expect(active).toHaveLength(1);
+    expect(active[0]!.cents).toBe(20);
+    expect(active[0]!.sourceRef).toBe("auto-active-run-1");
+    expect(out.spentActiveMinuteCents).toBe(20);
     expect(out.spentInferenceCents).toBe(0); // BYO → no inference debit
+    expect(out.spentComputeCents).toBe(20);
     expect(out.spentCents).toBe(20);
-    // The run record persisted the compute total too.
     expect((await runs.getRun("run-1"))?.spentComputeCents).toBe(20);
   });
 
-  it("settles the compute hold on FAILURE (provider throws)", async () => {
+  it("applies to MANAGED runs too (invocation + active-minute alongside at-cost inference)", async () => {
     const RATE = 5;
-    const { runs, workspace, run } = await setup({
-      budgetCents: 100,
-      inferenceMode: "byo",
-      isCloudRun: true,
-      cloudRunCentsPerMin: RATE,
+    const { runs, workspace, run } = await setup({ budgetCents: 100_000, inferenceMode: "managed" });
+    const ledger = new TrackingLedger();
+    const clock = makeClock();
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const slowProvider = new FakeChatProvider([textResponse("done")]);
+    const origSend = slowProvider.sendMessage.bind(slowProvider);
+    slowProvider.sendMessage = async (req) => {
+      clock.advanceMinutes(2);
+      return origSend(req);
+    };
+
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: slowProvider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "managed", maxTokens: 100,
+        invocationFeeCents: INVOCATION, activeMinuteRateCents: RATE,
+      },
     });
+
+    expect(out.status).toBe("succeeded");
+    expect(out.spentInvocationCents).toBe(INVOCATION);
+    expect(out.spentActiveMinuteCents).toBe(2 * RATE); // ceil(2) * 5
+    expect(out.spentComputeCents).toBe(INVOCATION + 2 * RATE);
+    // Inference still billed (at cost, markup 0 default).
+    const inf = inferenceSettles(ledger);
+    expect(inf).toHaveLength(1);
+    expect(out.spentInferenceCents).toBe(computeDebitCents(USAGE, "claude-sonnet-4-6", 0));
+  });
+
+  it("settles the active-minute hold on FAILURE (provider throws)", async () => {
+    const RATE = 5;
+    const { runs, workspace, run } = await setup({ budgetCents: 100, inferenceMode: "byo" });
     const ledger = new TrackingLedger();
     const clock = makeClock();
     const provider = new FakeChatProvider([]); // empty → throws
@@ -279,24 +387,23 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", cloudRunCentsPerMin: RATE, maxTokens: 100 },
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+      },
     });
 
     expect(out.status).toBe("failed");
-    const computeSettles = ledger.settles.filter((s) => s.sourceRef?.endsWith(":compute"));
-    expect(computeSettles).toHaveLength(1);
-    expect(computeSettles[0]!.cents).toBe(Math.ceil(1.2) * RATE); // 2 * 5 = 10
-    expect(out.spentComputeCents).toBe(10);
+    const active = activeSettles(ledger);
+    expect(active).toHaveLength(1);
+    expect(active[0]!.cents).toBe(Math.ceil(1.2) * RATE); // 2 * 5 = 10
+    expect(out.spentActiveMinuteCents).toBe(10);
   });
 
-  it("settles the compute hold on CANCEL (kill-switch)", async () => {
+  it("settles the active-minute hold on CANCEL (kill-switch)", async () => {
     const RATE = 5;
-    const { runs, workspace, run } = await setup({
-      budgetCents: 100,
-      inferenceMode: "byo",
-      isCloudRun: true,
-      cloudRunCentsPerMin: RATE,
-    });
+    const { runs, workspace, run } = await setup({ budgetCents: 100, inferenceMode: "byo" });
     const ledger = new TrackingLedger();
     const clock = makeClock();
     const provider = new FakeChatProvider([
@@ -304,7 +411,6 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       textResponse("unreached"),
     ]);
     const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, resolvedTools: ["write_file"], now: clock.now });
-    // Cancel during the first tool round; advance the clock 0.4 min.
     const exec2 = async (tu: Parameters<typeof exec>[0]) => {
       clock.advanceMinutes(0.4);
       await runs.requestCancel("run-1");
@@ -317,22 +423,21 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [{ name: "write_file", description: "", inputSchema: {} }],
       executeTool: exec2,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", cloudRunCentsPerMin: RATE, maxTokens: 100 },
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+      },
     });
 
     expect(out.status).toBe("canceled");
-    const computeSettles = ledger.settles.filter((s) => s.sourceRef?.endsWith(":compute"));
-    expect(computeSettles).toHaveLength(1);
-    expect(computeSettles[0]!.cents).toBe(Math.ceil(0.4) * RATE); // 1 * 5 = 5
+    const active = activeSettles(ledger);
+    expect(active).toHaveLength(1);
+    expect(active[0]!.cents).toBe(Math.ceil(0.4) * RATE); // 1 * 5 = 5
   });
 
-  it("rejects (throws → failed) when the up-front compute hold can't be reserved", async () => {
-    const { runs, workspace, run } = await setup({
-      budgetCents: 100,
-      inferenceMode: "byo",
-      isCloudRun: true,
-      cloudRunCentsPerMin: 5,
-    });
+  it("rejects (throws → failed) when the up-front active-minute hold can't be reserved", async () => {
+    const { runs, workspace, run } = await setup({ budgetCents: 100, inferenceMode: "byo" });
     const ledger = new TrackingLedger();
     ledger.rejectReserve = true;
     const clock = makeClock();
@@ -345,24 +450,25 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", cloudRunCentsPerMin: 5, maxTokens: 100 },
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: 5,
+      },
     });
 
     expect(out.status).toBe("failed");
     expect(provider.calls).toBe(0); // never reached the provider
     expect(out.spentComputeCents).toBe(0);
   });
+});
 
-  it("local + BYO = zero compute debit", async () => {
-    const { runs, workspace, run } = await setup({
-      budgetCents: 100,
-      inferenceMode: "byo",
-      isCloudRun: false, // LOCAL
-      cloudRunCentsPerMin: 5,
-    });
+describe("Auto v2 billing: open-core / self-host FREE (fees disabled)", () => {
+  it("BYO with 0/0 rates touches the ledger for NOTHING", async () => {
+    const { runs, workspace, run } = await setup({ budgetCents: 1_000_000, inferenceMode: "byo" });
     const ledger = new TrackingLedger();
-    const clock = makeClock();
     const provider = new FakeChatProvider([textResponse("done")]);
+    const clock = makeClock();
     const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
 
     const out = await runAutoRun({
@@ -371,25 +477,27 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "byo", cloudRunCentsPerMin: 5, maxTokens: 100 },
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: 0,
+      },
     });
 
     expect(out.status).toBe("succeeded");
-    expect(ledger.reserves).toHaveLength(0);
-    expect(ledger.settles).toHaveLength(0);
+    expect(provider.calls).toBe(1); // the BYO provider WAS called
+    expect(ledger.debits).toHaveLength(0); // no invocation debit
+    expect(ledger.reserves).toHaveLength(0); // no active-minute hold
+    expect(ledger.settles).toHaveLength(0); // no inference debit (BYO)
+    expect(out.spentInferenceCents).toBe(0);
     expect(out.spentComputeCents).toBe(0);
   });
 
-  it("managed cloud = zero SEPARATE compute debit (only the inference markup)", async () => {
-    const { runs, workspace, run } = await setup({
-      budgetCents: 1_000_000,
-      inferenceMode: "managed",
-      isCloudRun: true, // CLOUD but MANAGED → compute bundled into the 25%
-      cloudRunCentsPerMin: 5,
-    });
+  it("default deps (no v2 rates) = no run fee (managed inference still billed at cost)", async () => {
+    const { runs, workspace, run } = await setup({ budgetCents: 1_000_000, inferenceMode: "managed" });
     const ledger = new TrackingLedger();
-    const clock = makeClock();
     const provider = new FakeChatProvider([textResponse("done")]);
+    const clock = makeClock();
     const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
 
     const out = await runAutoRun({
@@ -398,14 +506,132 @@ describe("Auto billing: per-minute cloud-run fee", () => {
       systemPrompt: "sys",
       tools: [],
       executeTool: exec,
-      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "managed", markupBps: 2500, cloudRunCentsPerMin: 5, maxTokens: 100 },
+      deps: { chatProvider: provider, ledger, runs, workspace, now: clock.now, inferenceMode: "managed", maxTokens: 100 },
     });
 
     expect(out.status).toBe("succeeded");
-    // No compute hold/settle — only the inference settle.
-    const computeSettles = ledger.settles.filter((s) => s.sourceRef?.endsWith(":compute"));
-    expect(computeSettles).toHaveLength(0);
+    expect(ledger.debits).toHaveLength(0); // no invocation debit
+    // No v2 active-minute hold. (The managed INFERENCE path still reserves+settles
+    // its own hold via runManagedTurn — that is not a v2 run fee.)
+    expect(activeSettles(ledger)).toHaveLength(0);
     expect(out.spentComputeCents).toBe(0);
-    expect(out.spentInferenceCents).toBe(computeDebitCents(USAGE, "claude-sonnet-4-6", 2500));
+    expect(out.spentInvocationCents).toBe(0);
+    expect(out.spentActiveMinuteCents).toBe(0);
+    expect(out.spentInferenceCents).toBe(computeDebitCents(USAGE, "claude-sonnet-4-6", 0));
+  });
+});
+
+describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
+  const RATE = 1; // cents/min
+  const FREE = 60; // free minutes/month
+
+  /** Run a single BYO run that consumes `activeMin` whole minutes, with a given
+   *  free allowance, on a shared ledger. The run's id/month/budget are
+   *  parameterized so a test can drive several runs in (or across) months. */
+  async function runWith(opts: {
+    ledger: TrackingLedger;
+    activeMin: number;
+    freeAllowance: number;
+    runId: string;
+    baseIso?: string;
+    budgetCents?: number;
+  }) {
+    const baseMs = Date.parse(opts.baseIso ?? "2026-06-18T00:00:00.000Z");
+    const { runs, workspace, run } = await setup({
+      budgetCents: opts.budgetCents ?? 100_000,
+      inferenceMode: "byo",
+    });
+    run.id = opts.runId;
+    run.createdAt = new Date(baseMs).toISOString();
+    const clock = makeClock(baseMs);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req) => {
+      clock.advanceMinutes(opts.activeMin);
+      return origSend(req);
+    };
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger: opts.ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+        freeActiveMinutesPerMonth: opts.freeAllowance,
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    return out;
+  }
+
+  it("within the free allowance: no active-minute charge, usage incremented", async () => {
+    const ledger = new TrackingLedger();
+    const out = await runWith({ ledger, activeMin: 10, freeAllowance: FREE, runId: "run-a" });
+    expect(out.spentActiveMinuteCents).toBe(0);
+    // The hold is still settled (with 0) — releases the up-front overshoot.
+    const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-a")!;
+    expect(settle.cents).toBe(0);
+    // Usage depleted by the run's whole active-minutes.
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(10);
+  });
+
+  it("straddling the boundary: only the minutes past the allowance are billed", async () => {
+    const ledger = new TrackingLedger();
+    // First run uses 55 of the 60 free minutes (no charge).
+    const first = await runWith({ ledger, activeMin: 55, freeAllowance: FREE, runId: "run-a" });
+    expect(first.spentActiveMinuteCents).toBe(0);
+    // Second run is 12 minutes: 5 free remaining + 7 billable * 1¢ = 7¢.
+    const second = await runWith({ ledger, activeMin: 12, freeAllowance: FREE, runId: "run-b" });
+    expect(second.spentActiveMinuteCents).toBe(7 * RATE);
+    expect(ledger.settles.some((s) => s.sourceRef === "auto-active-run-b" && s.cents === 7)).toBe(true);
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(67);
+  });
+
+  it("allowance exhausted: the whole run is billed", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-a" }); // exhaust
+    const out = await runWith({ ledger, activeMin: 8, freeAllowance: FREE, runId: "run-b" });
+    expect(out.spentActiveMinuteCents).toBe(8 * RATE);
+  });
+
+  it("calendar-month rollover resets the allowance (UTC year-month)", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-jun", baseIso: "2026-06-18T00:00:00.000Z" }); // June exhausted
+    const july = await runWith({ ledger, activeMin: 10, freeAllowance: FREE, runId: "run-jul", baseIso: "2026-07-02T00:00:00.000Z" });
+    expect(july.spentActiveMinuteCents).toBe(0); // July starts fresh
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(60);
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-07")).toBe(10);
+  });
+
+  it("freeActiveMinutesPerMonth 0 (no free tier) bills every minute, same as Slice 1", async () => {
+    const ledger = new TrackingLedger();
+    const out = await runWith({ ledger, activeMin: 4, freeAllowance: 0, runId: "run-a" });
+    expect(out.spentActiveMinuteCents).toBe(4 * RATE);
+  });
+
+  it("re-settling the same run is idempotent (no double-deplete, same billable)", async () => {
+    // The run-driver settles once per run instance; a worker RETRY re-runs the
+    // ledger depletion for the same runId. The ledger keys on runId, so the
+    // second application replays the first result and does not bump usage again.
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 70, freeAllowance: FREE, runId: "run-r" }); // 60 free + 10 billable
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70);
+    const replay = await ledger.consumeFreeActiveMinutes("u1", "2026-06", 70, FREE, "run-r");
+    expect(replay).toBe(10); // same billable as the first application
+    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70); // unchanged
+  });
+
+  it("passes the run id and UTC year-month to the ledger for per-run idempotent depletion", async () => {
+    const ledger = new TrackingLedger();
+    await runWith({ ledger, activeMin: 3, freeAllowance: FREE, runId: "run-x", baseIso: "2026-06-18T00:00:00.000Z" });
+    const call = ledger.consumeFreeCalls.find((c) => c.runId === "run-x")!;
+    expect(call).toBeDefined();
+    expect(call.runActiveMinutes).toBe(3);
+    expect(call.freeAllowance).toBe(FREE);
+    expect(call.yearMonth).toBe("2026-06");
   });
 });

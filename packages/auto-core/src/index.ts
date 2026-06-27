@@ -154,7 +154,7 @@ export type {
 } from "./core/sandbox-executor.js";
 
 // ---- Run driver ----------------------------------------------------------
-export { runAutoRun } from "./core/run-driver.js";
+export { runAutoRun, AUTO_NO_QUESTIONS_PREAMBLE, composeSystemPrompt } from "./core/run-driver.js";
 export type {
   RunAutoRunArgs,
   RunAutoRunDeps,
@@ -176,6 +176,14 @@ export type {
   ResolveKitContext,
   ResolvedKitContext,
 } from "./entrypoints/worker.js";
+
+// ---- Auto v2 run-fee rate resolution (shared by worker + app) -----------
+// The single source of truth for the v2 invocation + active-minute rates and the
+// monthly free-minute allowance. The worker (run-task) and the app's in-process
+// dispatcher BOTH resolve rates through this so the two paths bill identically;
+// `enabled` is the managed-vs-free gate (free / open-core → 0/0/0, no fee).
+export { loadAutoV2Rates } from "./entrypoints/run-task.js";
+export type { AutoV2Rates } from "./entrypoints/run-task.js";
 
 // ---- HTTP kit-context resolver (Fargate worker) -------------------------
 export {
@@ -225,3 +233,8 @@ export type {
 } from "./adapters/selfhost/postgres.js";
 export { makeSelfHostEmailSender } from "./adapters/selfhost/email-sender.js";
 export { makeFreeCreditLedger } from "./adapters/selfhost/free-ledger.js";
+export {
+  HttpLedgerClient,
+  type HttpLedgerClientConfig,
+  type AutoV2RatesResponse,
+} from "./adapters/http/http-ledger-client.js";

@@ -168,6 +168,13 @@ function workerEnv(
   put("AUTO_CLOUD_RUN_CENTS_PER_MIN", env.AUTO_CLOUD_RUN_CENTS_PER_MIN);
   // Self-host billing policy: "free" (default; BYO, no metering) | "managed".
   put("AUTO_SELFHOST_BILLING", env.AUTO_SELFHOST_BILLING);
+  // Managed-billing credit-ledger seam: the worker debits the gateway's ledger
+  // OVER HTTP through these (service-key-gated `/gateway/ledger/*`), NOT a direct
+  // DB connection — so the open-core worker image carries no commercial package
+  // and never holds the gateway's DB credentials. Both must be set for managed
+  // billing to engage; absent → the worker runs the inert FREE ledger.
+  put("GATEWAY_INTERNAL_BASE_URL", env.GATEWAY_INTERNAL_BASE_URL);
+  put("GATEWAY_SERVICE_KEY", env.GATEWAY_SERVICE_KEY);
 
   // Optional run bounds (forwarded if the operator set them).
   put("AUTO_MAX_TOKENS", env.AUTO_MAX_TOKENS);

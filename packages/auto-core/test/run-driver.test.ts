@@ -13,7 +13,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { runAutoRun } from "../src/core/run-driver.js";
+import {
+  runAutoRun,
+  AUTO_NO_QUESTIONS_PREAMBLE,
+  composeSystemPrompt,
+} from "../src/core/run-driver.js";
+import type { ChatRequest } from "@agentkitforge/gateway-core";
 import { makeSandboxExecutor } from "../src/core/sandbox-executor.js";
 import type { AutoApproval, AutoRun } from "../src/core/types.js";
 import type { CreditLedgerRepository } from "@agentkitforge/gateway-core";
@@ -61,6 +66,17 @@ class FundedLedger implements CreditLedgerRepository {
   }
   async listTransactions() {
     return [];
+  }
+  async getFreeMinutesUsed() {
+    return 0;
+  }
+  async consumeFreeActiveMinutes(
+    _userId: string,
+    _yearMonth: string,
+    runActiveMinutes: number,
+  ) {
+    // No free tier in this test ledger → every minute billable.
+    return runActiveMinutes;
   }
 }
 
@@ -238,5 +254,62 @@ describe("runAutoRun", () => {
     expect(out.status).toBe("failed");
     expect(out.error).toMatch(/no more scripted responses/i);
     expect((await runs.getRun("run-1"))?.status).toBe("failed");
+  });
+
+  // ---- Slice 4: no-questions preamble applied to EVERY run ----------------
+
+  it("prepends the no-questions preamble to the system prompt sent to the agent", async () => {
+    const { runs, workspace, workspaceId, run } = await setup(100_000);
+    const provider = new FakeChatProvider([textResponse("done")]);
+    // Capture the system prompt the agent actually receives. BYO mode calls
+    // chatProvider.sendMessage directly, so request.system is the composed prompt.
+    let seenSystem: string | undefined;
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req: ChatRequest) => {
+      seenSystem = req.system;
+      return origSend(req);
+    };
+    const exec = makeSandboxExecutor({ workspace, workspaceId, runId: run.id, approval, repo: runs, now: noopNow });
+    const out = await runAutoRun({
+      run,
+      approval,
+      systemPrompt: "You are a helpful kit.",
+      tools: [],
+      executeTool: exec,
+      deps: { ...driverDeps(runs, workspace, provider), inferenceMode: "byo" },
+    });
+    expect(out.status).toBe("succeeded");
+    // Preamble is present, comes FIRST, and the kit's own prompt follows it.
+    expect(seenSystem).toContain(AUTO_NO_QUESTIONS_PREAMBLE);
+    expect(seenSystem!.startsWith(AUTO_NO_QUESTIONS_PREAMBLE)).toBe(true);
+    expect(seenSystem).toContain("You are a helpful kit.");
+  });
+
+  it("applies the preamble even when the kit supplies no system prompt", async () => {
+    const { runs, workspace, workspaceId, run } = await setup(100_000);
+    const provider = new FakeChatProvider([textResponse("done")]);
+    let seenSystem: string | undefined;
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req: ChatRequest) => {
+      seenSystem = req.system;
+      return origSend(req);
+    };
+    const exec = makeSandboxExecutor({ workspace, workspaceId, runId: run.id, approval, repo: runs, now: noopNow });
+    await runAutoRun({
+      run,
+      approval,
+      // No systemPrompt / kitContext.
+      tools: [],
+      executeTool: exec,
+      deps: { ...driverDeps(runs, workspace, provider), inferenceMode: "byo" },
+    });
+    expect(seenSystem).toBe(AUTO_NO_QUESTIONS_PREAMBLE);
+  });
+
+  it("composeSystemPrompt: preamble-first with a kit prompt, preamble-only without", () => {
+    expect(composeSystemPrompt("kit instructions")).toBe(
+      `${AUTO_NO_QUESTIONS_PREAMBLE}\n\nkit instructions`,
+    );
+    expect(composeSystemPrompt("")).toBe(AUTO_NO_QUESTIONS_PREAMBLE);
   });
 });
