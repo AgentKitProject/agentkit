@@ -1,0 +1,60 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout
+  title="Page not found"
+  description="The page you are looking for does not exist or has moved."
+>
+  <section class="section not-found">
+    <div class="container not-found-inner">
+      <div class="not-found-mark" aria-hidden="true">
+        <img src="/brand/agentkitforge-icon.svg" alt="" />
+      </div>
+      <p class="eyebrow">404</p>
+      <h1>Page not found</h1>
+      <p class="lead">The page you’re looking for doesn’t exist or has moved.</p>
+      <p class="helper">If you followed a broken link, check the docs or return home.</p>
+      <div class="button-row">
+        <a class="button" href="/">Home</a>
+        <a class="button secondary" href="/docs/">Docs</a>
+        <a class="button secondary" href="/download/">Download</a>
+        <a class="button secondary" href="/app/">App</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    min-height: calc(78vh - 4.5rem);
+    padding-top: clamp(4rem, 10vh, 7rem);
+  }
+
+  .not-found-inner {
+    align-items: flex-start;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .not-found-mark {
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    display: flex;
+    height: 4.5rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    width: 4.5rem;
+  }
+
+  .not-found-mark img {
+    height: 2.7rem;
+    width: 2.7rem;
+  }
+
+  .helper {
+    margin-top: 0;
+  }
+</style>

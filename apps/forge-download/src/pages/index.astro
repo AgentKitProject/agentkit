@@ -1,0 +1,719 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const convenience = [
+  'No need to jump between tools',
+  'Use your provider of choice',
+  'Build with AI or guided forms',
+  'Required inputs are collected before running',
+  'Validate before use',
+  'Generate outputs inside Forge',
+  'Download document-like outputs',
+  'Package .agentkit.zip',
+  'Export one-file Markdown',
+  'Install to Codex / Claude Code'
+];
+
+const kitPieces = [
+  ['Prepared Prompts', 'Reusable prompts with fill-in inputs like company name, date, goal, or output style.'],
+  ['Skills', 'Step-by-step instructions for how the AI should complete part of the job.'],
+  ['Policies', 'Guardrails for what the AI should avoid, require, or escalate.'],
+  ['Templates', 'Output formats the AI should follow, such as a report, memo, checklist, or summary.'],
+  ['Examples', 'Sample inputs and outputs that show what good results look like.'],
+  ['Context', 'Reference material, notes, or examples the AI can use while working.']
+];
+
+const kitExamples = [
+  ['Financial Review Agent Kit', 'A prepared prompt for reviewing a monthly workbook, inputs for company name and reporting period, skills for formula review and trend analysis, policies requiring human review, and a client-ready summary template.'],
+  ['Kubernetes SRE Agent Kit', 'Skills for investigating pod failures, service outages, and logs; read-only policies by default; prepared prompts for incident triage; and templates for incident summaries.'],
+  ['Client Memo Agent Kit', 'A prepared prompt that asks for client name, topic, and tone, plus a memo template, style examples, and policies for clarity and human review.']
+];
+---
+<BaseLayout title="AgentKitForge">
+  <section class="section hero">
+    <div class="container hero-grid">
+      <div>
+        <p class="eyebrow">No-code and low-code Agent Kit builder</p>
+        <h1>Turn repeatable AI work into reusable Agent Kits.</h1>
+        <p class="lead">
+          Agent Kits bundle prompts, skills, guardrails, templates, examples, and context so your
+          AI can perform specific jobs consistently. AgentKitForge helps you build, run, import,
+          package, and install them from one desktop app.
+        </p>
+        <p class="provider-note">
+          Run kits with OpenAI, Claude, Gemini, Ollama, or custom compatible providers, then copy,
+          download, package, or install the result without leaving Forge.
+        </p>
+        <div class="cta-split">
+          <article class="cta-card cta-web">
+            <p class="cta-label">Web Forge</p>
+            <h3 class="cta-title">Use in your browser</h3>
+            <p class="cta-body">No install, instant access. Open Web Forge and start building Agent Kits right away — nothing to download or set up.</p>
+            <a class="button" href="https://webapp.forge.agentkitproject.com" target="_blank" rel="noopener">Open Web Forge</a>
+          </article>
+          <article class="cta-card cta-desktop">
+            <p class="cta-label">Desktop App</p>
+            <h3 class="cta-title">Download for your OS</h3>
+            <p class="cta-body">Full local-first app for macOS, Windows, and Linux. Works offline, integrates with your OS, and auto-updates.</p>
+            <a class="button secondary" href="/download/">Download AgentKitForge</a>
+          </article>
+        </div>
+        <div class="button-row secondary-links">
+          <a class="button secondary" href="/app/">Explore the App</a>
+          <a class="button secondary" href="/cli/">View CLI</a>
+        </div>
+      </div>
+
+      <div class="app-preview" aria-label="AgentKitForge app preview">
+        <div class="window-bar">
+          <span></span><span></span><span></span>
+          <strong>AgentKitForge</strong>
+        </div>
+        <div class="app-tabs">
+          <span class="active">Build with AI</span>
+          <span>Guided Builder</span>
+          <span>Use</span>
+        </div>
+        <div class="prompt-box">
+          <label>What do you want this kit to do?</label>
+          <p>Create a client-ready research brief from notes, source links, and a target audience.</p>
+        </div>
+        <div class="run-row">
+          <span class="badge publishable">Provider: Claude</span>
+          <span class="badge valid">Ready to build</span>
+        </div>
+        <div class="output-card">
+          <strong>Generated output</strong>
+          <p>Research brief.docx</p>
+          <button type="button">Download</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">Start here</p>
+      <h2>What is an Agent Kit?</h2>
+      <p class="lead">
+        An Agent Kit is a reusable package for a specific AI workflow. Instead of rebuilding the
+        same instructions every time, you save the workflow once and run it again whenever you need
+        it.
+      </p>
+      <div class="grid three kit-piece-grid">
+        {kitPieces.map(([title, body]) => (
+          <article class="kit-piece-card">
+            <span aria-hidden="true"></span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+      <div class="kit-flow content-panel">
+        <h3>How a run works</h3>
+        <p>
+          When you run a kit, AgentKitForge collects the inputs, prepares the prompt, sends it to
+          your selected AI provider, and lets you copy or download the result.
+        </p>
+        <a href="/docs/what-is-an-agent-kit/">Read the beginner guide</a>
+      </div>
+      <div class="grid three example-grid">
+        {kitExamples.map(([title, body]) => (
+          <article class="example-card">
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">One app</p>
+      <h2>Prompt, build, run, and export in one place.</h2>
+      <div class="grid two convenience-grid">
+        {convenience.map((item) => (
+          <article class="mini-card">
+            <span aria-hidden="true"></span>
+            <p>{item}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Build your way</p>
+      <h2>Start with prompts, guided forms, edits, templates, or drafts.</h2>
+      <div class="grid four feature-grid">
+        <article class="card">
+          <h3>Build with AI</h3>
+          <p>Describe the kit you want, iterate on draft sessions, request changes, and save when ready.</p>
+        </article>
+        <article class="card">
+          <h3>Guided Builder</h3>
+          <p>Use structured forms for purpose, inputs, prepared prompts, outputs, and validation.</p>
+        </article>
+        <article class="card">
+          <h3>Edit existing kits</h3>
+          <p>Refine imported or saved kits with Edit with AI or the Guided Editor.</p>
+        </article>
+        <article class="card">
+          <h3>Templates / drafts</h3>
+          <p>Start from templates, drafts, or advanced draft JSON when a repeatable shape already exists.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Use inside Forge</p>
+      <h2>Prompt, run, and download without leaving the app.</h2>
+      <div class="screenshot-grid">
+        <article class="screenshot-card">
+          <div class="shot-head">
+            <span>Build with AI</span>
+            <small>Prompt to kit</small>
+          </div>
+          <div class="mock-text wide"></div>
+          <div class="mock-text"></div>
+          <div class="mock-panel primary-panel">Generate kit plan</div>
+        </article>
+        <article class="screenshot-card">
+          <div class="shot-head">
+            <span>Guided Builder</span>
+            <small>Forms</small>
+          </div>
+          <div class="field-row">Kit name <b>Research Brief</b></div>
+          <div class="field-row">Inputs <b>Notes, links, audience</b></div>
+          <div class="field-row">Output <b>Document</b></div>
+        </article>
+        <article class="screenshot-card">
+          <div class="shot-head">
+            <span>Use inside Forge</span>
+            <small>Required inputs</small>
+          </div>
+          <div class="input-list">
+            <span>Client notes</span>
+            <span>Source links</span>
+            <span>Audience</span>
+          </div>
+          <div class="mock-panel">Prompt preview ready</div>
+        </article>
+        <article class="screenshot-card">
+          <div class="shot-head">
+            <span>Generated output</span>
+            <small>Download</small>
+          </div>
+          <div class="document-preview"></div>
+          <button type="button">Download document</button>
+        </article>
+        <article class="screenshot-card">
+          <div class="shot-head">
+            <span>Package / export</span>
+            <small>All in one app</small>
+          </div>
+          <div class="export-stack">
+            <span>.agentkit.zip</span>
+            <span>One-file Markdown</span>
+            <span>Codex / Claude Code</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Providers and installs</p>
+      <h2>Use your AI provider, then export where the kit belongs.</h2>
+      <div class="grid four feature-grid">
+        <article class="card">
+          <h3>AI providers</h3>
+          <p>
+            Run Agent Kits inside Forge with OpenAI, Anthropic Claude, Google Gemini, Ollama, or a
+            custom OpenAI-compatible endpoint.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Install targets</h3>
+          <p>Install Agent Kits into supported agent tools like Codex and Claude Code.</p>
+        </article>
+        <article class="card">
+          <h3>Web assistants</h3>
+          <p>Prepare one-file Markdown bundles for web assistants like ChatGPT and Claude.</p>
+        </article>
+        <article class="card">
+          <h3>Package and export</h3>
+          <p>
+            Package <code>.agentkit.zip</code>, export one-file Markdown, import from zip/folder/Git,
+            and keep portable versions.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid two">
+      <div>
+        <p class="eyebrow">Package and share</p>
+        <h2>Move kits between Forge, files, assistants, and repositories.</h2>
+      </div>
+      <div class="content-panel">
+        <p>
+          Package <code>.agentkit.zip</code> files, export one-file Markdown, import from
+          <code>.agentkit.zip</code>, local folders, or Git repositories, and keep shareable kit
+          artifacts without leaving the app.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid two">
+      <div>
+        <p class="eyebrow">Install on Local Agent</p>
+        <h2>Send kits to supported local agent tools.</h2>
+      </div>
+      <div class="content-panel">
+        <p>
+          Install Agent Kits into Codex and Claude Code when a kit supports those local agent
+          formats. This is separate from AI provider setup and does not imply every model backend
+          supports persistent skills.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container content-panel technical-panel">
+      <div>
+        <p class="eyebrow">CLI for developers</p>
+        <h2>Automate validation, inspection, packaging, and export.</h2>
+        <p>
+          The desktop app is product-first, but the same core supports CLI workflows for teams that
+          want scripts, checks, and repeatable exports.
+        </p>
+        <a class="button secondary" href="/cli/">View CLI</a>
+      </div>
+      <pre><code>agentkit.yaml
+AGENTKIT.md
+skills/research/SKILL.md
+workflows/review.md
+templates/brief.md
+exports/agentkit.md</code></pre>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container content-panel market-panel">
+      <img class="market-logo" src="/brand/agentkitmarket-logo.svg" alt="Agent Kit Market" />
+      <p class="eyebrow">Preview</p>
+      <h2>Agent Kit Market is coming later.</h2>
+      <p>
+        Forge builds kits. Market will distribute and store kits through a public marketplace and,
+        later, private organization repositories. Kits can be built and used with many AI providers;
+        Market distribution will stay independent of provider choice.
+      </p>
+      <a class="button secondary" href="/market/">Read the market preview</a>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  /* ── Web-vs-Desktop CTA split ── */
+  .cta-split {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 2rem;
+    max-width: 680px;
+  }
+
+  .cta-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.25rem;
+  }
+
+  .cta-web {
+    border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+    background: color-mix(in srgb, var(--primary) 4%, var(--surface));
+  }
+
+  .cta-label {
+    color: var(--primary);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin: 0;
+    text-transform: uppercase;
+  }
+
+  .cta-title {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 900;
+    line-height: 1.2;
+    margin: 0;
+  }
+
+  .cta-body {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0;
+    flex: 1;
+  }
+
+  .cta-card .button {
+    align-self: flex-start;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+  }
+
+  .secondary-links {
+    margin-top: 0.85rem;
+  }
+
+  @media (max-width: 560px) {
+    .cta-split {
+      grid-template-columns: 1fr;
+    }
+  }
+  /* ────────────────────────────── */
+
+  .hero {
+    min-height: calc(90vh - 4.5rem);
+    padding-top: clamp(4rem, 10vh, 7rem);
+  }
+
+  .hero-grid {
+    align-items: center;
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  }
+
+  .hero .lead {
+    margin-top: 1.35rem;
+  }
+
+  .provider-note {
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    font-weight: 650;
+    margin: 1.25rem 0 0;
+    max-width: 780px;
+    padding: 0.85rem 1rem;
+  }
+
+  .app-preview,
+  .screenshot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+  }
+
+  .app-preview {
+    padding: 1rem;
+  }
+
+  .window-bar,
+  .app-tabs,
+  .run-row,
+  .shot-head {
+    align-items: center;
+    display: flex;
+  }
+
+  .window-bar {
+    border-bottom: 1px solid var(--border);
+    gap: 0.45rem;
+    padding: 0.25rem 0 0.85rem;
+  }
+
+  .window-bar span {
+    background: var(--border);
+    border-radius: 999px;
+    height: 0.65rem;
+    width: 0.65rem;
+  }
+
+  .window-bar strong {
+    color: var(--text);
+    font-size: 0.82rem;
+    margin-left: 0.5rem;
+  }
+
+  .app-tabs {
+    background: var(--muted-surface);
+    border-radius: 12px;
+    gap: 0.35rem;
+    margin: 1rem 0;
+    padding: 0.35rem;
+  }
+
+  .app-tabs span {
+    border-radius: 9px;
+    color: var(--muted);
+    flex: 1;
+    font-size: 0.78rem;
+    font-weight: 800;
+    padding: 0.55rem;
+    text-align: center;
+  }
+
+  .app-tabs .active {
+    background: var(--surface);
+    color: var(--primary);
+  }
+
+  .prompt-box,
+  .output-card,
+  .mock-panel,
+  .field-row,
+  .input-list span,
+  .export-stack span {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .prompt-box,
+  .output-card {
+    padding: 1rem;
+  }
+
+  .prompt-box label,
+  .output-card strong {
+    color: var(--text);
+    display: block;
+    font-weight: 800;
+  }
+
+  .run-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+
+  button {
+    background: var(--primary);
+    border: 0;
+    border-radius: 10px;
+    color: white;
+    font: inherit;
+    font-weight: 800;
+    padding: 0.65rem 0.8rem;
+  }
+
+  .convenience-grid,
+  .feature-grid,
+  .kit-piece-grid,
+  .example-grid,
+  .screenshot-grid {
+    margin-top: 1.5rem;
+  }
+
+  .kit-piece-card,
+  .example-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+  }
+
+  .kit-piece-card span {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    border-radius: 12px;
+    display: block;
+    height: 2rem;
+    margin-bottom: 1rem;
+    width: 2rem;
+  }
+
+  .kit-piece-card p,
+  .example-card p {
+    margin-bottom: 0;
+  }
+
+  .kit-flow {
+    margin-top: 1rem;
+  }
+
+  .kit-flow h3 {
+    margin-bottom: 0.4rem;
+  }
+
+  .kit-flow a {
+    display: inline-block;
+    font-weight: 850;
+    margin-top: 0.85rem;
+    text-decoration: none;
+  }
+
+  .mini-card {
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .mini-card span {
+    background: var(--accent);
+    border-radius: 999px;
+    flex: 0 0 auto;
+    height: 0.55rem;
+    width: 0.55rem;
+  }
+
+  .mini-card p {
+    color: var(--text);
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .screenshot-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .screenshot-card {
+    min-height: 15rem;
+    padding: 1rem;
+  }
+
+  .shot-head {
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .shot-head span {
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .shot-head small {
+    color: var(--muted);
+    font-weight: 800;
+  }
+
+  .mock-text {
+    background: var(--muted-surface);
+    border-radius: 999px;
+    height: 0.7rem;
+    margin-bottom: 0.65rem;
+    width: 68%;
+  }
+
+  .mock-text.wide {
+    width: 100%;
+  }
+
+  .mock-panel {
+    color: var(--text);
+    font-weight: 800;
+    margin-top: 1.2rem;
+    padding: 0.9rem;
+  }
+
+  .primary-panel {
+    background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+    border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+    color: var(--primary);
+  }
+
+  .field-row,
+  .input-list span,
+  .export-stack span {
+    color: var(--muted);
+    display: block;
+    margin-bottom: 0.7rem;
+    padding: 0.7rem;
+  }
+
+  .field-row b {
+    color: var(--text);
+    display: block;
+    margin-top: 0.2rem;
+  }
+
+  .document-preview {
+    background:
+      linear-gradient(var(--muted-surface) 0 0) 1rem 1rem / 70% 0.65rem no-repeat,
+      linear-gradient(var(--muted-surface) 0 0) 1rem 2.15rem / 85% 0.65rem no-repeat,
+      linear-gradient(var(--muted-surface) 0 0) 1rem 3.3rem / 60% 0.65rem no-repeat,
+      var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    height: 7rem;
+    margin-bottom: 1rem;
+  }
+
+  .export-stack span {
+    background: var(--muted-surface);
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .band {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+  }
+
+  .technical-panel {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: minmax(0, 0.85fr) minmax(320px, 1fr);
+  }
+
+  .market-panel {
+    align-items: flex-start;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .market-logo {
+    height: 2.35rem;
+    margin-bottom: 1rem;
+    width: auto;
+  }
+
+  @media (max-width: 1080px) {
+    .screenshot-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 920px) {
+    .hero-grid,
+    .technical-panel {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .screenshot-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

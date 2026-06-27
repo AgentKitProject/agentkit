@@ -1,0 +1,27 @@
+---
+const { compact = false } = Astro.props;
+const src = compact ? '/brand/agentkitforge-icon.svg' : '/brand/agentkitforge-logo.svg';
+---
+<a class={`logo ${compact ? 'compact' : ''}`} href="/" aria-label="AgentKitForge home">
+  <img src={src} alt="" aria-hidden="true" />
+</a>
+
+<style>
+  .logo {
+    align-items: center;
+    display: inline-flex;
+    flex: 0 0 auto;
+    line-height: 0;
+    text-decoration: none;
+  }
+
+  .logo img {
+    display: block;
+    height: 2.75rem;
+    width: auto;
+  }
+
+  .logo.compact img {
+    height: 2.15rem;
+  }
+</style>

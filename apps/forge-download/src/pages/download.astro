@@ -1,0 +1,431 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import releaseMetadata from '../data/releases.json';
+
+type ReleaseMetadata = {
+  latest: string | null;
+  releases: Array<{
+    version: string;
+    channel: string;
+    title: string;
+    date?: string;
+    tag?: string;
+    repository?: string;
+    releaseUrl?: string;
+    notes?: string;
+    checksums?: string;
+    windows?: {
+      recommended?: string;
+      installer?: string;
+      msi?: string;
+      checksums?: string;
+    };
+    platforms?: {
+      windows?: {
+        recommended?: string;
+        installer?: string;
+        msi?: string;
+        checksums?: string;
+      };
+      macos?: {
+        default?: string;
+        universal?: string;
+        appleSilicon?: string;
+        intel?: string;
+        checksums?: string;
+      };
+      linux?: {
+        appImage?: string;
+        deb?: string;
+        rpm?: string;
+        checksums?: string;
+      };
+    };
+  }>;
+};
+
+const metadata = releaseMetadata as ReleaseMetadata;
+const latestRelease = metadata.releases.find((release) => release.version === metadata.latest) ?? metadata.releases[0];
+const hasRelease = Boolean(latestRelease);
+const platforms = latestRelease?.platforms ?? {
+  windows: latestRelease?.windows
+    ? {
+        recommended: latestRelease.windows.recommended,
+        installer: latestRelease.windows.installer,
+        msi: latestRelease.windows.msi,
+        checksums: latestRelease.windows.checksums
+      }
+    : undefined
+};
+const platformCards = [];
+
+if (hasRelease && platforms.windows) {
+  const links = [];
+  if (platforms.windows.installer) {
+    links.push({
+      label: 'Download installer',
+      href: platforms.windows.installer,
+      primary: true
+    });
+  }
+  if (platforms.windows.msi) {
+    links.push({
+      label: 'Download MSI',
+      href: platforms.windows.msi,
+      primary: false
+    });
+  }
+  if (platforms.windows.checksums) {
+    links.push({
+      label: 'Windows checksums',
+      href: platforms.windows.checksums,
+      primary: false
+    });
+  }
+  if (links.length > 0) {
+    platformCards.push({
+      title: 'Windows',
+      label: 'Recommended',
+      body: 'Recommended for most Windows users. MSI is available for managed installs.',
+      links
+    });
+  }
+}
+
+if (hasRelease && platforms.macos) {
+  const links = [];
+  if (platforms.macos.appleSilicon) {
+    links.push({
+      label: 'Apple Silicon',
+      href: platforms.macos.appleSilicon,
+      primary: true
+    });
+  }
+  if (platforms.macos.intel) {
+    links.push({
+      label: 'Intel',
+      href: platforms.macos.intel,
+      primary: false
+    });
+  }
+  if (platforms.macos.universal) {
+    links.push({
+      label: 'Universal',
+      href: platforms.macos.universal,
+      primary: links.length === 0
+    });
+  }
+  if (platforms.macos.default) {
+    links.push({
+      label: 'macOS DMG',
+      href: platforms.macos.default,
+      primary: links.length === 0
+    });
+  }
+  if (platforms.macos.checksums) {
+    links.push({
+      label: 'macOS checksums',
+      href: platforms.macos.checksums,
+      primary: false
+    });
+  }
+  if (links.length > 0) {
+    platformCards.push({
+      title: 'macOS',
+      label: 'Preview',
+      body: 'Preview builds for Apple Silicon, Intel, or universal macOS packages when available.',
+      links
+    });
+  }
+}
+
+if (hasRelease && platforms.linux) {
+  const links = [];
+  if (platforms.linux.appImage) {
+    links.push({
+      label: 'AppImage',
+      href: platforms.linux.appImage,
+      primary: true
+    });
+  }
+  if (platforms.linux.deb) {
+    links.push({
+      label: 'Debian package',
+      href: platforms.linux.deb,
+      primary: links.length === 0
+    });
+  }
+  if (platforms.linux.rpm) {
+    links.push({
+      label: 'RPM package',
+      href: platforms.linux.rpm,
+      primary: links.length === 0
+    });
+  }
+  if (platforms.linux.checksums) {
+    links.push({
+      label: 'Linux checksums',
+      href: platforms.linux.checksums,
+      primary: false
+    });
+  }
+  if (links.length > 0) {
+    platformCards.push({
+      title: 'Linux',
+      label: 'Preview',
+      body: 'Preview packages for portable Linux use and common package managers.',
+      links
+    });
+  }
+}
+
+const utilityCards = [];
+if (latestRelease?.notes) {
+  utilityCards.push({
+    title: 'Release Notes',
+    label: 'What changed',
+    body: 'Review changes, platform notes, and known limitations.',
+    href: latestRelease.notes,
+    action: 'View notes'
+  });
+}
+
+const comingSoonCards = [
+  {
+    title: 'Windows Installer',
+    label: 'Recommended',
+    body: 'The standard desktop installer will appear here when the first public preview is mirrored.',
+    action: 'Coming soon'
+  },
+  {
+    title: 'macOS',
+    label: 'Preview',
+    body: 'macOS builds will appear here when they are available.',
+    action: 'Coming soon'
+  },
+  {
+    title: 'Linux',
+    label: 'Preview',
+    body: 'Linux packages will appear here when they are available.',
+    action: 'Coming soon'
+  }
+];
+---
+<BaseLayout title="Download">
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Desktop app</p>
+      <h1>{hasRelease ? `${latestRelease.title}` : 'AgentKitForge v0.1 is coming soon.'}</h1>
+      <p class="lead">
+        AgentKitForge supports hosted and local/custom AI providers,
+        including OpenAI, Anthropic Claude, Google Gemini, Ollama, and custom OpenAI-compatible
+        providers.
+      </p>
+      <div class="web-callout">
+        <div class="web-callout-text">
+          <strong>Prefer not to install?</strong>
+          <span>Web Forge runs directly in your browser — no download required.</span>
+        </div>
+        <a class="button" href="https://webapp.forge.agentkitproject.com" target="_blank" rel="noopener">Open Web Forge</a>
+      </div>
+      {hasRelease ? (
+        <div class="notice available">
+          Download from forge.agentkitproject.com for normal installs. Existing agentkitforge.com
+          release and updater URLs remain supported during the domain transition.
+        </div>
+      ) : (
+        <div class="notice">
+          Downloads have not been uploaded yet. Release links will appear here when v0.1 artifacts
+          are available.
+        </div>
+      )}
+      {hasRelease ? (
+        <>
+          {platformCards.length > 0 ? (
+            <section class="download-section">
+              <h2>Downloads</h2>
+              <div class="grid two download-grid">
+                {platformCards.map((platform) => (
+                  <article class="card download-card">
+                    <span>{platform.label}</span>
+                    <h3>{platform.title}</h3>
+                    <p>{platform.body}</p>
+                    <div class="download-actions">
+                      {platform.links.map((link) => (
+                        <a class={link.primary ? 'button' : 'button secondary'} href={link.href}>{link.label}</a>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {utilityCards.length > 0 ? (
+            <section class="download-section">
+              <h2>Release details</h2>
+              <div class="grid two download-grid">
+                {utilityCards.map((download) => (
+                  <article class="card download-card">
+                    <span>{download.label}</span>
+                    <h3>{download.title}</h3>
+                    <p>{download.body}</p>
+                    <a class="button secondary" href={download.href}>{download.action}</a>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <div class="scope-note">
+            Preview builds may show first-run warnings depending on your operating system. Use
+            checksums to verify downloads before installing. In-app update checks are available
+            from AgentKitForge Settings when an updater manifest is published for your platform.
+          </div>
+        </>
+      ) : (
+        <div class="grid two download-grid">
+          {comingSoonCards.map((download) => (
+            <article class="card download-card">
+              <span>{download.label}</span>
+              <h3>{download.title}</h3>
+              <p>{download.body}</p>
+              <button type="button" disabled>{download.action}</button>
+            </article>
+          ))}
+        </div>
+      )}
+      {latestRelease?.releaseUrl ? (
+        <p class="release-source">
+          Advanced users can also <a href={latestRelease.releaseUrl}>view the source release on GitHub</a>.
+        </p>
+      ) : null}
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .web-callout {
+    align-items: center;
+    background: color-mix(in srgb, var(--primary) 5%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+    border-radius: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: space-between;
+    margin-top: 1.75rem;
+    max-width: 820px;
+    padding: 1rem 1.25rem;
+  }
+
+  .web-callout-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .web-callout-text strong {
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .web-callout-text span {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .web-callout .button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .notice {
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    font-weight: 700;
+    margin-top: 1.5rem;
+    max-width: 820px;
+    padding: 1rem;
+  }
+
+  .notice.available {
+    background: #ecfeff;
+    border-color: rgba(6, 182, 212, 0.35);
+  }
+
+  .download-grid {
+    margin-top: 2rem;
+  }
+
+  .download-section {
+    margin-top: 2.4rem;
+  }
+
+  .download-section h2 {
+    font-size: 1.45rem;
+    margin: 0;
+  }
+
+  .download-card span {
+    color: var(--primary);
+    display: inline-block;
+    font-size: 0.8rem;
+    font-weight: 800;
+    margin-bottom: 0.55rem;
+    text-transform: uppercase;
+  }
+
+  .download-card .button {
+    display: inline-flex;
+    margin-top: auto;
+  }
+
+  .download-actions {
+    align-items: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: auto;
+  }
+
+  .download-actions .button {
+    margin-top: 0;
+  }
+
+  .download-card .button.secondary {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .download-card button {
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    cursor: not-allowed;
+    font: inherit;
+    font-weight: 800;
+    padding: 0.7rem 0.9rem;
+  }
+
+  .release-source {
+    color: var(--muted);
+    margin-top: 1.5rem;
+  }
+
+  .release-source a {
+    color: var(--primary);
+    font-weight: 800;
+  }
+
+  .scope-note {
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--muted);
+    margin-top: 2rem;
+    padding: 1rem;
+  }
+</style>

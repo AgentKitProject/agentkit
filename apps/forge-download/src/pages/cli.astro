@@ -1,0 +1,81 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const workflows = [
+  ['Validate a kit', 'Check structure and policy expectations before sharing or installing.'],
+  ['Inspect a folder or repo', 'Read a kit from disk or source control and inspect its manifest.'],
+  ['Summarize a kit', 'Generate a quick overview for review, handoff, or docs.'],
+  ['Package .agentkit.zip', 'Create a portable archive for import, storage, or distribution.'],
+  ['Export one-file Markdown', 'Prepare a single file for web assistants like ChatGPT and Claude.'],
+  ['Render prepared prompts', 'List and render prepared prompts with their required inputs.'],
+  ['Export to Codex', 'Install compatible kit content into a Codex skills directory.'],
+  ['Export to Claude Code', 'Install compatible kit content into Claude Code.']
+];
+---
+<BaseLayout title="CLI">
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Developer and power-user tool</p>
+      <h1>Automate Agent Kit validation, packaging, export, and installs.</h1>
+      <p class="lead">
+        An Agent Kit is a reusable package for a specific AI workflow. The AgentKitForge CLI uses
+        the same core as the desktop app, so teams can build visually and automate repeatable
+        checks or exports in scripts.
+      </p>
+      <div class="button-row">
+        <a class="button" href="/docs/">Read CLI docs</a>
+        <a class="button secondary" href="/agent-kit-spec/">View the spec</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">Common workflows</p>
+      <h2>Use the CLI where automation helps.</h2>
+      <div class="grid four workflow-grid">
+        {workflows.map(([title, body]) => (
+          <article class="card">
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container cli-grid">
+      <div>
+        <p class="eyebrow">Examples</p>
+        <h2>Readable commands for repeatable work.</h2>
+        <p>
+          The full command reference will live in Docs. These examples show the intended shape of
+          common validation, packaging, and export flows.
+        </p>
+      </div>
+      <pre><code>agentkitforge validate ./my-kit --profile trusted
+agentkitforge package ./my-kit --out ./dist/my-kit.agentkit.zip
+agentkitforge export-onefile ./my-kit --out ./dist/my-kit.onefile.md</code></pre>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .workflow-grid {
+    margin-top: 1.5rem;
+  }
+
+  .cli-grid {
+    align-items: start;
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr);
+  }
+
+  @media (max-width: 860px) {
+    .cli-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
