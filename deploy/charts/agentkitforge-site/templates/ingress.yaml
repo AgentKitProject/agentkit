@@ -1,0 +1,36 @@
+{{- /*
+ingress-nginx front door for forge.agentkitproject.com.
+
+cert-manager OWNS the TLS Secret named by .Values.tlsSecret: the
+`cert-manager.io/cluster-issuer` annotation triggers an HTTP-01 order against the
+letsencrypt-prod ClusterIssuer and cert-manager writes the cert into that Secret.
+This chart must NEVER template the Secret itself, or it would fight cert-manager
+for ownership. proxy-body-size: "0" disables the ingress body limit so large
+release artifacts stream through unbounded.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agentkitforge-site.fullname" . }}
+  labels:
+    {{- include "agentkitforge-site.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.clusterIssuer | quote }}
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: {{ .Values.ingressClassName }}
+  tls:
+    - hosts:
+        - {{ .Values.host | quote }}
+      secretName: {{ .Values.tlsSecret | quote }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentkitforge-site.fullname" . }}
+                port:
+                  number: {{ .Values.port }}
