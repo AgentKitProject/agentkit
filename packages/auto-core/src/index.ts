@@ -154,7 +154,7 @@ export type {
 } from "./core/sandbox-executor.js";
 
 // ---- Run driver ----------------------------------------------------------
-export { runAutoRun } from "./core/run-driver.js";
+export { runAutoRun, AUTO_NO_QUESTIONS_PREAMBLE, composeSystemPrompt } from "./core/run-driver.js";
 export type {
   RunAutoRunArgs,
   RunAutoRunDeps,

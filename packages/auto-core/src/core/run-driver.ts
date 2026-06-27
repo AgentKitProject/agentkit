@@ -49,6 +49,16 @@
  *      append the results, and loop. Otherwise the run is complete → succeeded.
  *
  * maxToolRounds bounds the loop. Any thrown error → failed.
+ *
+ * NO-QUESTIONS PREAMBLE (Auto v2 Slice 4): Auto is fully autonomous — there is NO
+ * human available mid-run to answer questions (the approval is a PRE-run gate). A
+ * run that ends its turn with a question is FINE (end_turn completes the run,
+ * bills elapsed-only, frees the worker), but a kit that stops to "ask" instead of
+ * proceeding wastes the run. So EVERY Auto run gets a short, firm instruction
+ * prepended to its system prompt telling the agent to make reasonable assumptions
+ * and run to completion rather than ask. This is a behavior guarantee for ALL
+ * runs (managed + BYO + self-host) — it lives in public auto-core, not the
+ * commercial package, and is the single source of truth (AUTO_NO_QUESTIONS_PREAMBLE).
  */
 
 import {
@@ -153,6 +163,29 @@ export interface RunAutoRunArgs {
   maxToolRounds?: number;
 }
 
+/**
+ * The no-questions preamble prepended to EVERY Auto run's system prompt (Auto v2
+ * Slice 4). Auto runs are fully autonomous with no human in the loop, so the
+ * agent must not stall waiting for clarification — it makes the most reasonable
+ * assumption and runs to completion. Single source of truth; applies to every run
+ * regardless of kit, billing mode, or deployment (managed / BYO / self-host).
+ */
+export const AUTO_NO_QUESTIONS_PREAMBLE =
+  "You are running autonomously with no human available to answer questions. " +
+  "Do not ask the user questions or request clarification. Proceed with the " +
+  "information given; if something is ambiguous or missing, make the most " +
+  "reasonable assumption, state it briefly, and continue to completion.";
+
+/**
+ * Composes the run's system prompt: the no-questions preamble (always) followed
+ * by the kit's own system prompt / context (when present). Blank-separated so the
+ * preamble reads as its own paragraph. With no kit prompt, the preamble alone is
+ * the system message.
+ */
+export function composeSystemPrompt(kitSystem: string): string {
+  return kitSystem ? `${AUTO_NO_QUESTIONS_PREAMBLE}\n\n${kitSystem}` : AUTO_NO_QUESTIONS_PREAMBLE;
+}
+
 function textOf(content: ContentBlock[]): string {
   return content
     .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
@@ -195,7 +228,10 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   const { chatProvider, ledger, runs, workspace, now } = deps;
   const maxToolRounds = args.maxToolRounds ?? 64;
   const maxTokens = deps.maxTokens ?? 4096;
-  const system = args.systemPrompt ?? args.kitContext ?? "";
+  // Always prepend the no-questions preamble so every Auto run is told to proceed
+  // autonomously rather than stop to ask (Auto v2 Slice 4). Applies to managed +
+  // BYO + self-host alike.
+  const system = composeSystemPrompt(args.systemPrompt ?? args.kitContext ?? "");
 
   const inferenceMode: InferenceMode =
     deps.inferenceMode ?? run.inferenceMode ?? "managed";
