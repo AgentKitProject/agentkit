@@ -38,6 +38,7 @@ import {
   generateWebhookSecret,
   hashWebhookSecret,
   inputObjectKey,
+  HttpLedgerClient,
   loadAutoV2Rates,
   makeAutoDeps,
   makeFreeCreditLedger,
@@ -758,24 +759,32 @@ async function selectLedger() {
   const backend = creditLedgerBackend();
   if (backend === "free") return makeFreeCreditLedger();
   if (backend === "dynamo") return getCreditLedger();
-  // "postgres": reuse the same self-host pool getAutoStorage() builds so Auto
-  // billing rows live in the same database as the Auto run/approval rows.
-  //
-  // The managed Postgres credit ledger lives in the PRIVATE
-  // `@agentkit-commercial/gateway` package, which is NOT installed in the public /
-  // self-host build. We optionally load it at runtime; when it's absent we degrade
-  // to the inert FREE ledger (makeFreeCreditLedger) so the free path runs without
-  // the commercial package. Both expose the same CreditLedgerRepository port. A
-  // managed-billing deployment installs the commercial package to enable metering.
-  const { getSelfHostPgPool } = await import("@/server/store/selfhost-user-settings");
-  const pool = await getSelfHostPgPool();
-  try {
-    const { PostgresCreditLedgerRepository } = await import("@agentkit-commercial/gateway");
-    return new PostgresCreditLedgerRepository(pool as never) as ReturnType<typeof makeFreeCreditLedger>;
-  } catch {
-    // Commercial package absent (public / self-host) → free ledger (never debits).
-    return makeFreeCreditLedger();
+
+  // "postgres" (self-host managed OR hosted-on-Postgres/DOKS managed): debit the
+  // credit ledger OVER HTTP through the GATEWAY SERVICE — the same
+  // service-key-gated `/gateway/ledger/*` seam the worker uses. This keeps the
+  // open-core auto-web image free of `@agentkit-commercial/gateway`: the gateway
+  // is the only holder of its DB credentials and the only place the commercial
+  // ledger runs. The web pre-flight balance read (getAccount / getFreeMinutesUsed)
+  // flows through this client. Configured by GATEWAY_INTERNAL_BASE_URL +
+  // GATEWAY_SERVICE_KEY (replacing the old GATEWAY_DATABASE_URL / direct
+  // PostgresCreditLedgerRepository import). Absent → the inert FREE ledger (never
+  // debits), so a misconfigured managed deploy fails loudly on a spend path
+  // rather than granting unmetered inference.
+  const gatewayBaseUrl = process.env.GATEWAY_INTERNAL_BASE_URL;
+  const gatewayServiceKey = process.env.GATEWAY_SERVICE_KEY;
+  if (
+    gatewayBaseUrl &&
+    gatewayBaseUrl.trim() !== "" &&
+    gatewayServiceKey &&
+    gatewayServiceKey.trim() !== ""
+  ) {
+    return new HttpLedgerClient({
+      baseUrl: gatewayBaseUrl.trim(),
+      serviceKey: gatewayServiceKey.trim(),
+    }) as unknown as ReturnType<typeof makeFreeCreditLedger>;
   }
+  return makeFreeCreditLedger();
 }
 
 async function buildProcessDeps(

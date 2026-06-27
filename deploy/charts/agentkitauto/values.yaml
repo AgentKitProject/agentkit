@@ -181,6 +181,19 @@ auto:
   serviceAccount: ""
   # Self-host billing policy: "free" (default, BYO key, no metering) | "managed".
   billing: "free"
+  # Managed-billing credit-ledger seam (only used when billing: "managed"). The
+  # web app + the per-run worker Jobs debit the GATEWAY's credit ledger OVER HTTP
+  # through the gateway's service-key-gated `/gateway/ledger/*` endpoints — NOT a
+  # direct DB connection — so the open-core Auto images carry no commercial
+  # package and never hold the gateway's DB credentials. Set BOTH for managed
+  # billing to engage; leave empty for free/BYO (the inert ledger).
+  gateway:
+    # In-cluster base URL of the gateway Service, e.g. http://agentkitgateway:8081.
+    internalBaseUrl: ""
+    # Shared service key the gateway accepts on x-gateway-service-key. This is the
+    # SAME GATEWAY_SERVICE_KEY the gateway is deployed with (server-side only;
+    # never shipped to the browser or Forge). Supply via the effective Secret.
+    serviceKey: ""
   # ANTHROPIC_API_KEY for inference — REQUIRED. In free mode this is the
   # operator's BYO key used by every run.
   anthropicApiKey: ""

@@ -233,3 +233,8 @@ export type {
 } from "./adapters/selfhost/postgres.js";
 export { makeSelfHostEmailSender } from "./adapters/selfhost/email-sender.js";
 export { makeFreeCreditLedger } from "./adapters/selfhost/free-ledger.js";
+export {
+  HttpLedgerClient,
+  type HttpLedgerClientConfig,
+  type AutoV2RatesResponse,
+} from "./adapters/http/http-ledger-client.js";

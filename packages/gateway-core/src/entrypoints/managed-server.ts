@@ -58,7 +58,18 @@ import {
   handleCreditTopup,
   type CreditTopupDeps,
 } from "./credit-topup.js";
+import {
+  LEDGER_ROUTE_PREFIX,
+  handleLedgerRequest,
+  type AutoV2PricingShape,
+  type LedgerRoutesDeps,
+} from "./ledger-routes.js";
 import { MIN_TOPUP_CENTS } from "../core/config.js";
+
+// Re-export the Auto v2 pricing shape so a host wiring this entrypoint (the
+// commercial `gateway-hosted` composition) can type the injected provider from
+// the same import as `startManagedGatewayServer`.
+export type { AutoV2PricingShape } from "./ledger-routes.js";
 
 // Re-export the kit-context resolver surface so a host wiring this entrypoint can
 // build / inject an object-storage KitPackageStore from one import (seam #1).
@@ -228,6 +239,15 @@ export interface ComposeManagedGatewayOptions {
   commercialImporter?: CommercialImporter;
   /** Skip schema application (tests that manage their own schema). */
   skipSchema?: boolean;
+  /**
+   * OPTIONAL Auto v2 pricing provider for the `GET /gateway/ledger/auto-v2-rates`
+   * endpoint. The VALUES are the commercial moat, so they are INJECTED here by
+   * the hosted (commercial) composition (`gateway-hosted` passes
+   * `getAutoV2Pricing` from `@agentkit-commercial/gateway`). When NOT injected
+   * (public / self-host gateway) the rates endpoint returns all-zeros, so a
+   * self-host pays nothing and the moat NUMBERS never appear in the public build.
+   */
+  autoV2Pricing?: () => AutoV2PricingShape;
 }
 
 /** The composed managed-gateway dependencies. */
@@ -364,6 +384,54 @@ export function makeCreditTopupPreRoute(deps: CreditTopupDeps): PreRouteHandler 
   };
 }
 
+/**
+ * Builds the pre-route handler serving the service-key-gated CREDIT-LEDGER
+ * endpoints (`/gateway/ledger/*`) before the per-user auth gate — the seam Auto
+ * uses to debit/hold/settle over HTTP instead of a direct DB connection. Returns
+ * undefined for every non-ledger path so the request falls through to the normal
+ * authenticated router. Exported for unit testing.
+ *
+ * The query string is parsed from the raw `req.url` here (the shared pre-route
+ * ctx only carries the query-stripped path), so the GET routes (`/account`,
+ * `/free-minutes`, `/auto-v2-rates`) can read their parameters.
+ */
+export function makeLedgerPreRoute(deps: LedgerRoutesDeps): PreRouteHandler {
+  return async (req, ctx) => {
+    if (ctx.path !== LEDGER_ROUTE_PREFIX && !ctx.path.startsWith(`${LEDGER_ROUTE_PREFIX}/`)) {
+      return undefined;
+    }
+    const rawUrl = req.url ?? "";
+    const queryIndex = rawUrl.indexOf("?");
+    const query = new URLSearchParams(queryIndex >= 0 ? rawUrl.slice(queryIndex + 1) : "");
+    const providedKey = extractServiceKey({
+      authorization: req.headers["authorization"],
+      serviceKeyHeader: req.headers["x-gateway-service-key"],
+    });
+    const response = await handleLedgerRequest(deps, providedKey, {
+      path: ctx.path,
+      method: ctx.method,
+      body: ctx.body,
+      query,
+    });
+    return { status: response.status, body: response.body };
+  };
+}
+
+/**
+ * Chains pre-route handlers: runs each in order, returning the first that
+ * handles the request (non-undefined). Lets the managed server mount BOTH the
+ * credit-topup endpoint and the ledger endpoints behind one `preRoute` hook.
+ */
+export function chainPreRoutes(...handlers: PreRouteHandler[]): PreRouteHandler {
+  return async (req, ctx) => {
+    for (const handler of handlers) {
+      const handled = await handler(req, ctx);
+      if (handled) return handled;
+    }
+    return undefined;
+  };
+}
+
 export interface StartedManagedGateway {
   server: Server;
   composed: ComposedManagedGateway;
@@ -406,21 +474,34 @@ export async function startManagedGatewayServer(
       entitlementCheck: options.entitlementCheck,
       commercialImporter: options.commercialImporter,
       skipSchema: options.skipSchema,
+      autoV2Pricing: options.autoV2Pricing,
     }),
   };
 
   const composed = await composeManagedGateway(composeOptions);
 
-  // Internal, service-key-gated credit-topup endpoint (Stripe-webhook → ledger).
-  // Reuses the composed credit ledger (commercial Postgres in the hosted image,
-  // in-memory otherwise) — the gateway stays the only holder of its DB creds.
+  // Internal, service-key-gated endpoints, mounted before the per-user auth gate.
+  // Both reuse the composed credit ledger (commercial Postgres in the hosted
+  // image, in-memory otherwise) — the gateway stays the only holder of its DB
+  // creds:
+  //   1) POST /gateway/credits/topup     — the Stripe-webhook → ledger seam.
+  //   2) /gateway/ledger/*               — AgentKitAuto's debit/hold/settle +
+  //                                        balance-read + v2-rates seam (replaces
+  //                                        Auto's old direct DB connection).
   const serviceKey = options.serviceKey ?? config.serviceKey;
-  const preRoute = makeCreditTopupPreRoute({
+  const topupPreRoute = makeCreditTopupPreRoute({
     ledger: composed.ledger,
     serviceKey,
     minCents: options.minTopupCents ?? MIN_TOPUP_CENTS,
     ...(options.now ? { now: options.now } : {}),
   });
+  const ledgerPreRoute = makeLedgerPreRoute({
+    ledger: composed.ledger,
+    serviceKey,
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.autoV2Pricing ? { autoV2Pricing: options.autoV2Pricing } : {}),
+  });
+  const preRoute = chainPreRoutes(topupPreRoute, ledgerPreRoute);
 
   const server = createGatewayHttpServer({
     router: { ...composed.routerDeps, createEmitter: makePlaceholderEmitter },

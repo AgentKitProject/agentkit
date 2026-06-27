@@ -97,6 +97,14 @@ spec:
               value: "k8s"
             - name: AUTO_SELFHOST_BILLING
               value: {{ .Values.auto.billing | quote }}
+            {{- /* Managed-billing credit-ledger seam: the web app + each worker
+                   Job debit the gateway's ledger over HTTP (service-key-gated
+                   /gateway/ledger/*). The dispatcher forwards these to the worker
+                   via workerEnv(). Set only when configured (managed billing). */}}
+            {{- if .Values.auto.gateway.internalBaseUrl }}
+            - name: GATEWAY_INTERNAL_BASE_URL
+              value: {{ .Values.auto.gateway.internalBaseUrl | quote }}
+            {{- end }}
             - name: AUTO_K8S_WORKER_IMAGE
               value: {{ .Values.auto.workerImage | quote }}
             - name: AUTO_K8S_NAMESPACE
@@ -141,6 +149,16 @@ spec:
                 secretKeyRef:
                   name: {{ $secretName }}
                   key: ANTHROPIC_API_KEY
+                  optional: true
+            # Managed-billing gateway service key (x-gateway-service-key) — the web
+            # app + worker debit the gateway's ledger over HTTP with it. Optional:
+            # absent → free/BYO (the inert ledger). The dispatcher forwards it to
+            # each worker Job via workerEnv().
+            - name: GATEWAY_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: GATEWAY_SERVICE_KEY
                   optional: true
             {{- end }}
             {{- /* Optional extra env vars merged verbatim into the web container.
