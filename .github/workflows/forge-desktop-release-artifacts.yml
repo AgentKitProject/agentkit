@@ -97,11 +97,11 @@ jobs:
         id: github-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REPO: AgentKitProject/agentkitforge-app
+          SOURCE_REPO: AgentKitProject/agentkit
           TAG: ${{ steps.release-info.outputs.tag }}
           VERSION: ${{ steps.release-info.outputs.version }}
         run: |
-          SOURCE_REPO="${SOURCE_REPO:-AgentKitProject/agentkitforge-app}"
+          SOURCE_REPO="${SOURCE_REPO:-AgentKitProject/agentkit}"
           echo "SOURCE_REPO=$SOURCE_REPO"
           echo "VERSION=$VERSION"
           echo "TAG=$TAG"
@@ -951,7 +951,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REPO: AgentKitProject/agentkitforge-app
+          SOURCE_REPO: AgentKitProject/agentkit
           TAG: ${{ needs.prepare.outputs.tag }}
           REPLACE_EXISTING_ASSETS: ${{ inputs.replace_existing_assets }}
         run: |
@@ -1000,11 +1000,11 @@ jobs:
       - name: Upload release notes to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REPO: AgentKitProject/agentkitforge-app
+          SOURCE_REPO: AgentKitProject/agentkit
           TAG: ${{ needs.prepare.outputs.tag }}
           REPLACE_EXISTING_ASSETS: ${{ inputs.replace_existing_assets }}
         run: |
-          SOURCE_REPO="${SOURCE_REPO:-AgentKitProject/agentkitforge-app}"
+          SOURCE_REPO="${SOURCE_REPO:-AgentKitProject/agentkit}"
           args=(release upload "$TAG" "RELEASE_NOTES.md" --repo "$SOURCE_REPO")
 
           if [ "$REPLACE_EXISTING_ASSETS" = "true" ]; then
@@ -1026,7 +1026,7 @@ jobs:
         id: mirror-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_REPO: AgentKitProject/agentkitforge-app
+          SOURCE_REPO: AgentKitProject/agentkit
           TAG: ${{ needs.prepare.outputs.tag }}
           VERSION: ${{ needs.prepare.outputs.version }}
           REQUIRED_PLATFORMS: ${{ needs.prepare.outputs.platforms }}
@@ -1124,7 +1124,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_URL: ${{ needs.prepare.outputs.release_url }}
-          REPOSITORY: AgentKitProject/agentkitforge-app
+          REPOSITORY: AgentKitProject/agentkit
           PLATFORMS_JSON: ${{ steps.mirror-assets.outputs.platforms_json }}
           ARTIFACT_NAMES_JSON: ${{ steps.mirror-assets.outputs.artifact_names_json }}
         run: |
