@@ -518,7 +518,14 @@ export class WebForgeClient implements ForgeClient {
   async runAgentKitWithAi(input: Record<string, unknown>): Promise<RunAgentKitResult> {
     const kitId = typeof input.kitId === "string" ? input.kitId : (input.rootPath as string | undefined);
     const prompt = typeof input.prompt === "string" ? input.prompt : (input.userInput as string | undefined);
-    if (!kitId) throw new Error("runAgentKitWithAi requires a kitId.");
+    // A PROTECTED Market kit run: the session is created with the protected
+    // selector { source:"market", slug, kitId }. The server classifies + gates
+    // entitlement, fetches the kit content server-side, and NEVER returns the
+    // prompt. The browser only ever supplies the public slug/id — no content.
+    const marketSlug = typeof input.marketSlug === "string" ? input.marketSlug : undefined;
+    const marketKitId = typeof input.marketKitId === "string" ? input.marketKitId : undefined;
+    // A local kit needs a kitId; a protected Market kit is keyed by its slug.
+    if (!kitId && !marketSlug) throw new Error("runAgentKitWithAi requires a kitId.");
     if (typeof prompt !== "string" || prompt.length === 0) {
       throw new Error("runAgentKitWithAi requires a non-empty prompt.");
     }
@@ -530,9 +537,17 @@ export class WebForgeClient implements ForgeClient {
     // 1. Reuse an existing session or create one for this kit.
     let sessionId = typeof input.sessionId === "string" ? input.sessionId : undefined;
     if (!sessionId) {
+      const createBody = marketSlug
+        ? {
+            source: "market",
+            slug: marketSlug,
+            ...(marketKitId ? { kitId: marketKitId } : {}),
+            ...(model ? { model } : {})
+          }
+        : { kitId, billing: "managed", ...(model ? { model } : {}) };
       const created = await this.json<{ sessionId: string }>("/api/gateway/sessions", {
         method: "POST",
-        body: JSON.stringify({ kitId, billing: "managed", ...(model ? { model } : {}) })
+        body: JSON.stringify(createBody)
       });
       sessionId = created.sessionId;
     }

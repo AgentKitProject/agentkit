@@ -779,6 +779,50 @@ function isDuplicateVersionError(message: string | null | undefined): boolean {
   return message.toLowerCase().includes("already has an active submission for this kit/version");
 }
 
+// The Slice-1 online-only directive code (from @agentkitforge/contracts /
+// @agentkitforge/core market): a protected (output-only) kit refuses content
+// with a 402 carrying this code instead of bytes.
+const ONLINE_ONLY_RUN_REQUIRED = "online_only_run_required";
+
+/** True when a caught error is the Slice-1 online-only / output-only refusal
+ *  (the OnlineOnlyContentRefusedError from core, or a 402 with its code). */
+function isOnlineOnlyRefusal(error: unknown, message: string | null | undefined): boolean {
+  if (error && typeof error === "object") {
+    const e = error as { name?: unknown; code?: unknown; onlineOnly?: unknown };
+    if (e.name === "OnlineOnlyContentRefusedError") return true;
+    if (e.code === ONLINE_ONLY_RUN_REQUIRED) return true;
+    if (e.onlineOnly === true) return true;
+  }
+  return Boolean(message && message.includes(ONLINE_ONLY_RUN_REQUIRED));
+}
+
+/** Best-effort pull of a kitId from an online-only refusal directive, if present. */
+function extractOnlineOnlyKitId(error: unknown): string | undefined {
+  if (error && typeof error === "object") {
+    const directive = (error as { directive?: { kitId?: unknown } }).directive;
+    if (directive && typeof directive.kitId === "string") return directive.kitId;
+  }
+  return undefined;
+}
+
+/**
+ * Build a "run online" handoff URL for an output-only kit. Canonical shapes:
+ *   web Forge: `${forge}/forge?kit=market:<slug>&kitId=<id>`
+ *   Auto:      `${auto}/?kit=market:<slug>&kitId=<id>`
+ * Only the public slug + id are ever passed — never kit content.
+ */
+function buildRunOnlineUrl(
+  base: string,
+  path: string,
+  slug: string | null,
+  kitId: string | null | undefined,
+): string {
+  const url = new URL(path, base.endsWith("/") ? base : `${base}/`);
+  url.searchParams.set("kit", `market:${slug ?? ""}`);
+  if (kitId) url.searchParams.set("kitId", kitId);
+  return url.toString();
+}
+
 function formatDisplayVersion(version: string | number | null | undefined): string {
   const raw = version == null ? "" : String(version).trim();
   if (raw === "") {
@@ -3410,6 +3454,9 @@ function MarketImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportAgentKitPackageResult | null>(null);
   const [licensedResult, setLicensedResult] = useState<FetchLicensedMarketKitResult | null>(null);
+  // The public slug of the last licensed/online-only kit, for the run-online
+  // handoff deep links (web Forge / Auto). Derived from the request, not content.
+  const [licensedSlug, setLicensedSlug] = useState<string | null>(null);
   const [licensedFetching, setLicensedFetching] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [favoriteMessage, setFavoriteMessage] = useState<string | null>(null);
@@ -3536,6 +3583,7 @@ function MarketImportPanel({
     setError(null);
     setResult(null);
     setLicensedResult(null);
+    setLicensedSlug(null);
     const parsed = normalizeMarketImportReference(marketReference, marketBaseUrl);
     if (!parsed.ok) {
       setError(parsed.error);
@@ -3545,6 +3593,10 @@ function MarketImportPanel({
       ...parsed.request,
       identifierKind: identifierKind === "kitId" ? "kitId" : parsed.request.identifierKind,
     };
+    // Remember the public slug (if the reference is a slug) so the online-only
+    // handoff can build run links even when no content is returned (Slice 1:
+    // protected kits refuse content with a 402 directive).
+    setLicensedSlug(request.identifierKind === "kit" ? request.identifier : null);
     if (!isHostedAgentKitMarket(request.marketBaseUrl)) {
       setError("Private Market licensed kits will use this Market's own credentials. Coming soon.");
       return;
@@ -3573,6 +3625,21 @@ function MarketImportPanel({
         const reconnectMessage = reconnectRequiredMessage();
         onAccountReconnectRequired(reconnectMessage);
         setError(reconnectMessage);
+      } else if (isOnlineOnlyRefusal(caughtError, message)) {
+        // Slice 1: a protected (output-only) kit refuses content with a 402
+        // directive. Don't treat it as an error — show the run-online handoff
+        // (no content reached the client). Synthesize an online-only result so
+        // the handoff panel renders; the run links use the remembered slug.
+        setLicensedResult({
+          onlineOnly: true,
+          pricing: "paid",
+          downloadable: false,
+          kitId: extractOnlineOnlyKitId(caughtError) ?? "",
+          sha256: "",
+          preview: { files: [], texts: {} },
+          imported: null,
+          message: "This kit is output-only — run it online.",
+        });
       } else {
         setError(message);
       }
@@ -3753,22 +3820,59 @@ function MarketImportPanel({
       )}
       {favoriteMessage && <div className="copy-state">{favoriteMessage}</div>}
 
-      {licensedResult && (
+      {licensedResult && licensedResult.onlineOnly && (
+        // OUTPUT-ONLY (protected) kit: the content NEVER reaches this client
+        // (Slice 1). Don't render any kit content — hand off to a run surface
+        // (web Forge for interactive use, Auto for an autonomous run).
+        <div className="provider-card compact-service-card" data-testid="online-only-run-handoff">
+          <div className="provider-card-header">
+            <div>
+              <h3>This kit is output-only — run it online</h3>
+              <p>
+                {licensedResult.message ||
+                  "Protected kits run server-side so their contents stay private. Open it on web Forge to use it interactively, or on Auto to run it autonomously."}
+              </p>
+            </div>
+            <span className="provider-badge">Output-only</span>
+          </div>
+          <div className="button-row">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!licensedSlug}
+              onClick={() =>
+                openDocsLink(
+                  buildRunOnlineUrl(agentKitProjectUrls.forge, "/forge", licensedSlug, licensedResult.kitId),
+                )
+              }
+            >
+              Run in Forge (web)
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!licensedSlug}
+              onClick={() =>
+                openDocsLink(
+                  buildRunOnlineUrl(agentKitProjectUrls.auto, "/", licensedSlug, licensedResult.kitId),
+                )
+              }
+            >
+              Run on Auto
+            </button>
+          </div>
+        </div>
+      )}
+
+      {licensedResult && !licensedResult.onlineOnly && (
         <div className="provider-card compact-service-card" data-testid="licensed-kit-preview">
           <div className="provider-card-header">
             <div>
-              <h3>Licensed kit{licensedResult.onlineOnly ? " (online-only)" : ""}</h3>
+              <h3>Licensed kit</h3>
               <p>{licensedResult.message}</p>
             </div>
-            <span className="provider-badge">
-              {licensedResult.onlineOnly ? "Preview only" : "Saved to My Kits"}
-            </span>
+            <span className="provider-badge">Saved to My Kits</span>
           </div>
-          {licensedResult.onlineOnly && (
-            <div className="inline-warning" data-testid="online-only-no-persist">
-              This kit is online-only and cannot be saved or exported. You can read it here while connected.
-            </div>
-          )}
           {Object.entries(licensedResult.preview.texts).map(([name, content]) => (
             <details key={name} className="report-meta">
               <summary>{name}</summary>

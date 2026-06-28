@@ -72,6 +72,23 @@ export function buildRunOnAutoLink({ slug, kitId }: { slug: string; kitId?: stri
   return url.toString();
 }
 
+/**
+ * The "Use in Forge (web)" deep link for a PROTECTED kit:
+ * `${forgeWebUrl}/forge?kit=market:<slug>` (plus `&kitId=<marketKitId>` when
+ * known). Web Forge runs the kit INTERACTIVELY (a gateway protected session);
+ * Auto runs it AUTONOMOUSLY. Mirrors the param shape the forge page parses.
+ * URL-safe (slug/kitId encoded). Returns undefined when no web-Forge URL is
+ * configured (self-host with no Forge) so the caller hides the action.
+ */
+export function buildRunInForgeWebLink({ slug, kitId }: { slug: string; kitId?: string }): string | undefined {
+  const base = getForgeWebUrl();
+  if (!base) return undefined;
+  const url = new URL(`${base}/forge`);
+  url.searchParams.set("kit", `market:${slug}`);
+  if (kitId) url.searchParams.set("kitId", kitId);
+  return url.toString();
+}
+
 function normalizedMarketBaseUrl(value: string) {
   return value.replace(/\/+$/, "");
 }

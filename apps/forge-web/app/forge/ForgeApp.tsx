@@ -91,6 +91,8 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
   const [submitKitId, setSubmitKitId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [usage, setUsage] = useState<UsageInfo>(null);
+  // Deep-link target for an output-only protected kit run (?kit=market:<slug>).
+  const [runMarketSlug, setRunMarketSlug] = useState<string | null>(null);
 
   const notify = useCallback((msg: string, err = false) => {
     setToast({ msg, err });
@@ -140,6 +142,15 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     }
     // Don't honor the Market-submit deep link when Market is disabled.
     if (sectionParam === "market-submit" && !config.marketEnabled) {
+      return;
+    }
+    // Deep-link: ?kit=market:<slug> from Market's "Use in Forge (web)" → jump to
+    // Run / Chat and preselect the protected kit. Honored only when Market is
+    // enabled (self-host without a Market never accepts a Market deep link).
+    const kitParam = new URLSearchParams(window.location.search).get("kit");
+    if (kitParam && kitParam.startsWith("market:") && config.marketEnabled) {
+      setRunMarketSlug(kitParam.slice("market:".length).trim() || null);
+      setSection("run");
       return;
     }
     if (sectionParam && isValidSectionId(sectionParam)) {
@@ -242,7 +253,7 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
           ) : section === "use" ? (
             <UseSection forge={forge} kits={kits} notify={notify} />
           ) : section === "run" ? (
-            <RunSection forge={forge} kits={kits} notify={notify} />
+            <RunSection forge={forge} kits={kits} notify={notify} initialMarketSlug={runMarketSlug} />
           ) : section === "import" ? (
             <ImportSection forge={forge} notify={notify} onDone={(kitId) => { void refresh().then(() => { setSection("my-kits"); if (kitId) setOpenKitId(kitId); }); }} />
           ) : section === "package-export" ? (

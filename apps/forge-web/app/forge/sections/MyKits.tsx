@@ -31,7 +31,6 @@ export function MyKits({
   onRefresh: () => Promise<void>;
 }) {
   const { marketEnabled } = useConfig();
-  const [preview, setPreview] = useState<{ files: string[]; texts: Record<string, string> } | null>(null);
   const [updates, setUpdates] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -159,47 +158,9 @@ export function MyKits({
                 <Badge tone="neutral"><StarIcon size={13} filled /> favorite</Badge>
               </div>
               <div className="button-row">
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    try {
-                      const res = await forge.fetchLicensedMarketKit({
-                        slug: f.marketSlug,
-                        marketBaseUrl: f.marketBaseUrl ?? "",
-                        validationProfile: "local-valid"
-                      });
-                      setPreview((res as { preview?: { files: string[]; texts: Record<string, string> } }).preview ?? null);
-                    } catch (e) {
-                      notify(errMsg(e), true);
-                    }
-                  }}
-                >
-                  Preview (online)
-                </Button>
                 <Button variant="danger" onClick={() => void unfavorite(f.marketSlug)}>Unfavorite</Button>
               </div>
             </article>
-          ))}
-        </div>
-      )}
-
-      {preview && (
-        <div className="results-panel" style={{ marginTop: 8 }}>
-          <div className="screen-toolbar">
-            <strong>In-memory licensed preview ({preview.files.length} files)</strong>
-            <Button variant="secondary" onClick={() => setPreview(null)}>Close</Button>
-          </div>
-          <p className="form-copy">Online-only: never persisted to your library.</p>
-          <ul className="preview-list">
-            {preview.files.slice(0, 60).map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-          {Object.entries(preview.texts).map(([name, content]) => (
-            <details key={name} style={{ marginTop: 8 }}>
-              <summary className="inline-code">{name}</summary>
-              <pre className="json-panel" style={{ whiteSpace: "pre-wrap" }}>{content}</pre>
-            </details>
           ))}
         </div>
       )}
