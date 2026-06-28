@@ -12,7 +12,8 @@
 import { withUser } from "@/lib/api";
 import { loadCoreMarket } from "@/server/core/load-core";
 import { createForwardingStore } from "@/server/core/import-ops";
-import { getMarketBaseUrl } from "@/lib/self-host";
+import { getEcosystemLinks, getMarketBaseUrl } from "@/lib/self-host";
+import { ONLINE_ONLY_RUN_REQUIRED, type OnlineOnlyRunDirective } from "@agentkitforge/contracts";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,36 @@ export async function POST(request: Request) {
     }
     const market = await loadCoreMarket();
     const store = await createForwardingStore();
+
+    // BELT-AND-SUSPENDERS (M6 Slice 1): this is a BROWSER (client) preview route —
+    // it must NEVER build or return the CONTENT of a PROTECTED (online-only, paid &&
+    // !downloadable) kit. Classify first (no bytes fetched); for a protected kit,
+    // return the output-only run directive (HTTP 402) and never reach the
+    // byte-fetch / preview build. Downloadable paid kits and free kits proceed as
+    // before. This closes the leak at the route even before the commercial handler
+    // (and core's defense-in-depth) deploy.
+    const status = await market.checkEntitlement(store as never, {
+      slug: body.slug,
+      marketBaseUrl,
+      clientId: process.env.AGENTKITPROJECT_WORKOS_CLIENT_ID ?? ""
+    });
+    if (status.onlineOnly === true) {
+      const links = getEcosystemLinks();
+      const runTargets: OnlineOnlyRunDirective["runTargets"] = {
+        ...(links.forgeUrl ? { forgeWebUrl: links.forgeUrl } : {}),
+        ...(links.autoUrl ? { autoUrl: links.autoUrl } : {})
+      };
+      const directive: OnlineOnlyRunDirective = {
+        onlineOnly: true,
+        code: ONLINE_ONLY_RUN_REQUIRED,
+        slug: body.slug,
+        ...(status.kitId ? { kitId: status.kitId } : {}),
+        message: "This kit is output-only — run it on web Forge or Auto.",
+        ...(runTargets.forgeWebUrl || runTargets.autoUrl ? { runTargets } : {})
+      };
+      return NextResponse.json(directive, { status: 402, headers: { "Cache-Control": "no-store" } });
+    }
+
     const licensed = await market.fetchLicensedKit(store as never, {
       slug: body.slug,
       marketBaseUrl,

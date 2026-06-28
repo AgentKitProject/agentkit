@@ -18,6 +18,7 @@ import {
   DEFAULT_MARKET_BASE_URL,
   ensureAccessToken,
   fetchLicensedKit,
+  OnlineOnlyContentRefusedError,
   importKit,
   listFavorites,
   addFavorite,
@@ -252,11 +253,31 @@ export function registerMarketCommands(program: Command): void {
         const marketBaseUrl = resolveMarketBaseUrl(options.marketUrl);
         const store = await ensureConnected(clientId);
 
-        const result = await fetchLicensedKit(store, {
-          clientId,
-          marketBaseUrl,
-          slug: slugOrIdOrUrl
-        });
+        // The CLI is a CLIENT (M6 Slice 1): it must NEVER receive the CONTENT of a
+        // protected (online-only) kit. We do NOT pass `allowOnlineOnlyContent`, so
+        // core refuses with OnlineOnlyContentRefusedError. Surface a clear,
+        // content-free "run it on web Forge or Auto" message with run targets.
+        let result;
+        try {
+          result = await fetchLicensedKit(store, {
+            clientId,
+            marketBaseUrl,
+            slug: slugOrIdOrUrl
+          });
+        } catch (error) {
+          if (error instanceof OnlineOnlyContentRefusedError) {
+            const t = error.directive.runTargets;
+            const targets = [
+              t?.forgeWebUrl ? `  web Forge: ${t.forgeWebUrl}` : undefined,
+              t?.autoUrl ? `  Auto:      ${t.autoUrl}` : undefined
+            ].filter(Boolean);
+            throw new Error(
+              `${error.directive.message}` +
+                (targets.length > 0 ? `\nRun it at:\n${targets.join("\n")}` : "")
+            );
+          }
+          throw error;
+        }
 
         console.log(`Kit:         ${result.kitId}`);
         console.log(`File:        ${result.fileName}`);

@@ -97,6 +97,7 @@ export {
   checkEntitlement,
   fetchLicensedKit,
   isOnlineOnly,
+  OnlineOnlyContentRefusedError,
   type CheckEntitlementOptions,
   type EntitlementStatusResult,
   type FetchLicensedKitOptions,

@@ -17,7 +17,12 @@
  * is only for entitlement-gated licensed packages.
  */
 
-import { forgePricingRoutes } from "@agentkitforge/contracts";
+import {
+  forgePricingRoutes,
+  ONLINE_ONLY_RUN_REQUIRED,
+  type OnlineOnlyRunDirective,
+  type OnlineOnlyRunTargets
+} from "@agentkitforge/contracts";
 import {
   authedRequest,
   normalizeMarketBaseUrl,
@@ -36,6 +41,36 @@ export function isOnlineOnly(pricing: string | undefined, downloadable: unknown)
 export interface FetchLicensedKitOptions extends MarketRequestOptions {
   /** Slug, kit ID, or Market URL identifying the licensed kit. */
   slug: string;
+  /**
+   * Opt-in to receive the CONTENT (bytes) of an ONLINE-ONLY (paid && !downloadable)
+   * kit. Default `false`. This is a SECURITY gate (M6 Slice 1): a protected kit's
+   * instruction content must NEVER reach a CLIENT (desktop app, browser, CLI) — only
+   * legitimate SERVER-SIDE RUN surfaces (the web-Forge gateway per-turn resolver / the
+   * Auto worker) pass this. When `false` and the kit is online-only, this function
+   * THROWS {@link OnlineOnlyContentRefusedError} instead of returning bytes.
+   *
+   * Downloadable paid kits and free kits are unaffected — they always return bytes.
+   */
+  allowOnlineOnlyContent?: boolean;
+}
+
+/**
+ * Thrown when a CLIENT requests the CONTENT of an online-only (paid &&
+ * !downloadable) kit without the explicit server-side opt-in
+ * ({@link FetchLicensedKitOptions.allowOnlineOnlyContent}). The kit is
+ * OUTPUT-ONLY: it must be RUN server-side (web Forge / Auto), never handed to a
+ * client. Carries the public, content-free run directive so the caller can show
+ * the user where to run it.
+ */
+export class OnlineOnlyContentRefusedError extends Error {
+  readonly code = ONLINE_ONLY_RUN_REQUIRED;
+  readonly onlineOnly = true as const;
+  readonly directive: OnlineOnlyRunDirective;
+  constructor(directive: OnlineOnlyRunDirective) {
+    super(directive.message);
+    this.name = "OnlineOnlyContentRefusedError";
+    this.directive = directive;
+  }
 }
 
 /** Watermark stamped into the per-buyer package by the backend. */
@@ -82,6 +117,28 @@ interface LicensedPackageResponseBody {
   downloadable?: boolean;
   onlineOnly?: boolean;
   message?: string;
+  /** Output-only run directive discriminator (HTTP 402 body). */
+  code?: string;
+  /** Public run-target URLs carried on the output-only directive. */
+  runTargets?: OnlineOnlyRunTargets;
+}
+
+/** Build the public, content-free output-only directive from a response body. */
+function toOnlineOnlyDirective(
+  body: LicensedPackageResponseBody,
+  slug: string
+): OnlineOnlyRunDirective {
+  return {
+    onlineOnly: true,
+    code: ONLINE_ONLY_RUN_REQUIRED,
+    slug,
+    ...(typeof body.kitId === "string" && body.kitId.length > 0 ? { kitId: body.kitId } : {}),
+    message:
+      typeof body.message === "string" && body.message.length > 0
+        ? body.message
+        : "This kit is output-only — run it on web Forge or Auto.",
+    ...(body.runTargets ? { runTargets: body.runTargets } : {})
+  };
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -141,8 +198,16 @@ export async function fetchLicensedKit(
   );
 
   if (response.status === 402) {
+    // 402 is now the OUTPUT-ONLY directive for protected (online-only) kits
+    // (M6 Slice 1). The legitimate server-side run path opts in and unwraps the
+    // refusal into a typed error it handles; a client gets the same refusal.
+    const body = (await response.json().catch(() => ({}))) as LicensedPackageResponseBody;
+    if (body.code === ONLINE_ONLY_RUN_REQUIRED || body.onlineOnly === true) {
+      throw new OnlineOnlyContentRefusedError(toOnlineOnlyDirective(body, slug));
+    }
+    // Legacy 402 (e.g. pre-Slice-1 "payment coming soon") — keep the old message.
     throw new Error(
-      "This paid kit cannot be acquired yet — payment is coming soon."
+      body.message ?? "This paid kit cannot be acquired yet — payment is coming soon."
     );
   }
   if (response.status === 403) {
@@ -161,6 +226,22 @@ export async function fetchLicensedKit(
   }
 
   const body = (await response.json()) as LicensedPackageResponseBody;
+
+  // Defense-in-depth (M6 Slice 1): if the response (or the kit's pricing) says this
+  // is an ONLINE-ONLY protected kit, refuse to surface bytes UNLESS the caller is a
+  // legitimate server-side run path that explicitly opted in. This protects against
+  // an un-updated commercial handler (or any future caller) that still ships bytes
+  // for a protected kit — a client (no opt-in) never receives content.
+  const responsePricing = body.pricing === "paid" ? "paid" : "free";
+  const responseDownloadable = body.downloadable === true;
+  const responseOnlineOnly =
+    typeof body.onlineOnly === "boolean"
+      ? body.onlineOnly
+      : isOnlineOnly(responsePricing, responseDownloadable);
+  if (responseOnlineOnly && options.allowOnlineOnlyContent !== true) {
+    throw new OnlineOnlyContentRefusedError(toOnlineOnlyDirective(body, slug));
+  }
+
   if (typeof body.contentBase64 !== "string" || body.contentBase64.length === 0) {
     throw new Error("Hosted Market licensed-package response did not include package bytes.");
   }

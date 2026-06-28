@@ -230,7 +230,11 @@ export async function resolveProtectedSystemPrompt(
   const licensed = await market.fetchLicensedKit(store, {
     slug: ref.slug,
     marketBaseUrl: base,
-    clientId: clientId()
+    clientId: clientId(),
+    // SERVER-SIDE RUN path: legitimate per-turn resolver that injects the prompt
+    // and NEVER returns it to the client; opts in to online-only content (M6
+    // Slice 1). Client paths (no opt-in) are refused.
+    allowOnlineOnlyContent: true
   });
   // Online-only OR downloadable — either way we keep the bytes in memory and never
   // write them. unzip → buildAgentKitContext in an ephemeral temp dir that is
