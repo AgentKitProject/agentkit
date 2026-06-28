@@ -161,6 +161,55 @@ export const listEntitlementsResponseSchema = z.object({
 export type ListEntitlementsResponse = z.infer<typeof listEntitlementsResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Online-only (output-only) run directive — M6 Slice 1.
+//
+// A PROTECTED kit (paid && !downloadable, i.e. `isOnlineOnly`) must NEVER hand
+// its instruction CONTENT to a CLIENT (desktop app, browser, CLI). The ONLY
+// legitimate way to use it is to RUN it server-side (web Forge or Auto) and get
+// OUTPUT back — never the kit files. When a client requests the licensed package
+// for such a kit, the licensed-package route refuses with HTTP 402 and returns
+// THIS directive INSTEAD of `contentBase64`.
+//
+// MOAT: this directive carries NO pricing, watermark, entitlement, or license
+// VALUES — only the public identifiers and the public run-target URLs. All
+// commercial/entitlement/watermark logic stays in agentkit-commercial.
+// ---------------------------------------------------------------------------
+
+/** Discriminator code for the output-only run directive (HTTP 402 body). */
+export const ONLINE_ONLY_RUN_REQUIRED = "online_only_run_required" as const;
+
+/**
+ * Public run targets where a protected kit can be RUN (not downloaded). Both are
+ * OPTIONAL: on self-host they are omitted (no phone-home to the hosted ecosystem).
+ */
+export const onlineOnlyRunTargetsSchema = z.object({
+  /** Public web-Forge run URL, if the instance exposes one. */
+  forgeWebUrl: z.string().optional(),
+  /** Public AgentKitAuto run URL, if the instance exposes one. */
+  autoUrl: z.string().optional()
+});
+export type OnlineOnlyRunTargets = z.infer<typeof onlineOnlyRunTargetsSchema>;
+
+/**
+ * The HTTP-402 body returned IN PLACE OF licensed-package bytes when a CLIENT
+ * requests a protected (online-only) kit. The server returns OUTPUT-only run
+ * guidance; the kit content is never serialized into this shape.
+ */
+export const onlineOnlyRunDirectiveSchema = z.object({
+  onlineOnly: z.literal(true),
+  code: z.literal(ONLINE_ONLY_RUN_REQUIRED),
+  /** Public Market slug of the protected kit. */
+  slug: z.string().min(1),
+  /** Canonical Market kit id, if resolved. */
+  kitId: z.string().optional(),
+  /** Human-readable, content-free explanation. */
+  message: z.string().min(1),
+  /** Public URLs where the kit can be RUN (omitted/undefined on self-host). */
+  runTargets: onlineOnlyRunTargetsSchema.optional()
+});
+export type OnlineOnlyRunDirective = z.infer<typeof onlineOnlyRunDirectiveSchema>;
+
+// ---------------------------------------------------------------------------
 // Seam S (web-forge ↔ market-app, SERVICE-KEY auth) — protected-kit resolution
 // for the hosted AgentKitAuto worker path.
 //

@@ -16,6 +16,8 @@ import {
   serviceEntitledKitsRequestSchema,
   serviceEntitledKitsResponseSchema,
   serviceEntitledKitsErrorSchema,
+  onlineOnlyRunDirectiveSchema,
+  ONLINE_ONLY_RUN_REQUIRED,
   entitlementSchema,
   setKitPricingRequestSchema,
   grantEntitlementRequestSchema,
@@ -288,6 +290,54 @@ describe("contracts", () => {
       serviceLicensedPackageErrorSchema.parse(code);
     }
     assert.throws(() => serviceLicensedPackageErrorSchema.parse("nope"));
+  });
+
+  it("online-only run directive schema (M6 Slice 1) — content-free 402 body", () => {
+    // Full directive with public run targets parses.
+    const directive = onlineOnlyRunDirectiveSchema.parse({
+      onlineOnly: true,
+      code: ONLINE_ONLY_RUN_REQUIRED,
+      slug: "my-paid-kit",
+      kitId: "kit_1",
+      message: "This kit is output-only — run it on web Forge or Auto.",
+      runTargets: {
+        forgeWebUrl: "https://forge.agentkitproject.com",
+        autoUrl: "https://auto.agentkitproject.com"
+      }
+    });
+    assert.equal(directive.onlineOnly, true);
+    assert.equal(directive.code, "online_only_run_required");
+
+    // Self-host shape: no runTargets at all is valid (no phone-home).
+    onlineOnlyRunDirectiveSchema.parse({
+      onlineOnly: true,
+      code: ONLINE_ONLY_RUN_REQUIRED,
+      slug: "my-paid-kit",
+      message: "This kit is output-only — run it on web Forge or Auto."
+    });
+
+    // MOAT: the directive must NOT model any pricing/watermark/entitlement VALUES.
+    // Unknown keys (e.g. priceCents, watermark) are stripped, never surfaced.
+    const stripped = onlineOnlyRunDirectiveSchema.parse({
+      onlineOnly: true,
+      code: ONLINE_ONLY_RUN_REQUIRED,
+      slug: "k",
+      message: "m",
+      priceCents: 999,
+      watermark: { hash: "leak" },
+      contentBase64: "QUJD"
+    } as Record<string, unknown>);
+    assert.equal((stripped as Record<string, unknown>).priceCents, undefined);
+    assert.equal((stripped as Record<string, unknown>).watermark, undefined);
+    assert.equal((stripped as Record<string, unknown>).contentBase64, undefined);
+
+    // `onlineOnly` must be literally true and code must be the discriminator.
+    assert.throws(() =>
+      onlineOnlyRunDirectiveSchema.parse({ onlineOnly: false, code: ONLINE_ONLY_RUN_REQUIRED, slug: "k", message: "m" })
+    );
+    assert.throws(() =>
+      onlineOnlyRunDirectiveSchema.parse({ onlineOnly: true, code: "other", slug: "k", message: "m" })
+    );
   });
 
   it("market service entitled-kits route (no slug param)", () => {

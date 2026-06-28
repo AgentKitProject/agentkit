@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { fetchLicensedKit, isOnlineOnly } from "../src/market/licensed.js";
+import { fetchLicensedKit, isOnlineOnly, OnlineOnlyContentRefusedError } from "../src/market/licensed.js";
 import { sha256Hex } from "../src/market/upload.js";
 import type { FetchLike, FetchLikeResponse } from "../src/market/http.js";
 import type { StoredSession, TokenStore } from "../src/market/types.js";
@@ -58,6 +58,16 @@ const PACKAGE_BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
 const PACKAGE_B64 = Buffer.from(PACKAGE_BYTES).toString("base64");
 const PACKAGE_SHA = sha256Hex(PACKAGE_BYTES);
 
+async function assertRefused(fn: () => Promise<void>): Promise<void> {
+  let caught: unknown;
+  try {
+    await fn();
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeInstanceOf(OnlineOnlyContentRefusedError);
+}
+
 describe("isOnlineOnly", () => {
   test("paid + not downloadable => online-only", () => {
     expect(isOnlineOnly("paid", false)).toBe(true);
@@ -96,7 +106,9 @@ describe("fetchLicensedKit", () => {
     const result = await fetchLicensedKit(memoryStore(), {
       slug: "cool-kit",
       clientId: "client_x",
-      fetch: fetchImpl
+      fetch: fetchImpl,
+      // online-only bytes are only surfaced to the server-side run path (opt-in).
+      allowOnlineOnlyContent: true
     });
 
     expect(calledPath).toContain("/api/forge/kits/cool-kit/licensed-package");
@@ -141,6 +153,98 @@ describe("fetchLicensedKit", () => {
     ).rejects.toThrow(/payment/i);
   });
 
+  // --- M6 Slice 1: protected (online-only) content is refused to CLIENTS --------
+
+  test("CLIENT (no opt-in) fetch of an ONLINE-ONLY kit is REFUSED — no content", async () => {
+    // Defense-in-depth: even if the server WRONGLY ships bytes on a 200, a client
+    // (no allowOnlineOnlyContent) must get the refusal and NO content.
+    let returned: unknown;
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse(200, {
+        kitId: "kit_protected",
+        userId: "user_1",
+        entitlementId: "ent_1",
+        fileName: "secret.agentkit.zip",
+        contentBase64: PACKAGE_B64,
+        sha256: PACKAGE_SHA,
+        licenseVersion: "default-v1",
+        pricing: "paid",
+        downloadable: false,
+        onlineOnly: true
+      });
+    await assertRefused(async () => {
+      returned = await fetchLicensedKit(memoryStore(), { slug: "x", clientId: "c", fetch: fetchImpl });
+    });
+    expect(returned).toBeUndefined();
+  });
+
+  test("402 output-only directive is refused to a CLIENT (no opt-in)", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse(402, {
+        onlineOnly: true,
+        code: "online_only_run_required",
+        slug: "x",
+        kitId: "kit_protected",
+        message: "This kit is output-only — run it on web Forge or Auto.",
+        runTargets: { forgeWebUrl: "https://forge.agentkitproject.com", autoUrl: "https://auto.agentkitproject.com" }
+      });
+    let caught: unknown;
+    try {
+      await fetchLicensedKit(memoryStore(), { slug: "x", clientId: "c", fetch: fetchImpl });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(OnlineOnlyContentRefusedError);
+    const err = caught as OnlineOnlyContentRefusedError;
+    expect(err.directive.code).toBe("online_only_run_required");
+    expect(err.directive.runTargets?.forgeWebUrl).toBe("https://forge.agentkitproject.com");
+    // The directive carries NO content/watermark/pricing values (moat).
+    expect(JSON.stringify(err.directive)).not.toContain(PACKAGE_B64);
+    expect(JSON.stringify(err.directive)).not.toContain("watermark");
+  });
+
+  test("SERVER-SIDE RUN path (allowOnlineOnlyContent) STILL gets content", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse(200, {
+        kitId: "kit_protected",
+        userId: "user_1",
+        entitlementId: "ent_1",
+        fileName: "secret.agentkit.zip",
+        contentBase64: PACKAGE_B64,
+        sha256: PACKAGE_SHA,
+        licenseVersion: "default-v1",
+        watermark: { entitlementId: "ent_1", userId: "user_1", kitId: "kit_protected", grantedAt: "now", hash: "wm" },
+        pricing: "paid",
+        downloadable: false,
+        onlineOnly: true
+      });
+    const result = await fetchLicensedKit(memoryStore(), {
+      slug: "x",
+      clientId: "c",
+      fetch: fetchImpl,
+      allowOnlineOnlyContent: true
+    });
+    expect(result.bytes).toEqual(PACKAGE_BYTES);
+    expect(result.onlineOnly).toBe(true);
+  });
+
+  test("downloadable paid kit STILL returns bytes to a CLIENT (no opt-in)", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse(200, {
+        kitId: "kit_dl",
+        fileName: "dl.agentkit.zip",
+        contentBase64: PACKAGE_B64,
+        sha256: PACKAGE_SHA,
+        licenseVersion: "default-v1",
+        pricing: "paid",
+        downloadable: true,
+        onlineOnly: false
+      });
+    const result = await fetchLicensedKit(memoryStore(), { slug: "dl", clientId: "c", fetch: fetchImpl });
+    expect(result.bytes).toEqual(PACKAGE_BYTES);
+    expect(result.downloadable).toBe(true);
+  });
+
   test("checksum mismatch is rejected", async () => {
     const fetchImpl: FetchLike = async () =>
       jsonResponse(200, {
@@ -153,7 +257,13 @@ describe("fetchLicensedKit", () => {
         downloadable: false
       });
     await expect(
-      fetchLicensedKit(memoryStore(), { slug: "x", clientId: "c", fetch: fetchImpl })
+      fetchLicensedKit(memoryStore(), {
+        slug: "x",
+        clientId: "c",
+        fetch: fetchImpl,
+        // exercise the checksum path on the online-only (server-side) branch.
+        allowOnlineOnlyContent: true
+      })
     ).rejects.toThrow(/checksum/i);
   });
 });
