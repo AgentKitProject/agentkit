@@ -76,6 +76,7 @@ import {
 import type { AutoApproval, AutoRun, AutoRunResult, InferenceMode } from "./types.js";
 import type { AutoRunRepository, WorkspaceStore } from "./ports.js";
 import type { SandboxExecutor } from "./sandbox-executor.js";
+import { identityRedactor, type OutputRedactor } from "./leakage-guard.js";
 
 /** The terminal outcome of an autonomous run. */
 export interface RunAutoRunResult {
@@ -161,6 +162,17 @@ export interface RunAutoRunArgs {
   deps: RunAutoRunDeps;
   /** Safety bound on tool rounds. Default 64. */
   maxToolRounds?: number;
+  /**
+   * PROTECTED-KIT OUTPUT REDACTOR (M6 content protection). When present, the run's
+   * output text AND every workspace file's contents are passed through this before
+   * the result is persisted / returned / delivered, masking any verbatim leak of
+   * the protected kit's system prompt. Default (absent) → identity (no-op), so
+   * non-protected / open-core / self-host runs are byte-for-byte unaffected. This
+   * is the ONLY place the result is built, so redacting here covers all three leak
+   * sinks: the stored run result, the worker's delivery, and the file manifest.
+   * Best-effort deterrent only (see leakage-guard.ts).
+   */
+  redactOutput?: OutputRedactor;
 }
 
 /**
@@ -227,6 +239,12 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   const { run, tools, executeTool, deps } = args;
   const { chatProvider, ledger, runs, workspace, now } = deps;
   const maxToolRounds = args.maxToolRounds ?? 64;
+  // Protected-kit output redactor (M6). Identity for every non-protected run, so
+  // those are byte-for-byte unaffected. `isRedacting` gates the (more expensive)
+  // per-file content rewrite so we only touch the workspace when there's a secret
+  // to protect.
+  const redactOutput: OutputRedactor = args.redactOutput ?? identityRedactor;
+  const isRedacting = args.redactOutput !== undefined;
   const maxTokens = deps.maxTokens ?? 4096;
   // Always prepend the no-questions preamble so every Auto run is told to proceed
   // autonomously rather than stop to ask (Auto v2 Slice 4). Applies to managed +
@@ -334,9 +352,38 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
 
     let result: AutoRunResult | undefined;
     if (status === "succeeded" || status === "budget_exceeded" || status === "canceled") {
-      // Always capture whatever the run produced, even on a partial stop.
-      const files = await workspace.bundleResult(workspaceId).catch(() => []);
-      result = { output: lastText, files };
+      // PROTECTED-KIT WORKSPACE REDACTION (M6). Before bundling the manifest,
+      // rewrite each workspace file with its contents passed through the redactor,
+      // so a prompt the model wrote into a file is masked AT THE SOURCE (the
+      // ephemeral workspace is the only place those contents live; rewriting here
+      // means any future content-serving path also gets the redacted bytes). Skip
+      // entirely (no reads/writes) for non-protected runs. Best-effort: a per-file
+      // failure must never mask the run's terminal result.
+      if (isRedacting) {
+        try {
+          const manifest = await workspace.bundleResult(workspaceId);
+          for (const entry of manifest) {
+            try {
+              const raw = await workspace.readFile(workspaceId, entry.path);
+              const redacted = redactOutput(raw);
+              if (redacted !== raw) {
+                await workspace.writeFile(workspaceId, entry.path, redacted);
+              }
+            } catch {
+              /* unreadable / non-UTF8 file — skip; never abort finalize */
+            }
+          }
+        } catch {
+          /* manifest unavailable — fall through to the bundle below */
+        }
+      }
+      // Always capture whatever the run produced, even on a partial stop. The
+      // manifest paths themselves can carry a leak (the model can NAME a file after
+      // the prompt), so redact each path too; sizes reflect the rewritten content.
+      const files = (await workspace.bundleResult(workspaceId).catch(() => [])).map(
+        (f) => ({ ...f, path: redactOutput(f.path) }),
+      );
+      result = { output: redactOutput(lastText), files };
       await runs.setResult(run.id, result);
     }
     await runs.updateRunStatus(run.id, status, {

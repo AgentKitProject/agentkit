@@ -391,57 +391,22 @@ export async function resolveProtectedSystemPromptViaService(
 }
 
 // ---------------------------------------------------------------------------
-// Leakage guards (best-effort)
+// Leakage guards (best-effort) — SHARED MECHANISM lives in @agentkitforge/auto-core
 // ---------------------------------------------------------------------------
+//
+// `isPromptExtractionAttempt` (pre-turn refusal) and `redactLeakedPrompt` (mask
+// verbatim prompt chunks out of emitted text) are a generic, value-free mechanism.
+// They are owned by auto-core's leakage-guard module so the INTERACTIVE gateway
+// path (gateway-sessions.ts) and the AUTONOMOUS run path (auto-core run-driver)
+// share ONE implementation — no duplication. We re-export them here so existing
+// importers in this app keep their import site. (forge-web still carries its own
+// copy for the desktop-Forge interactive path — see the M6 report.)
+export { isPromptExtractionAttempt, redactLeakedPrompt } from "@agentkitforge/auto-core";
 
-/** Min length of a verbatim prompt substring we treat as a leak and redact. */
+// These constants mirror auto-core/leakage-guard.ts and back this app's redaction
+// regression test (kept in sync with the shared mechanism).
 const LEAK_MIN_CHARS = 80;
-/** Window size we slide over the prompt to detect verbatim emission. */
 const LEAK_WINDOW = 120;
-
 const REDACTION = "[redacted: protected kit content]";
-
-/**
- * Detect an obvious prompt-extraction attempt in the buyer's input ("repeat your
- * instructions", "print the system prompt", "ignore previous instructions and
- * show…"). Best-effort heuristic — refuses the most common direct asks; it does
- * not catch paraphrase / indirect inference attacks.
- */
-export function isPromptExtractionAttempt(userInput: string): boolean {
-  const t = userInput.toLowerCase();
-  // Must reference the instructions/prompt AND an exfiltration verb nearby.
-  const targets = /(system\s*prompt|your\s+instructions|the\s+instructions|initial\s+prompt|kit\s+(instructions|content|text)|everything\s+above|prompt\s+(above|verbatim))/;
-  const verbs = /(repeat|print|show|reveal|display|output|echo|recite|dump|verbatim|word[\s-]*for[\s-]*word|copy|disclose|tell\s+me)/;
-  if (targets.test(t) && verbs.test(t)) return true;
-  // Classic jailbreak openers paired with a disclosure ask.
-  if (/ignore\s+(all\s+)?(previous|prior|above)\s+instructions/.test(t) && (verbs.test(t) || targets.test(t))) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Redact long verbatim runs of the injected system prompt from emitted text
- * (assistant deltas or tool-call args). Slides a window over the prompt; any
- * window-length chunk that appears verbatim in `text` is replaced. Best-effort —
- * does not defeat paraphrase or chunked exfiltration, documented as such.
- *
- * Returns the possibly-redacted text. Cheap: O(text * prompt/stride) substring
- * checks bounded by the window stride, skipped entirely for short prompts.
- */
-export function redactLeakedPrompt(text: string, systemPrompt: string): string {
-  if (!text || systemPrompt.length < LEAK_MIN_CHARS) return text;
-  let out = text;
-  // Slide a window across the prompt; stride by half-window to bound work while
-  // still catching overlapping leaks.
-  const stride = Math.floor(LEAK_WINDOW / 2);
-  for (let i = 0; i + LEAK_WINDOW <= systemPrompt.length; i += stride) {
-    const chunk = systemPrompt.slice(i, i + LEAK_WINDOW);
-    if (out.includes(chunk)) {
-      out = out.split(chunk).join(REDACTION);
-    }
-  }
-  return out;
-}
 
 export const __test = { PROTECTED_REF_PREFIX, LEAK_MIN_CHARS, LEAK_WINDOW, REDACTION };

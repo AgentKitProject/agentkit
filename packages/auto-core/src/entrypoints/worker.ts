@@ -22,6 +22,7 @@ import type { AutoStorageDeps, EmailSender } from "../core/ports.js";
 import type { AutoApproval, AutoRun, InferenceMode } from "../core/types.js";
 import { makeSandboxExecutor } from "../core/sandbox-executor.js";
 import { runAutoRun, type RunAutoRunResult } from "../core/run-driver.js";
+import { makePromptRedactor } from "../core/leakage-guard.js";
 import { deliverResult } from "../core/delivery.js";
 import type { DnsResolver, FetchFn } from "../core/http-fetch.js";
 
@@ -34,6 +35,15 @@ export interface ResolvedKitContext {
   tools: ToolDefinition[];
   /** Tool names the kit declares (used to intersect with the approval). */
   toolNames: string[];
+  /**
+   * True when this is a PROTECTED (paid / online-only) Market kit whose system
+   * prompt is the seller's IP and must never reach the buyer. When set, the worker
+   * binds an output redactor to `systemPrompt` so any verbatim leak in the run's
+   * output / workspace files is masked before it is stored or delivered (M6 — best
+   * effort, see leakage-guard.ts). Absent / false → no redaction (local / free /
+   * self-host runs are unaffected).
+   */
+  protected?: boolean;
 }
 
 /** Hook that resolves a run's kit context. Injected; no hard web-forge dep. */
@@ -174,9 +184,22 @@ export async function processAutoRun(
       now,
     });
 
+    // PROTECTED-KIT OUTPUT REDACTION (M6 content protection). For a protected kit
+    // we bind a redactor to the resolved system prompt; the driver passes the run
+    // output AND any workspace file contents through it before they are stored /
+    // returned / delivered, masking verbatim leaks. Non-protected runs pass no
+    // redactor → the driver applies identity (no-op), so open-core / self-host /
+    // local / free runs are byte-for-byte unaffected. Best-effort deterrent only
+    // (see leakage-guard.ts — paraphrase / inference extraction defeats it).
+    const redactOutput =
+      kit.protected && kit.systemPrompt
+        ? makePromptRedactor(kit.systemPrompt)
+        : undefined;
+
     const result = await runAutoRun({
       run: runWithWs,
       approval: appr,
+      ...(redactOutput ? { redactOutput } : {}),
       ...(kit.systemPrompt !== undefined ? { systemPrompt: kit.systemPrompt } : {}),
       ...(kit.kitContext !== undefined ? { kitContext: kit.kitContext } : {}),
       tools: kit.tools,

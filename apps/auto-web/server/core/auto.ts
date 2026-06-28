@@ -93,6 +93,7 @@ import {
   classifyKit,
   resolveProtectedSystemPrompt,
   resolveProtectedSystemPromptViaService,
+  isPromptExtractionAttempt,
   ProtectedKitServiceError,
   type ProtectedKitRef
 } from "@/server/core/protected-kits";
@@ -435,7 +436,9 @@ export function makeResolveKitContext(opts: KitContextOptions): ResolveKitContex
         return {
           systemPrompt: isProtected ? resolved.systemPrompt : DEFAULT_SYSTEM_PROMPT,
           tools,
-          toolNames
+          toolNames,
+          // M6: flag protected kits so the worker redacts the run output / files.
+          ...(isProtected ? { protected: true } : {})
         };
       }
 
@@ -445,7 +448,9 @@ export function makeResolveKitContext(opts: KitContextOptions): ResolveKitContex
         // Server-side fetch; the prompt is held in memory and never returned to
         // the browser (the run record stores no prompt — only the kitRef).
         const systemPrompt = await resolveProtectedSystemPrompt(store, protectedRef);
-        return { systemPrompt, tools, toolNames };
+        // M6: protected → worker redacts any verbatim leak of this prompt out of
+        // the run output / workspace files before they reach the buyer.
+        return { systemPrompt, tools, toolNames, protected: true };
       }
       // Free Market kit — default prompt for Phase A.
       return { systemPrompt: DEFAULT_SYSTEM_PROMPT, tools, toolNames };
@@ -1145,6 +1150,21 @@ export async function startRun(input: {
     );
   }
 
+  // ---- Pre-run prompt-extraction guard (M6 content protection) -----------
+  // For a PROTECTED (paid / online-only) kit the system prompt is the seller's IP
+  // and must never reach the buyer. Refuse an obvious extraction attempt in the
+  // run input UP FRONT, mirroring the interactive gateway turn route. The cheap
+  // local heuristic runs FIRST, so we only pay the Market `isProtectedKit`
+  // round-trip when the prompt actually looks like an extraction attempt — a
+  // benign run never incurs the extra call. Best-effort: paraphrase / inference
+  // extraction is not caught here (it's also masked downstream by output
+  // redaction; both are deterrents, not guarantees — see leakage-guard.ts).
+  if (isPromptExtractionAttempt(input.prompt) && (await isProtectedKit(input.kitRef, input.kitContext))) {
+    throw new AutoValidationError(
+      "This run looks like an attempt to extract a protected kit's underlying instructions, which can't be shared. Rephrase your task to use the kit's capabilities instead."
+    );
+  }
+
   // ---- Resolve billing mode (server-chosen) ------------------------------
   // protected/paid kit → forced managed; configured BYO Anthropic provider →
   // BYO (no inference debit). isCloudRun is the active dispatcher's nature.
@@ -1281,6 +1301,10 @@ export interface WorkerContext {
   tools: ToolDefinition[];
   toolNames: string[];
   inferenceMode: "managed" | "byo";
+  /** M6: true for a PROTECTED (paid / online-only) Market kit. The worker uses it
+   *  to redact any verbatim leak of `systemPrompt` out of the run output /
+   *  workspace files before they reach the buyer. Absent on local / free runs. */
+  protected?: boolean;
   /** Raw BYO provider config (NOT a ChatProvider) when this run is BYO. The
    *  worker constructs its own provider from this; the apiKey is sensitive and
    *  must never be logged. */
@@ -1350,6 +1374,8 @@ export async function resolveWorkerContext(runId: string): Promise<WorkerContext
     ...(resolved.kitContext !== undefined ? { kitContext: resolved.kitContext } : {}),
     tools: resolved.tools,
     toolNames: resolved.toolNames,
+    // M6: surface protectedness to the worker so it redacts the run output / files.
+    ...(resolved.protected ? { protected: true } : {}),
     inferenceMode,
     ...(byoProvider ? { byoProvider } : {})
   };

@@ -30,6 +30,12 @@ export interface ResolveContextResponse {
   inferenceMode: "managed" | "byo";
   /** Present only when `inferenceMode === "byo"`: the user's own provider key. */
   byoProvider?: { apiKey: string; baseUrl?: string };
+  /**
+   * True when this is a PROTECTED (paid / online-only) Market kit (M6). The worker
+   * uses it to enable output redaction bound to `systemPrompt`. Absent/false on
+   * local / free / self-host runs (no redaction).
+   */
+  protected?: boolean;
 }
 
 export interface FetchResolveContextArgs {
@@ -97,5 +103,6 @@ export function toResolveKitContext(payload: ResolveContextResponse): ResolveKit
     ...(payload.kitContext !== undefined ? { kitContext: payload.kitContext } : {}),
     tools: payload.tools,
     toolNames: payload.toolNames,
+    ...(payload.protected ? { protected: true } : {}),
   });
 }
