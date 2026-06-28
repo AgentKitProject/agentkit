@@ -5,7 +5,11 @@ import { existsSync, readdirSync } from "node:fs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tauriBin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri");
-const forwardedArgs = localTauriBuildArgs(process.argv.slice(2));
+// Drop any stray `--` separator tokens before forwarding to `tauri build`. When
+// args reach this script through pnpm's `--` forwarding into the compound
+// `build:tauri` script, a literal `--` can leak through, which makes Tauri's clap
+// parser treat the following flags as positional ("unexpected argument '--bundles'").
+const forwardedArgs = localTauriBuildArgs(process.argv.slice(2).filter((arg) => arg !== "--"));
 
 const build = spawnSync(tauriBin, ["build", ...forwardedArgs], {
   cwd: root,

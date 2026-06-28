@@ -92,12 +92,12 @@ jobs:
         run: pnpm run check
 
       - name: Build Tauri app
-        if: ${{ runner.os != 'macOS' }}
+        # build-tauri.mjs auto-adds `--bundles app` on macOS (builds just the .app,
+        # skipping the DMG that needs signing). Don't pass it via the workflow `--`:
+        # pnpm's arg-forwarding into the compound build:tauri script mangles it into a
+        # stray `--` that makes tauri treat `--bundles` as a positional ("unexpected
+        # argument"). One step for all platforms; the script handles the macOS case.
         run: pnpm run build:tauri
-
-      - name: Build Tauri app bundle
-        if: ${{ runner.os == 'macOS' }}
-        run: pnpm run build:tauri -- --bundles app
 
       - name: Verify packaged runtime resources
         run: pnpm run check:tauri-sidecar
