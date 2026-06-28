@@ -118,6 +118,19 @@ export interface OrgRepository {
   /** Flips an `invited` membership to `active` and clears the invite. */
   acceptInvite(orgId: string, userId: string): Promise<OrgMembership | undefined>;
   listInvitesForUser(userId: string): Promise<OrgInvite[]>;
+  /**
+   * Stores a pending invite keyed by email (no userId) — for inviting a person who is
+   * not yet a registered user. Claimed on their first login via `claimInvitesByEmail`.
+   */
+  createEmailInvite(orgId: string, email: string, role: OrgRole, invitedBy: string): Promise<OrgInvite>;
+  /** Pending email invites matching an email (normalized: trimmed + lowercased). */
+  listInvitesByEmail(email: string): Promise<OrgInvite[]>;
+  /**
+   * Claims every pending email invite matching `email` for `userId`: creates an active
+   * membership and deletes the email invite. Idempotent (skips orgs the user already
+   * belongs to). Returns the memberships created.
+   */
+  claimInvitesByEmail(email: string, userId: string): Promise<OrgMembership[]>;
   removeMember(orgId: string, userId: string): Promise<void>;
   /** Hard-deletes an org and all its memberships + invites. Caller enforces guards. */
   deleteOrg(orgId: string): Promise<void>;

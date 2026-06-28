@@ -33,6 +33,8 @@
     "adminOrgMember": "/admin/orgs/{orgId}/members/{userId}",
     "adminListUserInvites": "/admin/users/{userId}/invites",
     "adminAcceptInvite": "/admin/orgs/{orgId}/invites/{userId}/accept",
+    "adminCreateEmailInvite": "/admin/orgs/{orgId}/invites/email",
+    "adminClaimInvites": "/admin/users/{userId}/invites/claim",
     "adminTransferKit": "/admin/kits/{kitId}/transfer",
     "adminSetKitVisibility": "/admin/kits/{kitId}/visibility"
   },

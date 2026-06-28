@@ -265,10 +265,27 @@ function rowToMembership(row: any): OrgMembership {
   };
 }
 
+/**
+ * Sentinel user_id prefix for email-only invites. The org_invites PK is
+ * (org_id, user_id) NOT NULL, so an email invite (which has no userId yet) uses a
+ * deterministic synthetic key `email#<normalized-email>`. It is stripped back out by
+ * rowToInvite and never matches a real userId in listInvitesForUser.
+ */
+const EMAIL_INVITE_USER_ID_PREFIX = 'email#';
+
+function emailInviteUserId(email: string): string {
+  return `${EMAIL_INVITE_USER_ID_PREFIX}${normalizeEmail(email)}`;
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 function rowToInvite(row: any): OrgInvite {
+  const userId = str(row.user_id);
   return {
     orgId: row.org_id,
-    userId: str(row.user_id),
+    userId: userId && userId.startsWith(EMAIL_INVITE_USER_ID_PREFIX) ? undefined : userId,
     email: str(row.email),
     role: row.role,
     invitedByUserId: row.invited_by_user_id,
@@ -1043,6 +1060,72 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
         [userId],
       );
       return result.rows.map(rowToInvite);
+    },
+
+    async createEmailInvite(orgId: string, email: string, role: OrgRole, invitedBy: string): Promise<OrgInvite> {
+      const now = new Date().toISOString();
+      const normalized = normalizeEmail(email);
+      const sentinelUserId = emailInviteUserId(normalized);
+      await pool.query(
+        `INSERT INTO org_invites (org_id, user_id, email, role, invited_by_user_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (org_id, user_id) DO UPDATE SET
+           role = EXCLUDED.role, invited_by_user_id = EXCLUDED.invited_by_user_id`,
+        [orgId, sentinelUserId, normalized, role, invitedBy, now],
+      );
+      return { orgId, email: normalized, role, invitedByUserId: invitedBy, createdAt: now };
+    },
+
+    async listInvitesByEmail(email: string): Promise<OrgInvite[]> {
+      const result = await pool.query(
+        `SELECT * FROM org_invites WHERE lower(email) = $1 ORDER BY created_at`,
+        [normalizeEmail(email)],
+      );
+      return result.rows.map(rowToInvite);
+    },
+
+    async claimInvitesByEmail(email: string, userId: string): Promise<OrgMembership[]> {
+      const normalized = normalizeEmail(email);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const invites = await client.query(
+          `SELECT * FROM org_invites WHERE lower(email) = $1 ORDER BY created_at`,
+          [normalized],
+        );
+        const memberships: OrgMembership[] = [];
+        for (const invite of invites.rows) {
+          const orgId = invite.org_id as string;
+          // Idempotent: skip orgs the user is already an active member of.
+          const existing = await client.query(
+            `SELECT status FROM org_memberships WHERE org_id = $1 AND user_id = $2`,
+            [orgId, userId],
+          );
+          if (!existing.rows[0] || existing.rows[0].status !== 'active') {
+            const now = new Date().toISOString();
+            const result = await client.query(
+              `INSERT INTO org_memberships (org_id, user_id, role, status, invited_by_user_id, created_at)
+               VALUES ($1,$2,$3,'active',$4,$5)
+               ON CONFLICT (org_id, user_id) DO UPDATE SET
+                 role = EXCLUDED.role, status = 'active', invited_by_user_id = EXCLUDED.invited_by_user_id
+               RETURNING *`,
+              [orgId, userId, invite.role, invite.invited_by_user_id, now],
+            );
+            memberships.push(rowToMembership(result.rows[0]));
+          }
+          await client.query(
+            `DELETE FROM org_invites WHERE org_id = $1 AND user_id = $2`,
+            [orgId, invite.user_id],
+          );
+        }
+        await client.query('COMMIT');
+        return memberships;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     },
 
     async removeMember(orgId: string, userId: string): Promise<void> {

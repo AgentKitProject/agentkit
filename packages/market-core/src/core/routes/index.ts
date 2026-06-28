@@ -36,6 +36,8 @@ import type {
 import {
   acceptOrgInviteRequestSchema,
   addOrgMemberRequestSchema,
+  claimInvitesRequestSchema,
+  createEmailInviteRequestSchema,
   createOrgRequestSchema,
   removeOrgMemberRequestSchema,
   setKitVisibilityRequestSchema,
@@ -279,6 +281,20 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'GET' && request.resource === '/admin/users/{userId}/invites') {
         return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => listUserInvitesHandler(request, repo, allowedOrigins));
+      }
+
+      if (request.method === 'POST' && request.resource === '/admin/users/{userId}/invites/claim') {
+        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => claimInvitesHandler(request, repo, allowedOrigins));
+      }
+
+      if (request.method === 'POST' && request.resource === '/admin/orgs/{orgId}/invites/email') {
+        const orgId = request.pathParameters?.orgId ?? '';
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => createEmailInviteHandler(request, repo, allowedOrigins)),
+          (body) => {
+            const invite = (body as { item?: { email?: string; role?: string } })?.item;
+            const actor = typeof auditBody()?.actorUserId === 'string' ? (auditBody()!.actorUserId as string) : undefined;
+            return { action: 'org.invite_created', targetType: 'membership', targetId: invite?.email ?? '', orgId, actorUserId: actor, metadata: { email: invite?.email ?? null, role: invite?.role ?? null } };
+          });
       }
 
       if (request.method === 'POST' && request.resource === '/admin/orgs/{orgId}/invites/{userId}/accept') {
@@ -1337,6 +1353,55 @@ async function acceptInviteHandler(
     return json(request, allowedOrigins, 404, { message: 'No pending invite for this user' });
   }
   return json(request, allowedOrigins, 200, { item: membership });
+}
+
+async function createEmailInviteHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const orgId = request.pathParameters?.orgId;
+  if (!orgId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing orgId' });
+  }
+  const body = parseJsonBody(request) as Record<string, unknown> | undefined;
+  const actorUserId = typeof body?.actorUserId === 'string' ? body.actorUserId : undefined;
+  if (!actorUserId) {
+    return json(request, allowedOrigins, 400, { message: 'actorUserId is required' });
+  }
+  const parsed = createEmailInviteRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return json(request, allowedOrigins, 400, { message: 'Invalid invite payload' });
+  }
+
+  const org = await orgRepository.getOrg(orgId);
+  if (!org) {
+    return json(request, allowedOrigins, 404, { message: 'Organization not found' });
+  }
+  const actorMembership = await orgRepository.getMembership(orgId, actorUserId);
+  if (!actorMembership || actorMembership.status !== 'active' || !MANAGE_ROLES.has(actorMembership.role)) {
+    return json(request, allowedOrigins, 403, { message: 'Only an owner or admin can manage members' });
+  }
+
+  const invite = await orgRepository.createEmailInvite(orgId, parsed.data.email, parsed.data.role, actorUserId);
+  return json(request, allowedOrigins, 201, { item: invite });
+}
+
+async function claimInvitesHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const userId = request.pathParameters?.userId;
+  if (!userId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing userId' });
+  }
+  const parsed = claimInvitesRequestSchema.safeParse(parseJsonBody(request));
+  if (!parsed.success) {
+    return json(request, allowedOrigins, 400, { message: 'Invalid claim payload' });
+  }
+  const memberships = await orgRepository.claimInvitesByEmail(parsed.data.email, userId);
+  return json(request, allowedOrigins, 200, { items: memberships });
 }
 
 async function transferKitHandler(

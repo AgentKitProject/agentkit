@@ -26,6 +26,7 @@ import {
   UrlConfigError
 } from "@/lib/url-config";
 import { isAdminEmail } from "@/lib/admin-emails";
+import { claimPendingEmailInvites } from "@/lib/claim-invites";
 import { UnauthorizedError, type AuthProvider, type CurrentUser } from "./types.ts";
 
 const DEFAULT_WORKOS_SESSION_COOKIE = "wos-session";
@@ -121,6 +122,9 @@ function buildAuthCallback() {
         userId: user.id,
         cookieUrl: getWorkOSRedirectUri()
       });
+      // Best-effort: claim any org invites addressed to this email before signup.
+      // Idempotent + never throws, so it cannot break login.
+      await claimPendingEmailInvites(user.id, user.email ?? undefined);
     },
     onError: ({ error, request }) => {
       logAuthError("callback-error", error, {

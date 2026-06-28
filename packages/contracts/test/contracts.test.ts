@@ -25,6 +25,8 @@ import {
   DEFAULT_KIT_LICENSE_VERSION,
   organizationSchema,
   orgMembershipSchema,
+  createEmailInviteRequestSchema,
+  claimInvitesRequestSchema,
   orgPayoutRoutes,
   setOrgStripeAccountRequestSchema,
   favoriteSchema,
@@ -162,6 +164,14 @@ describe("contracts", () => {
       routes.marketBackendOrgs.adminAcceptInvite.replace("{orgId}", "org1").replace("{userId}", "u1")
     );
     assert.equal(
+      marketBackendOrgRoutes.adminCreateEmailInvite("org1"),
+      routes.marketBackendOrgs.adminCreateEmailInvite.replace("{orgId}", "org1")
+    );
+    assert.equal(
+      marketBackendOrgRoutes.adminClaimInvites("u1"),
+      routes.marketBackendOrgs.adminClaimInvites.replace("{userId}", "u1")
+    );
+    assert.equal(
       marketBackendOrgRoutes.adminTransferKit("kit1"),
       routes.marketBackendOrgs.adminTransferKit.replace("{kitId}", "kit1")
     );
@@ -169,6 +179,14 @@ describe("contracts", () => {
       marketBackendOrgRoutes.adminSetKitVisibility("kit1"),
       routes.marketBackendOrgs.adminSetKitVisibility.replace("{kitId}", "kit1")
     );
+  });
+
+  it("email-invite request schemas validate email + role", () => {
+    createEmailInviteRequestSchema.parse({ email: "new@example.com", role: "member" });
+    assert.throws(() => createEmailInviteRequestSchema.parse({ email: "not-an-email", role: "member" }));
+    assert.throws(() => createEmailInviteRequestSchema.parse({ email: "new@example.com", role: "bogus" }));
+    claimInvitesRequestSchema.parse({ email: "new@example.com" });
+    assert.throws(() => claimInvitesRequestSchema.parse({ email: "nope" }));
   });
 
   it("forgeUploadBackendRequestSchema accepts optional ownerOrgId", () => {

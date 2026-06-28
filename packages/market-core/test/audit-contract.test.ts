@@ -44,7 +44,7 @@ describe('audit log contract parity with @agentkitforge/contracts', () => {
       'submission.rejected', 'submission.archived', 'submission.canceled',
       'submission.published', 'kit.published', 'kit.hidden', 'kit.unhidden',
       'kit.removed', 'kit.pricing_set', 'kit.visibility_set', 'kit.transferred',
-      'org.created', 'org.member_added', 'org.member_removed',
+      'org.created', 'org.member_added', 'org.member_removed', 'org.invite_created',
       'org.invite_accepted', 'org.deleted', 'entitlement.granted', 'entitlement.revoked',
     ];
     for (const a of coreActions) {

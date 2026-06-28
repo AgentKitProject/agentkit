@@ -123,6 +123,22 @@ export const removeOrgMemberRequestSchema = z.object({
 });
 export type RemoveOrgMemberRequest = z.infer<typeof removeOrgMemberRequestSchema>;
 
+/**
+ * Invite an email that is not yet a registered AgentKitMarket user.
+ * Stored as a pending invite keyed by email (no userId); claimed on first login.
+ */
+export const createEmailInviteRequestSchema = z.object({
+  email: z.string().email(),
+  role: orgRoleSchema
+});
+export type CreateEmailInviteRequest = z.infer<typeof createEmailInviteRequestSchema>;
+
+/** Claim all pending email invites matching an email on first login. */
+export const claimInvitesRequestSchema = z.object({
+  email: z.string().email()
+});
+export type ClaimInvitesRequest = z.infer<typeof claimInvitesRequestSchema>;
+
 export const acceptOrgInviteRequestSchema = z.object({
   orgId: z.string().min(1)
 });
@@ -230,6 +246,12 @@ export const marketBackendOrgRoutes = {
   /** POST /admin/orgs/{orgId}/invites/{userId}/accept */
   adminAcceptInvite: (orgId: string, userId: string) =>
     `/admin/orgs/${encodeURIComponent(orgId)}/invites/${encodeURIComponent(userId)}/accept`,
+  /** POST /admin/orgs/{orgId}/invites/email — invite an as-yet-unregistered email. */
+  adminCreateEmailInvite: (orgId: string) =>
+    `/admin/orgs/${encodeURIComponent(orgId)}/invites/email`,
+  /** POST /admin/users/{userId}/invites/claim — claim pending email invites on first login. */
+  adminClaimInvites: (userId: string) =>
+    `/admin/users/${encodeURIComponent(userId)}/invites/claim`,
   /** POST /admin/kits/{kitId}/transfer */
   adminTransferKit: (kitId: string) =>
     `/admin/kits/${encodeURIComponent(kitId)}/transfer`,

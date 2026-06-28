@@ -10,6 +10,7 @@ import {
   marketBackendOrgRoutes,
   createOrgRequestSchema,
   addOrgMemberRequestSchema,
+  createEmailInviteRequestSchema,
   acceptOrgInviteRequestSchema,
   transferKitRequestSchema,
   setKitVisibilityRequestSchema
@@ -153,8 +154,28 @@ export async function browserAddOrgMember(request: Request, orgId: string) {
         return browserOrgError("AgentKitMarket could not look up that email.", 502);
       }
 
+      // Not yet a registered AgentKitMarket user → store a pending email invite.
+      // It is claimed automatically on that person's first login.
       if (!resolvedUserId) {
-        return browserOrgError("No AgentKitMarket user found with that email.", 404);
+        const inviteBody = { email, role: body.role ?? "member" };
+        const parsedInvite = createEmailInviteRequestSchema.safeParse(inviteBody);
+
+        if (!parsedInvite.success) {
+          return browserOrgError(parsedInvite.error.issues[0]?.message ?? "Invalid request.", 400);
+        }
+
+        const backendInvite = { ...parsedInvite.data, actorUserId: user.id };
+        const response = await proxyToBackend(
+          marketBackendOrgRoutes.adminCreateEmailInvite(orgId),
+          "POST",
+          backendInvite
+        );
+
+        // On success, surface a clear "pending" payload so the UI can show the right copy.
+        if (response.ok) {
+          return NextResponse.json({ pending: true, email }, { status: 201 });
+        }
+        return response;
       }
 
       const memberBody = { userId: resolvedUserId, role: body.role ?? "member" };

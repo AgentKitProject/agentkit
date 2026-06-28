@@ -527,6 +527,60 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
         expect(await org().acceptInvite(created.orgId, 'u_invitee')).toBeUndefined();
       });
 
+      it('email invites: create → listByEmail → claim creates membership, clears invite, idempotent', async () => {
+        const org1 = await org().createOrg({ displayName: 'Email Invite Org 1', ownerUserId: 'u_owner' });
+        const org2 = await org().createOrg({ displayName: 'Email Invite Org 2', ownerUserId: 'u_owner2' });
+
+        // createEmailInvite stores an invite keyed by email (no userId).
+        const invite = await org().createEmailInvite(org1.orgId, 'New.User@Example.com', 'member', 'u_owner');
+        expect(invite.orgId).toBe(org1.orgId);
+        expect(invite.email).toBe('new.user@example.com'); // normalized (trim + lowercase)
+        expect(invite.userId).toBeUndefined();
+        expect(invite.role).toBe('member');
+
+        await org().createEmailInvite(org2.orgId, 'new.user@example.com', 'admin', 'u_owner2');
+
+        // listInvitesByEmail is case-insensitive and finds both pending invites.
+        const byEmail = await org().listInvitesByEmail('NEW.USER@example.com');
+        expect(byEmail).toHaveLength(2);
+        expect(byEmail.every((i) => i.userId === undefined)).toBe(true);
+        expect(byEmail.map((i) => i.orgId).sort()).toEqual([org1.orgId, org2.orgId].sort());
+
+        // An email invite is NOT surfaced via listInvitesForUser (which keys on real userId).
+        expect(await org().listInvitesForUser('u_claimer')).toHaveLength(0);
+
+        // claimInvitesByEmail creates active memberships and removes the invites.
+        const claimed = await org().claimInvitesByEmail('new.user@example.com', 'u_claimer');
+        expect(claimed).toHaveLength(2);
+        expect(claimed.every((m) => m.status === 'active')).toBe(true);
+        expect(claimed.every((m) => m.userId === 'u_claimer')).toBe(true);
+        expect(claimed.map((m) => m.role).sort()).toEqual(['admin', 'member']);
+
+        expect(await org().getMembership(org1.orgId, 'u_claimer')).toMatchObject({ status: 'active', role: 'member' });
+        expect(await org().getMembership(org2.orgId, 'u_claimer')).toMatchObject({ status: 'active', role: 'admin' });
+
+        // Invites are cleared after claim.
+        expect(await org().listInvitesByEmail('new.user@example.com')).toHaveLength(0);
+
+        // Idempotent: a second claim is a no-op (no new memberships).
+        expect(await org().claimInvitesByEmail('new.user@example.com', 'u_claimer')).toHaveLength(0);
+      });
+
+      it('claimInvitesByEmail skips orgs the user is already an active member of', async () => {
+        const created = await org().createOrg({ displayName: 'Already Member Org', ownerUserId: 'u_owner' });
+        // Owner is already an active member; an email invite for the owner's email should be a no-op on claim.
+        await org().createEmailInvite(created.orgId, 'owner@example.com', 'admin', 'u_owner');
+
+        const claimed = await org().claimInvitesByEmail('owner@example.com', 'u_owner');
+        expect(claimed).toHaveLength(0);
+
+        // Owner keeps their original owner role (not downgraded to the invite's admin role).
+        expect(await org().getMembership(created.orgId, 'u_owner')).toMatchObject({ status: 'active', role: 'owner' });
+
+        // The invite is still cleared.
+        expect(await org().listInvitesByEmail('owner@example.com')).toHaveLength(0);
+      });
+
       it('listMembers returns all memberships; removeMember marks removed', async () => {
         const created = await org().createOrg({ displayName: 'Members Org', ownerUserId: 'u_owner' });
         await org().addMember(created.orgId, 'u_member', 'member', 'u_owner');

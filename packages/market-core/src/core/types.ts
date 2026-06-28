@@ -173,6 +173,7 @@ export type AuditAction =
   | 'org.created'
   | 'org.member_added'
   | 'org.member_removed'
+  | 'org.invite_created'
   | 'org.invite_accepted'
   | 'org.deleted'
   | 'entitlement.granted'

@@ -201,6 +201,9 @@ CREATE TABLE IF NOT EXISTS org_invites (
 -- Dynamo OrgInvites had a userId-index GSI.
 CREATE INDEX IF NOT EXISTS org_invites_user_id_idx ON org_invites (user_id);
 
+-- Email-invite claim (pre-signup invites): lookups by email on first login.
+CREATE INDEX IF NOT EXISTS org_invites_email_idx ON org_invites (email) WHERE email IS NOT NULL;
+
 -- NOTE: The Tier-2 `entitlements` table (PK (user_id, kit_id) + kit_id index)
 -- lives in the COMMERCIAL schema (@agentkit-commercial/market-core); the free
 -- build does not define it.

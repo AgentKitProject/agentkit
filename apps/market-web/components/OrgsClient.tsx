@@ -362,6 +362,7 @@ export function OrgMembersPanel({ orgId }: { orgId: string }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setState({ status: "loading" });
@@ -391,12 +392,18 @@ export function OrgMembersPanel({ orgId }: { orgId: string }) {
     if (!email.trim()) return;
     setAdding(true);
     setFormError(null);
+    setFormNotice(null);
+    const invitedEmail = email.trim();
     try {
-      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/members`, {
+      const result = await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/members`, {
         method: "POST",
-        body: JSON.stringify({ email: email.trim(), role })
+        body: JSON.stringify({ email: invitedEmail, role })
       });
       setEmail("");
+      // A not-yet-registered email is stored as a pending invite (claimed on sign-up).
+      if (result && typeof result === "object" && (result as Record<string, unknown>).pending === true) {
+        setFormNotice(`Invited ${invitedEmail} — they'll join when they sign up for AgentKitMarket.`);
+      }
       load();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to add member.");
@@ -429,6 +436,12 @@ export function OrgMembersPanel({ orgId }: { orgId: string }) {
           <div className="rule-callout danger-callout">
             <strong>Error</strong>
             <span>{formError}</span>
+          </div>
+        )}
+        {formNotice && (
+          <div className="rule-callout">
+            <strong>Invited</strong>
+            <span>{formNotice}</span>
           </div>
         )}
         <label className="field-label">

@@ -206,11 +206,17 @@ const TABLE_DEFINITIONS: CreateTableCommandInput[] = [
     AttributeDefinitions: [
       { AttributeName: 'orgId', AttributeType: S },
       { AttributeName: 'userId', AttributeType: S },
+      { AttributeName: 'email', AttributeType: S },
     ],
     GlobalSecondaryIndexes: [
       {
         IndexName: 'userId-index',
         KeySchema: [{ AttributeName: 'userId', KeyType: 'HASH' }],
+        Projection: { ProjectionType: 'ALL' },
+      },
+      {
+        IndexName: 'email-index',
+        KeySchema: [{ AttributeName: 'email', KeyType: 'HASH' }],
         Projection: { ProjectionType: 'ALL' },
       },
     ],

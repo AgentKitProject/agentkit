@@ -50,6 +50,7 @@ export const auditActionSchema = z.enum([
   "org.created",
   "org.member_added",
   "org.member_removed",
+  "org.invite_created",
   "org.invite_accepted",
   "org.deleted",
   // entitlement lifecycle

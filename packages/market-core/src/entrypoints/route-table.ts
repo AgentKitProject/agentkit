@@ -44,6 +44,8 @@ export const ROUTES: RoutePattern[] = [
   { method: 'POST', template: '/admin/orgs/{orgId}/members' },
   { method: 'DELETE', template: '/admin/orgs/{orgId}/members/{userId}' },
   { method: 'GET', template: '/admin/users/{userId}/invites' },
+  { method: 'POST', template: '/admin/users/{userId}/invites/claim' },
+  { method: 'POST', template: '/admin/orgs/{orgId}/invites/email' },
   { method: 'POST', template: '/admin/orgs/{orgId}/invites/{userId}/accept' },
   { method: 'POST', template: '/admin/kits/{kitId}/transfer' },
   { method: 'POST', template: '/admin/kits/{kitId}/visibility' },

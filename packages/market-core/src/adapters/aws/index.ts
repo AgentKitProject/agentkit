@@ -749,6 +749,30 @@ function isInvite(item: unknown): item is OrgInvite {
     && typeof (item as { invitedByUserId?: unknown }).invitedByUserId === 'string';
 }
 
+/**
+ * Sentinel sort key (userId) for email-only invites. OrgInvites is keyed by
+ * (orgId, userId), so an email invite (no userId yet) uses `email#<normalized-email>`.
+ * Stripped back out by toEmailInvite; never matches a real userId in listInvitesForUser.
+ */
+const EMAIL_INVITE_USER_ID_PREFIX = 'email#';
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function emailInviteUserId(email: string): string {
+  return `${EMAIL_INVITE_USER_ID_PREFIX}${normalizeEmail(email)}`;
+}
+
+/** Maps a stored invite item to OrgInvite, stripping the email-invite sentinel userId. */
+function toReturnedInvite(item: OrgInvite): OrgInvite {
+  if (typeof item.userId === 'string' && item.userId.startsWith(EMAIL_INVITE_USER_ID_PREFIX)) {
+    const { userId: _userId, ...rest } = item;
+    return rest;
+  }
+  return item;
+}
+
 export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepository {
   const { organizationsTableName, orgMembershipsTableName, orgInvitesTableName, kitsTableName } = config;
   const dynamo = buildDynamoDocumentClient(config.client);
@@ -929,6 +953,66 @@ export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepositor
       return (result.Items ?? [])
         .filter(isInvite)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+
+    async createEmailInvite(orgId: string, email: string, role: OrgRole, invitedBy: string): Promise<OrgInvite> {
+      const now = new Date().toISOString();
+      const normalized = normalizeEmail(email);
+      // Sentinel userId keeps the (orgId, userId) key valid for email-only invites.
+      const item: OrgInvite & { userId: string } = {
+        orgId, userId: emailInviteUserId(normalized), email: normalized, role, invitedByUserId: invitedBy, createdAt: now,
+      };
+      await dynamo.send(new PutCommand({ TableName: orgInvitesTableName, Item: item }));
+      return { orgId, email: normalized, role, invitedByUserId: invitedBy, createdAt: now };
+    },
+
+    async listInvitesByEmail(email: string): Promise<OrgInvite[]> {
+      const normalized = normalizeEmail(email);
+      const result = await dynamo.send(new QueryCommand({
+        TableName: orgInvitesTableName,
+        IndexName: 'email-index',
+        KeyConditionExpression: 'email = :email',
+        ExpressionAttributeValues: { ':email': normalized },
+      }));
+      return (result.Items ?? [])
+        .filter(isInvite)
+        .map(toReturnedInvite)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+
+    async claimInvitesByEmail(email: string, userId: string): Promise<OrgMembership[]> {
+      const normalized = normalizeEmail(email);
+      const result = await dynamo.send(new QueryCommand({
+        TableName: orgInvitesTableName,
+        IndexName: 'email-index',
+        KeyConditionExpression: 'email = :email',
+        ExpressionAttributeValues: { ':email': normalized },
+      }));
+      const invites = (result.Items ?? []).filter(isInvite);
+      const memberships: OrgMembership[] = [];
+      for (const invite of invites) {
+        const existing = await dynamo.send(new GetCommand({
+          TableName: orgMembershipsTableName,
+          Key: { orgId: invite.orgId, userId },
+        }));
+        const existingMembership = isMembership(existing.Item) ? existing.Item : undefined;
+        // Idempotent: skip orgs the user is already an active member of.
+        if (!existingMembership || existingMembership.status !== 'active') {
+          const now = new Date().toISOString();
+          const membership: OrgMembership = {
+            orgId: invite.orgId, userId, role: invite.role, status: 'active',
+            invitedByUserId: invite.invitedByUserId, createdAt: now,
+          };
+          await dynamo.send(new PutCommand({ TableName: orgMembershipsTableName, Item: membership }));
+          memberships.push(membership);
+        }
+        // Delete the email invite (stored under its sentinel userId).
+        await dynamo.send(new DeleteCommand({
+          TableName: orgInvitesTableName,
+          Key: { orgId: invite.orgId, userId: emailInviteUserId(normalized) },
+        }));
+      }
+      return memberships;
     },
 
     async removeMember(orgId: string, userId: string): Promise<void> {
