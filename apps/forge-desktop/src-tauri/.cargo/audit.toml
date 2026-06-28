@@ -1,0 +1,50 @@
+# cargo-audit configuration for the desktop-Forge (Tauri) crate.
+#
+# POLICY: real VULNERABILITIES still fail the audit (we do NOT relax that).
+# Only ACCEPTED informational advisories — `unmaintained` / `unsound` warnings
+# that come from transitive GTK3 / Tauri-stack dependencies we don't control and
+# can't currently upgrade away — are ignored here, each with a rationale. New or
+# real vulnerabilities (e.g. a future RUSTSEC vuln advisory) are NOT in this list,
+# so they will still fail the `cargo audit` step.
+#
+# When a listed crate finally publishes a maintained successor (or Tauri drops the
+# GTK3 stack), remove its entry so the audit re-surfaces it.
+
+[advisories]
+# Warnings (unmaintained/unsound) are already non-fatal in cargo-audit by default;
+# we additionally pin them as explicitly-accepted so the acceptance is auditable
+# and so the policy is robust if warning handling is ever tightened.
+ignore = [
+  # --- gtk-rs GTK3 bindings: "no longer maintained" (unmaintained). Pulled in
+  #     transitively by Tauri's Linux WebKitGTK webview; no maintained drop-in
+  #     replacement until the Tauri/GTK ecosystem moves off GTK3. ---
+  "RUSTSEC-2024-0411", # gdkwayland-sys - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0412", # gdk            - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0413", # atk            - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0414", # gdkx11-sys     - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0415", # gtk            - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0416", # atk-sys        - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0417", # gdkx11         - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0418", # gdk-sys        - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0419", # gtk3-macros    - gtk-rs GTK3 bindings unmaintained
+  "RUSTSEC-2024-0420", # gtk-sys        - gtk-rs GTK3 bindings unmaintained
+
+  # --- glib: unsound iterator impl (unsound, not a remote vuln); transitive via
+  #     the same GTK3 webview stack. Accepted until the GTK3 stack is replaced. ---
+  "RUSTSEC-2024-0429", # glib - VariantStrIter Iterator/DoubleEndedIterator unsoundness
+
+  # --- proc-macro-error: unmaintained (also flagged directly). ---
+  "RUSTSEC-2024-0370", # proc-macro-error - unmaintained
+
+  # --- unic-* crates: unmaintained Unicode helper crates pulled in transitively
+  #     (idna / address parsing). No security impact; no maintained fork wired up. ---
+  "RUSTSEC-2025-0075", # unic-char-range    - unmaintained
+  "RUSTSEC-2025-0080", # unic-common        - unmaintained
+  "RUSTSEC-2025-0081", # unic-char-property - unmaintained
+  "RUSTSEC-2025-0098", # unic-ucd-version   - unmaintained
+  "RUSTSEC-2025-0100", # unic-ucd-ident     - unmaintained
+
+  # NOTE: RUSTSEC-2026-0185 (quinn-proto remote memory exhaustion, sev 7.5) is a
+  # REAL vulnerability and is deliberately NOT ignored — it is fixed by pinning
+  # quinn-proto >= 0.11.15 in Cargo.lock. Do not add it here.
+]

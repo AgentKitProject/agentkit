@@ -1,9 +1,10 @@
 name: forge-desktop-security
 
-# Desktop-Forge dependency security audits (npm + RustSec). Re-homed from the
+# Desktop-Forge dependency security audits (pnpm + RustSec). Re-homed from the
 # standalone agentkitforge-app repo into the monorepo. Path-scoped to
 # apps/forge-desktop/** so unrelated monorepo changes don't trigger it.
-# Covers checks the root ci.yml does NOT: npm audit (prod critical) + cargo-audit.
+# Covers checks the root ci.yml does NOT: pnpm audit (prod critical) + cargo-audit.
+# RustSec accepted-advisory policy lives in apps/forge-desktop/src-tauri/.cargo/audit.toml.
 
 on:
   pull_request:
@@ -24,29 +25,29 @@ permissions:
 
 jobs:
   npm-audit:
-    name: npm audit
+    name: npm audit (pnpm workspace)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        # Monorepo: run npm against the desktop app's own package-lock.json.
-        working-directory: apps/forge-desktop
+    # forge-desktop is a pnpm workspace member (no own package-lock.json), so audit
+    # the workspace via pnpm against the root pnpm-lock.yaml. This covers the desktop
+    # app's npm deps (plus the rest of the workspace).
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          # `cache` path inputs are repo-root-relative (working-directory does not apply).
-          cache-dependency-path: apps/forge-desktop/package-lock.json
+          cache: pnpm
 
       - name: Audit production dependencies for critical vulnerabilities
-        run: npm audit --audit-level=critical --omit=dev --package-lock-only
+        run: pnpm audit --prod --audit-level critical
 
-      - name: Report high npm vulnerabilities
-        run: npm audit --audit-level=high --package-lock-only
+      - name: Report high vulnerabilities
+        run: pnpm audit --audit-level high
         continue-on-error: true
 
   rustsec:
@@ -82,6 +83,9 @@ jobs:
 
       - name: Audit Rust dependencies
         # step-level working-directory is resolved from the repo root, so spell out
-        # the full monorepo path (it overrides the job default).
+        # the full monorepo path (it overrides the job default). cargo-audit auto-loads
+        # the accepted-advisory ignore policy from this dir's .cargo/audit.toml, so REAL
+        # vulnerabilities still fail; only documented unmaintained/unsound transitive
+        # warnings are ignored.
         working-directory: apps/forge-desktop/src-tauri
         run: cargo audit

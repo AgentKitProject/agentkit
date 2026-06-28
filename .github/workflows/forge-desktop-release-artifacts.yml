@@ -129,10 +129,11 @@ jobs:
       run:
         # Monorepo: the desktop app lives at apps/forge-desktop. This makes every
         # bash AND pwsh `run:` step in this job execute from there, so the inherited
-        # `src-tauri/...`, `package.json`, and `npm run ...` relative paths still work.
+        # `src-tauri/...`, `package.json`, and `pnpm run ...` relative paths still work.
         # NOTE: this does NOT affect `uses:` action `path:`/`with:` inputs (those are
         # repo-root-relative) or `actions/github-script` JS (cwd = repo root) — those
-        # are remapped explicitly below.
+        # are remapped explicitly below. The dependency install step below overrides
+        # this back to the repo root so pnpm resolves the whole workspace.
         working-directory: apps/forge-desktop
     steps:
       - name: Check out requested tag
@@ -140,14 +141,17 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          # `cache` path inputs are repo-root-relative (working-directory does not
-          # apply to actions), so point npm caching at the desktop app's lockfile.
-          cache-dependency-path: apps/forge-desktop/package-lock.json
+          # pnpm workspace member: install runs at the repo root against the root
+          # pnpm-lock.yaml (which resolves forge-desktop's workspace:* deps), so cache
+          # by pnpm — no per-app cache-dependency-path.
+          cache: pnpm
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -314,7 +318,11 @@ jobs:
           }
 
       - name: Install dependencies
-        run: npm ci
+        # pnpm resolves the WHOLE workspace (incl. forge-desktop's workspace:* deps),
+        # so install must run at the repo root, not inside apps/forge-desktop. Override
+        # the job-level working-directory back to the repo root for this step only.
+        working-directory: .
+        run: pnpm install --frozen-lockfile
 
       - name: Validate Tauri updater signing secrets
         shell: pwsh
@@ -335,7 +343,7 @@ jobs:
           }
 
       - name: Build backend runtime
-        run: npm run build:backend
+        run: pnpm run build:backend
 
       - name: Verify backend bundle exists
         shell: pwsh
@@ -345,7 +353,7 @@ jobs:
           }
 
       - name: Run checks
-        run: npm run check
+        run: pnpm run check
 
       - name: Build Tauri app
         if: ${{ matrix.platform != 'macos' }}
@@ -353,7 +361,7 @@ jobs:
           AGENTKITPROJECT_WORKOS_CLIENT_ID: ${{ vars.AGENTKITPROJECT_WORKOS_CLIENT_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run build:tauri -- --config src-tauri/tauri.updater.conf.json
+        run: pnpm run build:tauri -- --config src-tauri/tauri.updater.conf.json
 
       - name: Build signed Tauri app bundle
         if: ${{ matrix.platform == 'macos' }}
@@ -364,7 +372,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run build:tauri -- --config src-tauri/tauri.updater.conf.json --bundles app
+        run: pnpm run build:tauri -- --config src-tauri/tauri.updater.conf.json --bundles app
 
       - name: Sign macOS Node sidecar with V8 entitlements
         if: ${{ matrix.platform == 'macos' }}
@@ -434,7 +442,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm exec tauri -- bundle --config src-tauri/tauri.updater.conf.json --bundles dmg
+        run: pnpm exec tauri -- bundle --config src-tauri/tauri.updater.conf.json --bundles dmg
 
       - name: Finalize signed macOS release artifacts
         if: ${{ matrix.platform == 'macos' }}
@@ -560,7 +568,7 @@ jobs:
           COPYFILE_DISABLE=1 tar -czf "$update_archive" -C "$dmg_source_dir" "$app_name"
 
           echo "Signing finalized macOS updater archive."
-          npm exec tauri -- signer sign "$update_archive"
+          pnpm exec tauri -- signer sign "$update_archive"
           if [ ! -f "$update_archive.sig" ]; then
             echo "Tauri updater signature was not created at $update_archive.sig" >&2
             exit 1
@@ -593,10 +601,10 @@ jobs:
         run: find src-tauri/target/release/bundle -maxdepth 5 -type f | sort
 
       - name: Verify bundled backend runtime
-        run: npm run check:backend
+        run: pnpm run check:backend
 
       - name: Verify Tauri sidecar output
-        run: npm run check:tauri-sidecar
+        run: pnpm run check:tauri-sidecar
 
       - name: Verify macOS signing and notarization
         if: ${{ matrix.platform == 'macos' }}
