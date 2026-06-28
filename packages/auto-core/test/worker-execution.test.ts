@@ -210,6 +210,35 @@ describe("worker execution path (processAutoRun, mocked Anthropic — no real sp
     expect(persisted?.result?.files.some((f) => f.path === "out.txt")).toBe(true);
   });
 
+  it("marks the run FAILED (not stuck 'queued') when kit-context resolution throws (M6: lost entitlement)", async () => {
+    // A PROTECTED Market kit whose buyer is no longer entitled: the injected
+    // resolveKitContext hook throws (the real one surfaces the Market 403). The
+    // worker must record the run as terminal-FAILED and re-throw — never leave it
+    // stuck "queued" (which would never settle / could be re-picked by a retry).
+    const { runs, approvals, storage } = buildStorage();
+    const run = await seedApprovedRun(runs, approvals, { inferenceMode: "managed" });
+
+    const provider = new FakeChatProvider([textResponse("SHOULD NOT BE CALLED")]);
+    const deps: ProcessAutoRunDeps = {
+      storage,
+      chatProvider: provider,
+      ledger: new RecordingLedger(),
+      inferenceMode: "managed",
+      resolveKitContext: async () => {
+        throw new Error("The user is not entitled to this protected kit.");
+      },
+      now: noopNow,
+      markupBps: 2500,
+    };
+
+    await expect(processAutoRun(run.id, deps)).rejects.toThrow(/not entitled/i);
+    // No inference ran and no result was produced.
+    expect(provider.calls).toBe(0);
+    const persisted = await runs.getRun(run.id);
+    expect(persisted?.status).toBe("failed");
+    expect(persisted?.result).toBeUndefined();
+  });
+
   it("BYO mode calls the provider directly and never debits inference", async () => {
     const { runs, approvals, storage } = buildStorage();
     const run = await seedApprovedRun(runs, approvals, { inferenceMode: "byo" });

@@ -145,7 +145,23 @@ export async function processAutoRun(
   }
 
   // ---- Resolve kit context ------------------------------------------------
-  const kit = await deps.resolveKitContext(run, appr);
+  // Context resolution can fail closed — e.g. a PROTECTED Market kit whose buyer
+  // is no longer entitled (the Market service returns 403 → the resolver throws).
+  // That refusal MUST mark the run terminal (failed), not leave it stuck "queued":
+  // a stuck queued run would never reach a terminal status, never settle billing,
+  // and could be re-picked by a retry. We record the failure and re-throw the
+  // ORIGINAL error (status only — never a message that could echo kit text). The
+  // resolver itself is contracted to never put the kit prompt in its error message.
+  let kit: ResolvedKitContext;
+  try {
+    kit = await deps.resolveKitContext(run, appr);
+  } catch (err) {
+    await runs.updateRunStatus(runId, "failed", {
+      finishedAt: now(),
+      error: err instanceof Error ? err.message : "kit context resolution failed",
+    });
+    throw err;
+  }
 
   // ---- Billing mode + provider selection ---------------------------------
   const inferenceMode: InferenceMode =
