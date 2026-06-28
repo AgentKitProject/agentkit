@@ -351,6 +351,12 @@ jobs:
       - name: Build backend runtime
         run: pnpm run build:backend
 
+      - name: Prepare Node sidecar
+        # Bundle the platform Node runtime into src-tauri/binaries (check:backend +
+        # the packaged app need it). The monorepo's root pnpm install doesn't trigger
+        # the postinstall hook the standalone repo relied on — run it explicitly.
+        run: pnpm run prepare:sidecar
+
       - name: Verify backend bundle exists
         shell: pwsh
         run: |
