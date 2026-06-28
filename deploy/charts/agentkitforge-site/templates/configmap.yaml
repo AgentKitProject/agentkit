@@ -1,0 +1,35 @@
+{{- /*
+nginx reverse-proxy config for the Forge download front door.
+
+Behaviour (matches the live ConfigMap byte-for-byte when cdnHost +
+resolvers + port are at their defaults):
+  - /releases/  -> 302 redirect straight to the CDN (artifacts are immutable,
+                   long-cached; the browser fetches them from the edge directly).
+  - /updates/   -> proxy to the CDN (the Tauri updater manifest; SNI + Host set so
+                   the Spaces CDN serves the right bucket).
+  - /           -> proxy to the CDN with a trailing-slash -> /index.html rewrite,
+                   because the Spaces CDN has NO index-document support (the reason
+                   for this proxy pod at all — see the M4 pivot).
+The `resolver` is needed so nginx can re-resolve the CDN hostname at runtime
+(it is referenced via the $cdn variable, which defers DNS to request time).
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentkitforge-site.configmapName" . }}
+  labels:
+    {{- include "agentkitforge-site.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+      listen {{ .Values.port }};
+      resolver {{ .Values.resolvers }} valid=300s ipv6=off;
+      set $cdn "{{ .Values.cdnHost }}";
+      location /releases/ { return 302 https://{{ .Values.cdnHost }}$request_uri; }
+      location /updates/ { proxy_pass https://$cdn; proxy_ssl_server_name on; proxy_set_header Host $cdn; }
+      location / {
+        proxy_ssl_server_name on; proxy_set_header Host $cdn;
+        rewrite ^(.*)/$ $1/index.html break;
+        proxy_pass https://$cdn;
+      }
+    }

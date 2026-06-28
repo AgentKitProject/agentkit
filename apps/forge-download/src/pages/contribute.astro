@@ -1,0 +1,98 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const repos = [
+  {
+    title: 'AgentKitForge Core',
+    href: 'https://github.com/AgentKitProject/agentkitforge-core',
+    issues: 'https://github.com/AgentKitProject/agentkitforge-core/issues',
+    pulls: 'https://github.com/AgentKitProject/agentkitforge-core/pulls',
+    body:
+      'Agent Kit spec, validation, packaging, CLI, prepared prompts, exporters, and adapters.'
+  },
+  {
+    title: 'AgentKitForge App',
+    href: 'https://github.com/AgentKitProject/agentkitforge-app',
+    issues: 'https://github.com/AgentKitProject/agentkitforge-app/issues',
+    pulls: 'https://github.com/AgentKitProject/agentkitforge-app/pulls',
+    body:
+      'Desktop app UX, providers, build/use/import/export workflows, local agent install, settings, and docs.'
+  }
+];
+---
+<BaseLayout title="GitHub and Contribute">
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">GitHub</p>
+      <h1>Contribute to AgentKitForge.</h1>
+      <p class="lead">
+        AgentKitForge public contributions should focus on the app and core toolkit. The website
+        and deployment infrastructure are maintained privately for now.
+      </p>
+      <div class="content-panel contribute-panel">
+        <h2>Public contribution repos</h2>
+        <div class="grid two repo-grid">
+          {repos.map((repo) => (
+            <article class="repo-card">
+              <h3>{repo.title}</h3>
+              <p>{repo.body}</p>
+              <div class="repo-actions">
+                <a class="button" href={repo.href} target="_blank" rel="noreferrer">View repo</a>
+                <a href={repo.issues} target="_blank" rel="noreferrer">Issues</a>
+                <a href={repo.pulls} target="_blank" rel="noreferrer">Pull requests</a>
+              </div>
+            </article>
+          ))}
+        </div>
+        <p class="scope-note">
+          Product docs content can be suggested through issues or pull requests where applicable.
+          Website and deployment infrastructure are maintained privately. Public contributions should
+          not target infrastructure, marketplace backend, payments, private organization repository
+          systems, or other product backend services.
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .contribute-panel {
+    margin-top: 2rem;
+  }
+
+  .repo-grid {
+    margin-top: 1.5rem;
+  }
+
+  .repo-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 1.25rem;
+  }
+
+  .repo-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 1.5rem;
+  }
+
+  .repo-actions a:not(.button) {
+    color: var(--primary);
+    font-weight: 800;
+  }
+
+  .scope-note {
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-top: 1.5rem;
+    padding: 1rem;
+  }
+</style>

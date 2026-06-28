@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# agentkitforge-site — Forge download-site front door (DEFAULT values).
+#
+# A tiny stateless nginx reverse proxy fronting forge.agentkitproject.com. It
+# exists because the DigitalOcean Spaces CDN has NO index-document support and so
+# cannot serve the multi-page Astro download site directly (the M4 pivot away
+# from a Spaces-CDN custom domain + uploaded cert). Instead:
+#
+#   browser -> DOKS ingress-nginx (TLS via cert-manager / letsencrypt-prod)
+#           -> this nginx proxy pod (directory -> /index.html rewrite)
+#           -> Spaces CDN native endpoint  (caching preserved)
+#
+# The Spaces bucket + a PLAIN CDN (no custom_domain, no cert) still exist and are
+# managed by Tofu (modules/forge-release-hosting); only the CDN's custom domain +
+# uploaded cert were dropped. Release artifacts are 302-redirected straight to the
+# CDN; everything else is proxied with the index rewrite.
+#
+# Resource names are intentionally the bare chart name (`agentkitforge-site`) so
+# this chart ADOPTS the already-live cluster objects rather than recreating them.
+# ---------------------------------------------------------------------------
+
+# Escape hatch only — leave empty so resource names stay `agentkitforge-site`
+# (matching the live objects for clean ArgoCD adoption).
+fullnameOverride: ""
+
+# nginx image. Alpine variant — tiny, no app code (config-only).
+image: nginx:1.27-alpine
+imagePullPolicy: IfNotPresent
+
+# Two replicas for HA (the proxy is stateless).
+replicas: 2
+
+# Listen / Service / container port. nginx in the configmap listens here too.
+port: 8080
+
+# The DigitalOcean Spaces CDN native endpoint the proxy targets (caching is
+# served here). NOT a custom domain — the public host is handled by the ingress.
+cdnHost: agentkit-forge-releases.nyc3.cdn.digitaloceanspaces.com
+
+# Public host served by the ingress (hard-coded into shipped Tauri binaries via
+# the updater URL — must never change).
+host: forge.agentkitproject.com
+
+# ingress-nginx class + the cert-manager ClusterIssuer that mints the TLS cert
+# into tlsSecret via HTTP-01. cert-manager OWNS tlsSecret — the chart does NOT
+# create it.
+ingressClassName: nginx
+clusterIssuer: letsencrypt-prod
+tlsSecret: agentkitforge-tls
+
+# DNS resolvers nginx uses to re-resolve the CDN hostname at request time (the
+# $cdn variable defers resolution, so an explicit resolver is required).
+resolvers: "8.8.8.8 1.1.1.1"
+
+service:
+  type: ClusterIP
+
+# Tiny footprint — this pod only shuffles bytes between the ingress and the CDN.
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 64Mi

@@ -1,0 +1,26 @@
+---
+import { docsPages } from '../../data/docs';
+
+export function getStaticPaths() {
+  return docsPages.map((page) => ({
+    params: { slug: page.slug },
+    props: { slug: page.slug }
+  }));
+}
+
+const { slug } = Astro.props as { slug: string };
+const dest = `https://docs.agentkitproject.com/${slug}/`;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${dest}`} />
+    <link rel="canonical" href={dest} />
+    <title>Redirecting to docs.agentkitproject.com…</title>
+    <script define:vars={{ dest }}>window.location.replace(dest);</script>
+  </head>
+  <body>
+    <p>This page has moved. <a href={dest}>Go to the new docs →</a></p>
+  </body>
+</html>

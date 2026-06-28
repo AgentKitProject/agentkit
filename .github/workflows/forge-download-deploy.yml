@@ -1,0 +1,58 @@
+name: forge-download-deploy
+
+# Build apps/forge-download (Astro) and publish the static desktop-Forge download
+# site to the DigitalOcean Spaces bucket behind forge.agentkitproject.com.
+#
+# Replaces the legacy AWS S3 + CloudFront deploy (agentkitforge-infra) for the
+# M4 AWS->DO migration. Release ARTIFACTS (/releases/*) are handled separately by
+# forge-release-mirror.yml; this workflow only publishes the site + the
+# committed /updates/latest.json (short-cached), never the artifacts.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/forge-download/**"
+      - "packages/ui/**"
+      - ".github/workflows/forge-download-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: forge-download-deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build forge-download (+ workspace deps)
+        run: pnpm --filter @agentkitproject/forge-download... build
+
+      - name: Verify static output
+        run: |
+          test -d apps/forge-download/dist
+          test -f apps/forge-download/dist/index.html
+          test -f apps/forge-download/dist/updates/latest.json
+
+      - name: Deploy to DO Spaces
+        working-directory: apps/forge-download
+        env:
+          # Spaces keys (S3-compatible). Stored as GitHub secrets; the harvested
+          # key MUST have its grant extended to the agentkit-forge-releases
+          # bucket first (see module README CHECKPOINT).
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+          SPACES_BUCKET: ${{ vars.FORGE_SPACES_BUCKET || 'agentkit-forge-releases' }}
+          SPACES_ENDPOINT: ${{ vars.FORGE_SPACES_ENDPOINT || 'https://nyc3.digitaloceanspaces.com' }}
+          # Optional CDN flush of /updates/latest.json.
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          CDN_ID: ${{ vars.FORGE_CDN_ID }}
+        run: |
+          chmod +x scripts/deploy-spaces.sh
+          scripts/deploy-spaces.sh

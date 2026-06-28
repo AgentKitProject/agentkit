@@ -1,0 +1,299 @@
+name: forge-release-mirror
+
+# Mirror a published desktop-Forge (agentkitforge-app) GitHub Release to the
+# DigitalOcean Spaces bucket behind forge.agentkitproject.com:
+#   - downloads the release artifacts + .sig signatures (byte-identical),
+#   - regenerates /updates/latest.json (Tauri updater manifest) and
+#     src/data/releases.json (download page),
+#   - uploads artifacts to s3://<bucket>/releases/v<version>/ (immutable cache),
+#   - uploads latest.json with a SHORT cache (max-age=60) + flushes the CDN.
+#
+# Re-homed from agentkitforge-infra and rewritten for DO Spaces (M4 AWS->DO).
+#
+# DRAIN: --release-base-url is now https://forge.agentkitproject.com/releases/...
+# (was https://agentkitforge.com/...). This is the manifest change that lets the
+# legacy domain be retired after a soak. Artifacts are still ALSO reachable at
+# agentkitforge.com via the transitional second CDN (same bucket) so <=0.6.2
+# installs keep updating until then.
+
+on:
+  repository_dispatch:
+    types:
+      - app-release-published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to mirror, e.g. 0.7.0"
+        required: true
+      tag:
+        description: "Git tag, e.g. v0.7.0"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forge-release-mirror
+  cancel-in-progress: false
+
+env:
+  PRIMARY_BASE_URL: https://forge.agentkitproject.com
+
+jobs:
+  mirror:
+    name: Mirror app release to DO Spaces
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: apps/forge-download
+    env:
+      DEFAULT_SOURCE_REPO: AgentKitProject/agentkitforge-app
+      DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+      DISPATCH_TAG: ${{ github.event.client_payload.tag }}
+      DISPATCH_REPOSITORY: ${{ github.event.client_payload.repository }}
+      DISPATCH_RELEASE_URL: ${{ github.event.client_payload.release_url }}
+      INPUT_VERSION: ${{ inputs.version }}
+      INPUT_TAG: ${{ inputs.tag }}
+      # Spaces upload target (S3-compatible).
+      SPACES_BUCKET: ${{ vars.FORGE_SPACES_BUCKET || 'agentkit-forge-releases' }}
+      SPACES_ENDPOINT: ${{ vars.FORGE_SPACES_ENDPOINT || 'https://nyc3.digitaloceanspaces.com' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+      # CDN flush of /updates/latest.json.
+      DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      CDN_ID: ${{ vars.FORGE_CDN_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Resolve release inputs
+        shell: bash
+        run: |
+          VERSION="${INPUT_VERSION:-$DISPATCH_VERSION}"
+          VERSION="${VERSION#v}"
+          TAG="${INPUT_TAG:-$DISPATCH_TAG}"
+          TAG="${TAG:-v$VERSION}"
+          SOURCE_REPO="${DISPATCH_REPOSITORY:-$DEFAULT_SOURCE_REPO}"
+          RELEASE_URL="${DISPATCH_RELEASE_URL:-https://github.com/$SOURCE_REPO/releases/tag/$TAG}"
+          BASE_URL="https://github.com/$SOURCE_REPO/releases/download/$TAG"
+
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Missing release version. Provide workflow_dispatch input version or repository_dispatch client_payload.version."
+            exit 1
+          fi
+
+          if [[ "$SOURCE_REPO" != "$DEFAULT_SOURCE_REPO" ]]; then
+            echo "::error::Unexpected release source repository: $SOURCE_REPO"
+            exit 1
+          fi
+
+          if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+            echo "::error::Missing required Spaces secrets SPACES_ACCESS_KEY_ID / SPACES_SECRET_ACCESS_KEY."
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "SOURCE_REPO=$SOURCE_REPO" >> "$GITHUB_ENV"
+          echo "RELEASE_URL=$RELEASE_URL" >> "$GITHUB_ENV"
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          : > release-assets/mirrored-assets.txt
+          : > release-assets/platforms-found.txt
+
+          echo "Fetching release metadata from GitHub."
+          curl -fsSL "https://api.github.com/repos/$SOURCE_REPO/releases/tags/$TAG" \
+            -o release-assets/release.json
+
+          node -e "const release = require('./release-assets/release.json'); for (const asset of release.assets || []) console.log(asset.name);" \
+            > release-assets/available-assets.txt
+
+          echo "Available release assets:"
+          sed 's/^/- /' release-assets/available-assets.txt
+
+          asset_exists() {
+            grep -Fxq "$1" release-assets/available-assets.txt
+          }
+
+          download_asset() {
+            local asset="$1"
+            if grep -Fxq "$asset" release-assets/mirrored-assets.txt; then
+              echo "asset already downloaded: $asset"
+              return
+            fi
+
+            echo "Downloading asset: $asset"
+            curl -fL "$BASE_URL/$asset" -o "release-assets/$asset"
+            echo "$asset" >> release-assets/mirrored-assets.txt
+          }
+
+          maybe_download_asset() {
+            local asset="$1"
+            if asset_exists "$asset"; then
+              download_asset "$asset"
+            else
+              echo "optional asset not found, skipping: $asset"
+            fi
+          }
+
+          windows_assets=(
+            "AgentKitForge-${VERSION}-setup.exe"
+            "AgentKitForge-${VERSION}-x64.msi"
+          )
+          macos_assets=(
+            "AgentKitForge-${VERSION}-macos.dmg"
+            "AgentKitForge-${VERSION}-macos-x64.dmg"
+            "AgentKitForge-${VERSION}-macos-arm64.dmg"
+            "AgentKitForge-${VERSION}-macos-universal.dmg"
+          )
+          linux_assets=(
+            "AgentKitForge-${VERSION}-linux-x86_64.AppImage"
+            "AgentKitForge-${VERSION}-linux-x64.AppImage"
+            "AgentKitForge-${VERSION}-linux-amd64.AppImage"
+            "AgentKitForge-${VERSION}-linux.AppImage"
+            "AgentKitForge-${VERSION}-linux-amd64.deb"
+            "AgentKitForge-${VERSION}-linux-x86_64.deb"
+            "AgentKitForge-${VERSION}-linux.deb"
+            "AgentKitForge-${VERSION}-linux-x86_64.rpm"
+            "AgentKitForge-${VERSION}-linux-amd64.rpm"
+            "AgentKitForge-${VERSION}-linux.rpm"
+          )
+
+          mirror_platform() {
+            local platform="$1"
+            local checksum="$2"
+            shift 2
+            local found="false"
+
+            for asset in "$@"; do
+              if asset_exists "$asset"; then
+                found="true"
+                break
+              fi
+            done
+
+            if [[ "$found" != "true" ]]; then
+              echo "No $platform artifacts found; skipping $platform."
+              return
+            fi
+
+            if ! asset_exists "$checksum"; then
+              echo "::error::$platform artifacts were found but $checksum is missing."
+              exit 1
+            fi
+
+            echo "$platform" >> release-assets/platforms-found.txt
+            for asset in "$@"; do
+              maybe_download_asset "$asset"
+            done
+            download_asset "$checksum"
+          }
+
+          mirror_platform "Windows" "AgentKitForge-${VERSION}-windows-checksums.txt" "${windows_assets[@]}"
+          mirror_platform "macOS" "AgentKitForge-${VERSION}-macos-checksums.txt" "${macos_assets[@]}"
+          mirror_platform "Linux" "AgentKitForge-${VERSION}-linux-checksums.txt" "${linux_assets[@]}"
+
+          if [[ ! -s release-assets/platforms-found.txt ]]; then
+            echo "::error::No release artifacts found for v${VERSION}."
+            exit 1
+          fi
+
+          maybe_download_asset "RELEASE_NOTES.md"
+
+          update_metadata="AgentKitForge-${VERSION}-update-metadata.json"
+          if asset_exists "$update_metadata"; then
+            download_asset "$update_metadata"
+
+            node scripts/generate-tauri-updater-manifest.mjs \
+              --metadata "release-assets/$update_metadata" \
+              --version "$VERSION" \
+              --release-base-url "${PRIMARY_BASE_URL}/releases/v$VERSION" \
+              --assets-dir release-assets \
+              --asset-list release-assets/available-assets.txt \
+              --required-assets-out release-assets/updater-assets.txt \
+              --out public/updates/latest.json \
+              --plan-only
+
+            while IFS= read -r asset; do
+              [[ -z "$asset" ]] && continue
+              download_asset "$asset"
+            done < release-assets/updater-assets.txt
+
+            node scripts/generate-tauri-updater-manifest.mjs \
+              --metadata "release-assets/$update_metadata" \
+              --version "$VERSION" \
+              --release-base-url "${PRIMARY_BASE_URL}/releases/v$VERSION" \
+              --assets-dir release-assets \
+              --out public/updates/latest.json
+          else
+            echo "Updater metadata $update_metadata was not present; leaving /updates/latest.json unchanged."
+          fi
+
+          echo "Mirrored assets:"
+          sed 's/^/- /' release-assets/mirrored-assets.txt
+
+      - name: Update release metadata (download page)
+        run: |
+          node scripts/update-release-metadata.mjs \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --repository "$SOURCE_REPO" \
+            --release-url "$RELEASE_URL" \
+            --assets-file release-assets/mirrored-assets.txt \
+            --metadata-path src/data/releases.json
+
+      - name: Install + build site
+        working-directory: .
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm --filter @agentkitproject/forge-download... build
+
+      - name: Upload release artifacts to Spaces
+        shell: bash
+        run: |
+          DESTINATION="s3://$SPACES_BUCKET/releases/v$VERSION/"
+          while IFS= read -r asset; do
+            [[ -z "$asset" ]] && continue
+            aws s3 cp "release-assets/$asset" "$DESTINATION$asset" \
+              --endpoint-url "$SPACES_ENDPOINT" \
+              --acl public-read \
+              --cache-control "public,max-age=31536000,immutable"
+          done < release-assets/mirrored-assets.txt
+
+      - name: Deploy site + updater manifest to Spaces
+        run: |
+          chmod +x scripts/deploy-spaces.sh
+          scripts/deploy-spaces.sh
+
+      - name: Commit release metadata
+        working-directory: .
+        shell: bash
+        run: |
+          if git diff --quiet -- apps/forge-download/src/data/releases.json apps/forge-download/public/updates/latest.json; then
+            echo "No release metadata changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/forge-download/src/data/releases.json apps/forge-download/public/updates/latest.json
+          git commit -m "chore: mirror AgentKitForge v${VERSION} release"
+          git push
+
+      - name: Summary
+        run: |
+          echo "Mirrored AgentKitForge $VERSION to DO Spaces ($SPACES_BUCKET)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Updater base URL: ${PRIMARY_BASE_URL}/releases/v$VERSION" >> "$GITHUB_STEP_SUMMARY"
