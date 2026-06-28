@@ -48,7 +48,8 @@
     "licensedPackage": "/api/forge/kits/{slug}/licensed-package"
   },
   "marketService": {
-    "licensedPackage": "/api/forge/service/kits/{slug}/licensed-package"
+    "licensedPackage": "/api/forge/service/kits/{slug}/licensed-package",
+    "entitledKits": "/api/forge/service/me/entitled-kits"
   },
   "marketBackendFavorites": {
     "adminListUserFavorites": "/admin/users/{userId}/favorites",

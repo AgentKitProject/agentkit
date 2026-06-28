@@ -1,5 +1,6 @@
 const DEFAULT_MARKET_BASE_URL = "https://market.agentkitproject.com";
 const FORGE_BASE_URL = "https://forge.agentkitproject.com";
+const AUTO_BASE_URL = "https://auto.agentkitproject.com";
 const FORGE_PROTOCOL_BASE = "agentkitforge://market/import";
 
 export type ForgeImportLinkInput = {
@@ -39,6 +40,36 @@ export function getForgeWebUrl(): string | undefined {
 
 export function getMarketBaseUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || DEFAULT_MARKET_BASE_URL).replace(/\/+$/, "");
+}
+
+/**
+ * The PUBLIC AgentKitAuto app URL — where a buyer is sent to run a purchased
+ * PROTECTED kit ("Run on Auto"). Operator override via NEXT_PUBLIC_AUTO_URL.
+ * Self-host returns undefined unless the operator configures it (so a self-host
+ * with no Auto deployment simply hides the action). Hosted falls back to the
+ * public auto.agentkitproject.com. Never an internal/service URL — this is a
+ * browser navigation target.
+ */
+export function getAutoWebUrl(): string | undefined {
+  const override = process.env.NEXT_PUBLIC_AUTO_URL?.replace(/\/+$/, "");
+  if (override) return override;
+  if (process.env.SELF_HOST === "true") return undefined;
+  return AUTO_BASE_URL;
+}
+
+/**
+ * The "Run on Auto" deep link for a PROTECTED kit: `${autoUrl}/?kit=market:<slug>`
+ * (plus `&kitId=<marketKitId>` when known). Mirrors the param shape AutoSection
+ * parses. URL-safe (slug/kitId encoded). Returns undefined when no Auto URL is
+ * configured (self-host with no Auto) so the caller hides the action.
+ */
+export function buildRunOnAutoLink({ slug, kitId }: { slug: string; kitId?: string }): string | undefined {
+  const base = getAutoWebUrl();
+  if (!base) return undefined;
+  const url = new URL(`${base}/`);
+  url.searchParams.set("kit", `market:${slug}`);
+  if (kitId) url.searchParams.set("kitId", kitId);
+  return url.toString();
 }
 
 function normalizedMarketBaseUrl(value: string) {

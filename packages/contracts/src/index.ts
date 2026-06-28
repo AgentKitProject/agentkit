@@ -94,6 +94,10 @@ export {
   serviceLicensedPackageErrorSchema,
   serviceLicensedPackageRequestSchema,
   serviceLicensedPackageResponseSchema,
+  serviceEntitledKitsErrorSchema,
+  serviceEntitledKitsRequestSchema,
+  serviceEntitledKitSchema,
+  serviceEntitledKitsResponseSchema,
   marketBackendPricingRoutes,
   forgePricingRoutes,
   marketServiceRoutes,
@@ -116,7 +120,11 @@ export {
   type ListEntitlementsResponse,
   type ServiceLicensedPackageError,
   type ServiceLicensedPackageRequest,
-  type ServiceLicensedPackageResponse
+  type ServiceLicensedPackageResponse,
+  type ServiceEntitledKitsError,
+  type ServiceEntitledKitsRequest,
+  type ServiceEntitledKit,
+  type ServiceEntitledKitsResponse
 } from "./pricing.js";
 
 export {
