@@ -1,10 +1,21 @@
-name: Smoke
+name: forge-desktop-smoke
+
+# Desktop-Forge cross-platform build smoke test (Windows/macOS/Linux). Re-homed
+# from the standalone agentkitforge-app repo. Path-scoped to apps/forge-desktop/**
+# so unrelated monorepo changes don't trigger a 3-OS Tauri build. Covers the full
+# Tauri + Rust + sidecar build the root ci.yml does NOT run.
 
 on:
   pull_request:
+    paths:
+      - "apps/forge-desktop/**"
+      - ".github/workflows/forge-desktop-smoke.yml"
   push:
     branches:
       - main
+    paths:
+      - "apps/forge-desktop/**"
+      - ".github/workflows/forge-desktop-smoke.yml"
   workflow_dispatch:
 
 permissions:
@@ -18,11 +29,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
+    defaults:
+      run:
+        # Monorepo: the desktop app is at apps/forge-desktop. The original repo
+        # checked the app out into a ./agentkitforge-app subdir; here it's already
+        # a subdir, so run every step from there and check out the whole repo.
+        working-directory: apps/forge-desktop
     steps:
-      - name: Check out app
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          path: agentkitforge-app
 
       - name: Install Linux Tauri dependencies
         if: ${{ runner.os == 'Linux' }}
@@ -40,37 +55,31 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: agentkitforge-app/package-lock.json
+          # `cache` path inputs are repo-root-relative (working-directory does not apply).
+          cache-dependency-path: apps/forge-desktop/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install app dependencies
-        working-directory: agentkitforge-app
         run: npm ci
 
       - name: Build backend runtime bundle
-        working-directory: agentkitforge-app
         run: npm run build:backend
 
       - name: Verify backend runtime bundle before Tauri build
-        working-directory: agentkitforge-app
         run: npm run check:backend
 
       - name: Run checks
-        working-directory: agentkitforge-app
         run: npm run check
 
       - name: Build Tauri app
         if: ${{ runner.os != 'macOS' }}
-        working-directory: agentkitforge-app
         run: npm run build:tauri
 
       - name: Build Tauri app bundle
         if: ${{ runner.os == 'macOS' }}
-        working-directory: agentkitforge-app
         run: npm run build:tauri -- --bundles app
 
       - name: Verify packaged runtime resources
-        working-directory: agentkitforge-app
         run: npm run check:tauri-sidecar

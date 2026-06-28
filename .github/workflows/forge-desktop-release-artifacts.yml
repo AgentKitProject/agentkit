@@ -1,4 +1,4 @@
-name: Release Artifacts
+name: forge-desktop-release-artifacts
 
 on:
   workflow_dispatch:
@@ -125,6 +125,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    defaults:
+      run:
+        # Monorepo: the desktop app lives at apps/forge-desktop. This makes every
+        # bash AND pwsh `run:` step in this job execute from there, so the inherited
+        # `src-tauri/...`, `package.json`, and `npm run ...` relative paths still work.
+        # NOTE: this does NOT affect `uses:` action `path:`/`with:` inputs (those are
+        # repo-root-relative) or `actions/github-script` JS (cwd = repo root) — those
+        # are remapped explicitly below.
+        working-directory: apps/forge-desktop
     steps:
       - name: Check out requested tag
         uses: actions/checkout@v4
@@ -136,6 +145,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          # `cache` path inputs are repo-root-relative (working-directory does not
+          # apply to actions), so point npm caching at the desktop app's lockfile.
+          cache-dependency-path: apps/forge-desktop/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -754,9 +766,12 @@ jobs:
           endpoint: ${{ vars.TRUSTED_SIGNING_ENDPOINT || secrets.TRUSTED_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.TRUSTED_SIGNING_ACCOUNT_NAME || secrets.TRUSTED_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ vars.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME || secrets.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          # `files:` are passed to the action (cwd = repo root), so include the
+          # monorepo app path. The release-assets dir is created by `run:` steps that
+          # execute from apps/forge-desktop ($PWD), i.e. apps/forge-desktop/release-assets.
           files: |
-            ${{ github.workspace }}\release-assets\AgentKitForge-${{ needs.prepare.outputs.version }}-setup.exe
-            ${{ github.workspace }}\release-assets\AgentKitForge-${{ needs.prepare.outputs.version }}-x64.msi
+            ${{ github.workspace }}\apps\forge-desktop\release-assets\AgentKitForge-${{ needs.prepare.outputs.version }}-setup.exe
+            ${{ github.workspace }}\apps\forge-desktop\release-assets\AgentKitForge-${{ needs.prepare.outputs.version }}-x64.msi
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -958,7 +973,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-artifact-manifest-${{ matrix.platform }}
-          path: artifact-manifests/${{ matrix.platform }}.json
+          # upload-artifact `path` is repo-root-relative; the artifact-manifests dir
+          # is created by a pwsh step running from apps/forge-desktop ($PWD).
+          path: apps/forge-desktop/artifact-manifests/${{ matrix.platform }}.json
           if-no-files-found: error
 
   dispatch-infra:
@@ -968,6 +985,12 @@ jobs:
       - prepare
       - build-artifacts
     if: ${{ success() }}
+    defaults:
+      run:
+        # Monorepo: bash steps here read apps/forge-desktop files (RELEASE_NOTES.md,
+        # artifact-manifests/*.json). Run them from the app dir. The download-artifact
+        # `path:` below is set to match (actions ignore working-directory).
+        working-directory: apps/forge-desktop
     steps:
       - name: Check out requested tag
         uses: actions/checkout@v4
@@ -994,7 +1017,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: release-artifact-manifest-*
-          path: artifact-manifests
+          # download-artifact `path` is repo-root-relative; download into the app dir
+          # so the bash steps (which run from apps/forge-desktop) find them at ./artifact-manifests.
+          path: apps/forge-desktop/artifact-manifests
           merge-multiple: true
 
       - name: Verify uploaded artifacts before mirroring

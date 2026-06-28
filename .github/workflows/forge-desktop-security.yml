@@ -1,10 +1,21 @@
-name: Security
+name: forge-desktop-security
+
+# Desktop-Forge dependency security audits (npm + RustSec). Re-homed from the
+# standalone agentkitforge-app repo into the monorepo. Path-scoped to
+# apps/forge-desktop/** so unrelated monorepo changes don't trigger it.
+# Covers checks the root ci.yml does NOT: npm audit (prod critical) + cargo-audit.
 
 on:
   pull_request:
+    paths:
+      - "apps/forge-desktop/**"
+      - ".github/workflows/forge-desktop-security.yml"
   push:
     branches:
       - main
+    paths:
+      - "apps/forge-desktop/**"
+      - ".github/workflows/forge-desktop-security.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,6 +26,10 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Monorepo: run npm against the desktop app's own package-lock.json.
+        working-directory: apps/forge-desktop
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,6 +39,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # `cache` path inputs are repo-root-relative (working-directory does not apply).
+          cache-dependency-path: apps/forge-desktop/package-lock.json
 
       - name: Audit production dependencies for critical vulnerabilities
         run: npm audit --audit-level=critical --omit=dev --package-lock-only
@@ -35,6 +52,9 @@ jobs:
   rustsec:
     name: RustSec audit
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/forge-desktop
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -49,7 +69,8 @@ jobs:
             ~/.cargo/bin
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-audit-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          # hashFiles globs are repo-root-relative regardless of working-directory.
+          key: cargo-audit-${{ runner.os }}-${{ hashFiles('apps/forge-desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
 
@@ -60,5 +81,7 @@ jobs:
           fi
 
       - name: Audit Rust dependencies
-        working-directory: src-tauri
+        # step-level working-directory is resolved from the repo root, so spell out
+        # the full monorepo path (it overrides the job default).
+        working-directory: apps/forge-desktop/src-tauri
         run: cargo audit
