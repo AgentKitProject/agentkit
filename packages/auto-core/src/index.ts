@@ -153,6 +153,17 @@ export type {
   SandboxToolUse,
 } from "./core/sandbox-executor.js";
 
+// ---- Prompt-leakage guards (protected-kit content protection, M6) -------
+// Generic redaction MECHANISM (no kit/prompt values) — wired in only on the
+// hosted protected path; identity (no-op) everywhere else.
+export {
+  isPromptExtractionAttempt,
+  redactLeakedPrompt,
+  makePromptRedactor,
+  identityRedactor,
+} from "./core/leakage-guard.js";
+export type { OutputRedactor } from "./core/leakage-guard.js";
+
 // ---- Run driver ----------------------------------------------------------
 export { runAutoRun, AUTO_NO_QUESTIONS_PREAMBLE, composeSystemPrompt } from "./core/run-driver.js";
 export type {
