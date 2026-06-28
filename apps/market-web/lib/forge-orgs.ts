@@ -212,7 +212,7 @@ export async function transferKit(request: Request, kitId: string) {
       return forgeSubmissionError("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, requestedByUserId: user.id };
+    const backendBody = { ...parsed.data, actorUserId: user.id };
     return proxyToBackend(marketBackendOrgRoutes.adminTransferKit(kitId), "POST", backendBody);
   } catch (error) {
     return forgeSubmissionException(error, `/api/forge/kits/${kitId}/transfer`);
@@ -229,7 +229,7 @@ export async function setKitVisibility(request: Request, kitId: string) {
       return forgeSubmissionError("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, requestedByUserId: user.id };
+    const backendBody = { ...parsed.data, actorUserId: user.id };
     return proxyToBackend(marketBackendOrgRoutes.adminSetKitVisibility(kitId), "POST", backendBody);
   } catch (error) {
     return forgeSubmissionException(error, `/api/forge/kits/${kitId}/visibility`);

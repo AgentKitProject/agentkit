@@ -255,7 +255,7 @@ export async function browserTransferKit(request: Request, kitId: string) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, requestedByUserId: user.id };
+    const backendBody = { ...parsed.data, actorUserId: user.id };
     return proxyToBackend(marketBackendOrgRoutes.adminTransferKit(kitId), "POST", backendBody);
   } catch (error) {
     return handleBrowserOrgException(error);
@@ -272,7 +272,7 @@ export async function browserSetKitVisibility(request: Request, kitId: string) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, requestedByUserId: user.id };
+    const backendBody = { ...parsed.data, actorUserId: user.id };
     return proxyToBackend(marketBackendOrgRoutes.adminSetKitVisibility(kitId), "POST", backendBody);
   } catch (error) {
     return handleBrowserOrgException(error);
