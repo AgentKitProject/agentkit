@@ -50,36 +50,42 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 26
-          cache: npm
-          # `cache` path inputs are repo-root-relative (working-directory does not apply).
-          cache-dependency-path: apps/forge-desktop/package-lock.json
+          # pnpm workspace member: install runs at the repo root against the root
+          # pnpm-lock.yaml, so cache by pnpm — no per-app cache-dependency-path.
+          cache: pnpm
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install app dependencies
-        run: npm ci
+      - name: Install dependencies
+        # pnpm resolves the WHOLE workspace (incl. forge-desktop's workspace:* deps),
+        # so install must run at the repo root, not inside apps/forge-desktop.
+        working-directory: .
+        run: pnpm install --frozen-lockfile
 
       - name: Build backend runtime bundle
-        run: npm run build:backend
+        run: pnpm run build:backend
 
       - name: Verify backend runtime bundle before Tauri build
-        run: npm run check:backend
+        run: pnpm run check:backend
 
       - name: Run checks
-        run: npm run check
+        run: pnpm run check
 
       - name: Build Tauri app
         if: ${{ runner.os != 'macOS' }}
-        run: npm run build:tauri
+        run: pnpm run build:tauri
 
       - name: Build Tauri app bundle
         if: ${{ runner.os == 'macOS' }}
-        run: npm run build:tauri -- --bundles app
+        run: pnpm run build:tauri -- --bundles app
 
       - name: Verify packaged runtime resources
-        run: npm run check:tauri-sidecar
+        run: pnpm run check:tauri-sidecar
