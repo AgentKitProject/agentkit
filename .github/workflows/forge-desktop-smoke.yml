@@ -70,6 +70,12 @@ jobs:
         working-directory: .
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace dependencies
+        # forge-desktop depends on @agentkitforge/core + ui (workspace:*); pnpm only
+        # LINKS them — build their dist/ (incl. the core CLI) before the desktop build.
+        working-directory: .
+        run: pnpm turbo run build --filter=@agentkitforge/core --filter=@agentkitforge/ui
+
       - name: Build backend runtime bundle
         run: pnpm run build:backend
 

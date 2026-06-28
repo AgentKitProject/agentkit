@@ -75,11 +75,12 @@ jobs:
           restore-keys: |
             cargo-audit-${{ runner.os }}-
 
-      - name: Install cargo-audit
-        run: |
-          if ! command -v cargo-audit >/dev/null 2>&1; then
-            cargo install cargo-audit --locked
-          fi
+      - name: Install cargo-audit (prebuilt binary)
+        # Prebuilt binary instead of `cargo install` — compiling from source is slow and
+        # was flaky on the runner (a `ring` download HTTP/2 framing error + segfault).
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
 
       - name: Audit Rust dependencies
         # step-level working-directory is resolved from the repo root, so spell out

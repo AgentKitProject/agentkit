@@ -342,6 +342,12 @@ jobs:
             throw "AGENTKITPROJECT_WORKOS_CLIENT_ID repository variable is required for hosted AgentKitProject login in release builds."
           }
 
+      - name: Build workspace dependencies
+        # forge-desktop depends on @agentkitforge/core + ui (workspace:*); pnpm only LINKS
+        # them — build their dist/ (incl. the core CLI) before the desktop build.
+        working-directory: .
+        run: pnpm turbo run build --filter=@agentkitforge/core --filter=@agentkitforge/ui
+
       - name: Build backend runtime
         run: pnpm run build:backend
 
