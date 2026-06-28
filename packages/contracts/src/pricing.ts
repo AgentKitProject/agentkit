@@ -224,6 +224,73 @@ export const serviceLicensedPackageResponseSchema = licensedPackageResponseSchem
 export type ServiceLicensedPackageResponse = z.infer<typeof serviceLicensedPackageResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Service "entitled kits" listing (Seam S — web-forge/Auto ↔ market-app,
+// SERVICE-KEY auth). M6 Slice 3: the buyer entry point on AgentKitAuto.
+//
+// The Auto SSR server (NOT a browser, NOT the worker) asserts the current user's
+// id with MARKET_SERVICE_KEY and asks Market for the BROWSER-SAFE list of that
+// user's PROTECTED (paid + non-downloadable) entitled kits, so the Auto UI can
+// offer a "run this kit on Auto" picker WITHOUT ever receiving entitlement-table
+// internals or kit content. Market resolves entitlements → catalog records
+// server-side and returns ONLY public display fields (name/slug/marketKitId).
+//
+// Why a NEW seam (not forgeListMyEntitlements): that route is device-auth bearer
+// and returns raw entitlements (kitId only, no slug/name, unfiltered by
+// pricing). Auto-web has no user bearer to forward server-side; it asserts the
+// userId via the service key (session removed, entitlement STILL enforced — only
+// active entitlements for protected kits are returned).
+// ---------------------------------------------------------------------------
+
+/** Error codes returned by the service entitled-kits listing endpoint. */
+export const serviceEntitledKitsErrorSchema = z.enum([
+  /** Service key env unset on the provider → endpoint disabled (503). */
+  "unconfigured",
+  /** Missing/!match service key (401). */
+  "unauthorized",
+  /** Malformed request body (400). */
+  "invalid_request",
+  /** Upstream Market backend failure (502). */
+  "backend_unavailable"
+]);
+export type ServiceEntitledKitsError = z.infer<typeof serviceEntitledKitsErrorSchema>;
+
+/**
+ * POST {marketServiceRoutes.entitledKits()} body. Asserts the entitled user's id
+ * (no session). The provider lists that user's active entitlements and resolves
+ * them against the catalog server-side.
+ */
+export const serviceEntitledKitsRequestSchema = z.object({
+  userId: z.string().min(1)
+});
+export type ServiceEntitledKitsRequest = z.infer<typeof serviceEntitledKitsRequestSchema>;
+
+/**
+ * One PROTECTED entitled kit, BROWSER-SAFE. Carries ONLY public display fields —
+ * never entitlement ids, license text, watermark, or kit content. `marketKitId`
+ * + `slug` are exactly what Auto needs to build a `kitRef:{source:"market",...}`.
+ */
+export const serviceEntitledKitSchema = z.object({
+  /** Canonical Market kit id (→ kitRef.marketKitId). */
+  marketKitId: z.string().min(1),
+  /** Market slug, the Market service lookup key (→ kitRef.slug). */
+  slug: z.string().min(1),
+  /** Public display name. */
+  name: z.string().min(1)
+});
+export type ServiceEntitledKit = z.infer<typeof serviceEntitledKitSchema>;
+
+/**
+ * Response from the service entitled-kits endpoint: the user's PROTECTED
+ * (paid + non-downloadable) entitled kits, browser-safe. Free/downloadable
+ * entitlements are EXCLUDED (they don't need an Auto run — they download). An
+ * entitlement whose kit can't be resolved in the catalog is dropped silently.
+ */
+export const serviceEntitledKitsResponseSchema = z.object({
+  kits: z.array(serviceEntitledKitSchema)
+});
+export type ServiceEntitledKitsResponse = z.infer<typeof serviceEntitledKitsResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Route builder (Seam S — web-forge ↔ market-app, service-key auth)
 // ---------------------------------------------------------------------------
 
@@ -231,7 +298,10 @@ export const marketServiceRoutes = {
   /** POST /api/forge/service/kits/{slug}/licensed-package — service-key authed,
    *  entitlement-gated, asserts userId. */
   licensedPackage: (slug: string) =>
-    `/api/forge/service/kits/${encodeURIComponent(slug)}/licensed-package`
+    `/api/forge/service/kits/${encodeURIComponent(slug)}/licensed-package`,
+  /** POST /api/forge/service/me/entitled-kits — service-key authed, asserts
+   *  userId; returns the user's PROTECTED entitled kits (browser-safe). */
+  entitledKits: () => `/api/forge/service/me/entitled-kits`
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,9 @@ import {
   serviceLicensedPackageRequestSchema,
   serviceLicensedPackageResponseSchema,
   serviceLicensedPackageErrorSchema,
+  serviceEntitledKitsRequestSchema,
+  serviceEntitledKitsResponseSchema,
+  serviceEntitledKitsErrorSchema,
   entitlementSchema,
   setKitPricingRequestSchema,
   grantEntitlementRequestSchema,
@@ -285,6 +288,35 @@ describe("contracts", () => {
       serviceLicensedPackageErrorSchema.parse(code);
     }
     assert.throws(() => serviceLicensedPackageErrorSchema.parse("nope"));
+  });
+
+  it("market service entitled-kits route (no slug param)", () => {
+    const routes = fixture("routes.json");
+    assert.equal(marketServiceRoutes.entitledKits(), routes.marketService.entitledKits);
+    assert.equal(marketServiceRoutes.entitledKits(), "/api/forge/service/me/entitled-kits");
+  });
+
+  it("service entitled-kits request/response schemas + error enum", () => {
+    // Request asserts userId only.
+    serviceEntitledKitsRequestSchema.parse({ userId: "user_1" });
+    assert.throws(() => serviceEntitledKitsRequestSchema.parse({}));
+    assert.throws(() => serviceEntitledKitsRequestSchema.parse({ userId: "" }));
+
+    // Response = browser-safe protected-kit list (name/slug/marketKitId only).
+    serviceEntitledKitsResponseSchema.parse({ kits: [] });
+    serviceEntitledKitsResponseSchema.parse({
+      kits: [{ marketKitId: "kit_1", slug: "my-kit", name: "My Kit" }]
+    });
+    // Must NOT carry entitlement internals — extra keys are stripped, but the
+    // required public fields are enforced.
+    assert.throws(() =>
+      serviceEntitledKitsResponseSchema.parse({ kits: [{ slug: "x", name: "y" }] })
+    );
+
+    for (const code of ["unconfigured", "unauthorized", "invalid_request", "backend_unavailable"]) {
+      serviceEntitledKitsErrorSchema.parse(code);
+    }
+    assert.throws(() => serviceEntitledKitsErrorSchema.parse("not_entitled"));
   });
 
   it("favorite fixture and request schemas validate", () => {

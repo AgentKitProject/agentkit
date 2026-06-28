@@ -30,6 +30,8 @@ import type { StoredSession, TokenStore } from "@agentkitforge/core/market";
 import {
   marketServiceRoutes,
   marketServiceAuthHeader,
+  serviceEntitledKitsResponseSchema,
+  type ServiceEntitledKit,
   type ServiceLicensedPackageError,
   type ServiceLicensedPackageResponse
 } from "@agentkitforge/contracts";
@@ -388,6 +390,65 @@ export async function resolveProtectedSystemPromptViaService(
     downloadable: licensed.downloadable,
     onlineOnly: licensed.onlineOnly
   };
+}
+
+/** Build the Market service entitled-kits URL. Requires a Market base URL
+ *  (per-instance AGENTKITMARKET_BASE_URL; self-host fails closed). */
+function serviceEntitledKitsUrl(override?: string): string | undefined {
+  const base = marketBaseUrl(override);
+  if (!base) return undefined;
+  return `${base.replace(/\/+$/, "")}${marketServiceRoutes.entitledKits()}`;
+}
+
+/**
+ * List the asserted user's PROTECTED (paid + non-downloadable) entitled kits
+ * SERVER-TO-SERVICE (no user session), via MARKET_SERVICE_KEY + the explicitly
+ * asserted userId. The Market service enforces entitlement (only the user's
+ * ACTIVE entitlements are listed) and filters to protected kits, returning ONLY
+ * browser-safe display fields (name/slug/marketKitId) — never entitlement
+ * internals or kit content.
+ *
+ * Fails CLOSED:
+ *   - Market disabled on this instance (self-host, no own Market) → []. The
+ *     buyer-picker surface is simply absent; local/free kits still run.
+ *   - MARKET_SERVICE_KEY unconfigured → []. Same — no phone-home, no picker.
+ *   - Any service/network/non-2xx error → [] (the picker degrades to empty
+ *     rather than failing the Auto page load). The protected-RUN path is
+ *     unaffected and still entitlement-gated server-side.
+ *
+ * This NEVER lets a non-entitled kit through: it only surfaces what Market
+ * returns, and the run itself is independently entitlement-gated at execution.
+ */
+export async function listEntitledKitsViaService(
+  userId: string,
+  override?: string
+): Promise<ServiceEntitledKit[]> {
+  // Self-host with Market disabled → no picker (fail closed, never phone home).
+  if (!isMarketEnabled()) return [];
+  const key = marketServiceKey();
+  if (!key || key.length === 0) return [];
+  const url = serviceEntitledKitsUrl(override);
+  if (!url) return [];
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        [marketServiceAuthHeader]: key
+      },
+      body: JSON.stringify({ userId }),
+      cache: "no-store"
+    });
+  } catch {
+    return [];
+  }
+  if (!response.ok) return [];
+  const payload = (await response.json().catch(() => ({}))) as { kits?: unknown };
+  const parsed = serviceEntitledKitsResponseSchema.safeParse(payload);
+  return parsed.success ? parsed.data.kits : [];
 }
 
 // ---------------------------------------------------------------------------

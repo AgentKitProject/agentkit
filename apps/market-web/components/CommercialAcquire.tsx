@@ -22,6 +22,11 @@ type AcquireProps = {
   licenseText: string;
   licenseVersion?: string;
   isAdmin: boolean;
+  /** Canonical Market kit id (passed into the "Run on Auto" deep link). */
+  marketKitId?: string;
+  /** Public AgentKitAuto base URL for the protected-kit "Run on Auto" action.
+   *  Undefined → the action hides (self-host with no Auto). */
+  autoUrl?: string;
 };
 
 const commerceEnabled = process.env.NEXT_PUBLIC_COMMERCE_ENABLED === "1";

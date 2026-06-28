@@ -9,7 +9,7 @@ import { CommercialAcquire } from "@/components/CommercialAcquire";
 import { LicenseDisclosure } from "@/components/LicenseDisclosure";
 import { OpenInForgeButton } from "@/components/OpenInForgeButton";
 import { canDownloadKit, getCurrentUser, isAdminEmail } from "@/lib/auth";
-import { getMarketBaseUrl } from "@/lib/forge-link";
+import { getMarketBaseUrl, getAutoWebUrl } from "@/lib/forge-link";
 import { getKitBySlug, isPublicCatalogKit } from "@/lib/market-api";
 import { effectiveLicenseText, effectiveLicenseVersion, priceLabel } from "@/lib/kit-license";
 
@@ -288,6 +288,8 @@ export default async function KitDetailPage({
               licenseText={licenseText}
               licenseVersion={effectiveLicenseVersion({ licenseType: kit.licenseType, licenseVersion: kit.licenseVersion })}
               isAdmin={userIsAdmin}
+              marketKitId={kit.kitId}
+              autoUrl={getAutoWebUrl()}
             />
           ) : (
             <KitDownloadButton slug={slug} />

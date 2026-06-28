@@ -34,6 +34,12 @@ export default async function Page() {
       redirect(url);
     }
   }
-  const { links } = getPublicConfig();
-  return <AutoApp user={{ id: user.id, email: user.email }} marketUrl={links.marketUrl} />;
+  const { links, marketEnabled } = getPublicConfig();
+  return (
+    <AutoApp
+      user={{ id: user.id, email: user.email }}
+      marketUrl={links.marketUrl}
+      marketEnabled={marketEnabled}
+    />
+  );
 }

@@ -22,7 +22,15 @@ const AUTO_GREEN_STRONG = BRAND_ACCENTS.auto.strong;
 
 type Toast = { msg: string; err: boolean } | null;
 
-export function AutoApp({ user, marketUrl }: { user: { id: string; email: string }; marketUrl?: string }) {
+export function AutoApp({
+  user,
+  marketUrl,
+  marketEnabled
+}: {
+  user: { id: string; email: string };
+  marketUrl?: string;
+  marketEnabled?: boolean;
+}) {
   const [kits, setKits] = useState<MyKitEntry[]>([]);
   const [toast, setToast] = useState<Toast>(null);
 
@@ -82,7 +90,7 @@ export function AutoApp({ user, marketUrl }: { user: { id: string; email: string
           {toast.msg}
         </div>
       )}
-      <AutoSection kits={kits} notify={notify} marketUrl={marketUrl} />
+      <AutoSection kits={kits} notify={notify} marketUrl={marketUrl} marketEnabled={marketEnabled} />
     </AppShell>
   );
 }

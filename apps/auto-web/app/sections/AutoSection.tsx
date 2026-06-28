@@ -23,6 +23,18 @@ import type { MyKitEntry, Notify } from "./shared";
 import { errMsg } from "./shared";
 import { AutoLogo } from "./AutoLogo";
 import { ClientTime } from "./ClientTime";
+// Kit selectors address a kit by an opaque string value so a single <Select> can
+// offer BOTH local kits and entitled Market kits. The market-aware KitRef +
+// selection/deep-link helpers live in ./market-kit-ref (pure + unit-tested).
+import {
+  MARKET_PREFIX,
+  isMarketSelection,
+  marketSelectionValue,
+  parseKitSelection,
+  parseMarketDeepLink,
+  creditsDisclosureKind,
+  type EntitledKit
+} from "./market-kit-ref";
 
 // AgentKitAuto accent. Wrapping the section in brandVars(AUTO_GREEN) re-themes
 // every framework primitive (buttons, badges, focus rings, active nav) inside
@@ -35,8 +47,6 @@ const SANDBOX_TOOLS = ["read_file", "list_dir", "write_file"] as const;
 // Phase C: the network-egress tool. Available to a run only when the approval's
 // networkPolicy is an allowlist AND this tool is in the allowlist.
 const HTTP_FETCH_TOOL = "http_fetch";
-
-type KitRef = { source: "local"; localKitId: string };
 
 // Auto v2 billing snapshot returned by GET /api/auto/billing (mirrors the
 // server's AutoBillingSummary). metered:false on a FREE self-host (unmetered).
@@ -220,8 +230,22 @@ function DeliverySection({
   );
 }
 
-export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; notify: Notify; marketUrl?: string }) {
+export function AutoSection({
+  kits,
+  notify,
+  marketUrl,
+  marketEnabled
+}: {
+  kits: MyKitEntry[];
+  notify: Notify;
+  marketUrl?: string;
+  marketEnabled?: boolean;
+}) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  // Protected (paid + non-downloadable) Market kits the user has purchased. Only
+  // populated when Market is enabled; empty on a free open-core self-host (the
+  // whole picker surface then stays hidden — fails closed). Browser-safe shape.
+  const [entitled, setEntitled] = useState<EntitledKit[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [openRun, setOpenRun] = useState<Run | null>(null);
@@ -342,6 +366,20 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     }
   }, []);
 
+  // The user's PROTECTED entitled Market kits, for the "run on Auto" picker.
+  // Gated on `marketEnabled`: a free open-core self-host never calls this and the
+  // picker stays hidden. The route itself also fails closed (empty on Market
+  // disabled / service error), so this is defense in depth.
+  const loadEntitled = useCallback(async () => {
+    if (!marketEnabled) return;
+    try {
+      const { kits: list } = await jsonFetch<{ kits: EntitledKit[] }>("/api/auto/entitled-kits");
+      setEntitled(Array.isArray(list) ? list : []);
+    } catch {
+      /* non-fatal — picker stays hidden / empty */
+    }
+  }, [marketEnabled]);
+
   useEffect(() => {
     void loadApprovals();
     void loadRuns();
@@ -349,7 +387,41 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     void loadWebhooks();
     void loadByo();
     void loadBilling();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadBilling]);
+    void loadEntitled();
+  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadBilling, loadEntitled]);
+
+  // Deep-link: `?kit=market:<slug>` (optionally `&kitId=<marketKitId>`) from the
+  // Market "Run on Auto" action. Pre-select that protected kit in the approval +
+  // run forms once the entitled list is loaded (so the option exists). We don't
+  // auto-run — the user still authorizes + confirms the credits disclosure. The
+  // param is read once; we then strip it so a refresh doesn't re-trigger.
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false);
+  useEffect(() => {
+    if (deepLinkApplied || !marketEnabled) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const slug = parseMarketDeepLink(params.get("kit"));
+    if (!slug) return;
+    // Only pre-select once the kit is in the entitled list (the option exists and
+    // the user is genuinely entitled). Wait for the list before applying.
+    if (entitled.length === 0) return;
+    const match = entitled.find((k) => k.slug === slug);
+    if (!match) {
+      setDeepLinkApplied(true); // not entitled / not found — nothing to select.
+      notify("You don't have an active purchase for that kit, or it isn't available.", true);
+      return;
+    }
+    const value = marketSelectionValue(match.slug);
+    setApprKitId(value);
+    setRunKitId(value);
+    setDeepLinkApplied(true);
+    notify(`Selected "${match.name}" — authorize it, then start a run.`);
+    // Strip the query param so a refresh doesn't re-apply it.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("kit");
+    url.searchParams.delete("kitId");
+    window.history.replaceState({}, "", url.toString());
+  }, [deepLinkApplied, marketEnabled, entitled, notify]);
 
   // Poll the open run + the list while a run is active.
   useEffect(() => {
@@ -376,12 +448,65 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     };
   }, [openRunId, loadRuns]);
 
-  const kitsWithApproval = approvals
-    .map((a) => a.kitRef.localKitId)
-    .filter((id): id is string => typeof id === "string");
+  // The set of selector VALUES (local kitId OR `market:<slug>`) that have a live
+  // standing approval — used to filter the run/schedule/webhook kit pickers.
+  const approvedSelectionValues = new Set<string>(
+    approvals.map((a) =>
+      a.kitRef.source === "market" && a.kitRef.slug
+        ? marketSelectionValue(a.kitRef.slug)
+        : (a.kitRef.localKitId ?? "")
+    )
+  );
+
+  /** The standing (non-revoked) approval for a selector value, if any. */
+  const approvalForSelection = (value: string): Approval | undefined => {
+    if (isMarketSelection(value)) {
+      const slug = value.slice(MARKET_PREFIX.length);
+      return approvals.find((a) => a.kitRef.source === "market" && a.kitRef.slug === slug && a.revokedAt === null);
+    }
+    return approvals.find((a) => a.kitRef.localKitId === value && a.revokedAt === null);
+  };
+
+  /** A human label for a selector value (local kit name or entitled Market name). */
+  const selectionLabel = (value: string): string => {
+    if (isMarketSelection(value)) {
+      const slug = value.slice(MARKET_PREFIX.length);
+      const kit = entitled.find((k) => k.slug === slug);
+      return kit ? `${kit.name} (Market)` : `${slug} (Market)`;
+    }
+    return kits.find((k) => k.kitId === value)?.name ?? value;
+  };
+
+  /** Render the kit <option>s for a selector: local kits, then (if Market is
+   *  enabled) the user's entitled protected kits. `onlyApproved` restricts to
+   *  kits that already have a standing approval (run/schedule/webhook forms). */
+  const renderKitOptions = (onlyApproved: boolean) => (
+    <>
+      {kits
+        .filter((k) => !onlyApproved || approvedSelectionValues.has(k.kitId))
+        .map((k) => (
+          <option key={k.kitId} value={k.kitId}>
+            {k.name}
+          </option>
+        ))}
+      {marketEnabled && entitled.length > 0 && (
+        <optgroup label="Purchased (protected) kits">
+          {entitled
+            .filter((k) => !onlyApproved || approvedSelectionValues.has(marketSelectionValue(k.slug)))
+            .map((k) => (
+              <option key={k.slug} value={marketSelectionValue(k.slug)}>
+                {k.name}
+              </option>
+            ))}
+        </optgroup>
+      )}
+    </>
+  );
 
   const submitApproval = async () => {
     if (!apprKitId) return notify("Pick a kit to authorize.", true);
+    const kitRef = parseKitSelection(apprKitId, entitled);
+    if (!kitRef) return notify("That kit is no longer available.", true);
     const cents = Math.round(parseFloat(apprBudgetUsd) * 100);
     if (!Number.isInteger(cents) || cents <= 0) return notify("Max budget must be a positive amount.", true);
     // Phase C: assemble the network policy. An allowlist requires at least one host.
@@ -401,7 +526,6 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
       apprNetMode === "allowlist" && apprHttpFetch ? [...apprTools, HTTP_FETCH_TOOL] : apprTools;
     setApprBusy(true);
     try {
-      const kitRef: KitRef = { source: "local", localKitId: apprKitId };
       await jsonFetch<Approval>(autoRoutes.approvals(), {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -485,13 +609,13 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
 
   const startRun = async () => {
     if (!runKitId) return notify("Pick a kit (one with a standing approval).", true);
+    const kitRef = parseKitSelection(runKitId, entitled);
+    if (!kitRef) return notify("That kit is no longer available.", true);
     if (!runPrompt.trim()) return notify("Enter a task for the run.", true);
     const cents = Math.round(parseFloat(runBudgetUsd) * 100);
     if (!Number.isInteger(cents) || cents <= 0) return notify("Run budget is required (positive amount).", true);
     setRunBusy(true);
     try {
-      const kitRef: KitRef = { source: "local", localKitId: runKitId };
-
       // Phase C: stage any selected input files first — request presigned PUT
       // URLs, upload each file's bytes, then attach the returned manifest. The
       // worker hydrates them into the run workspace inputs/ dir.
@@ -562,13 +686,11 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     }
   };
 
-  // The standing approval for a local kit id (schedules must reference one).
-  const approvalForKit = (kitId: string): Approval | undefined =>
-    approvals.find((a) => a.kitRef.localKitId === kitId && a.revokedAt === null);
-
   const createSchedule = async () => {
     if (!schedKitId) return notify("Pick a kit (one with a standing approval).", true);
-    const approval = approvalForKit(schedKitId);
+    const kitRef = parseKitSelection(schedKitId, entitled);
+    if (!kitRef) return notify("That kit is no longer available.", true);
+    const approval = approvalForSelection(schedKitId);
     if (!approval) return notify("That kit has no standing approval.", true);
     if (!schedCron.trim()) return notify("Enter a cron expression.", true);
     if (!schedPrompt.trim()) return notify("Enter a task for the schedule.", true);
@@ -576,7 +698,6 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     if (!Number.isInteger(cents) || cents <= 0) return notify("Per-run budget is required (positive amount).", true);
     setSchedBusy(true);
     try {
-      const kitRef: KitRef = { source: "local", localKitId: schedKitId };
       // Phase D: opt-in delivery copied onto every run this schedule fires.
       const deliveryConfig = buildDeliveryConfig(schedDelivery);
       await jsonFetch<Schedule>(autoRoutes.schedules(), {
@@ -628,13 +749,14 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
 
   const createWebhook = async () => {
     if (!whKitId) return notify("Pick a kit (one with a standing approval).", true);
-    const approval = approvalForKit(whKitId);
+    const kitRef = parseKitSelection(whKitId, entitled);
+    if (!kitRef) return notify("That kit is no longer available.", true);
+    const approval = approvalForSelection(whKitId);
     if (!approval) return notify("That kit has no standing approval.", true);
     const cents = Math.round(parseFloat(whBudgetUsd) * 100);
     if (!Number.isInteger(cents) || cents <= 0) return notify("Per-fire budget is required (positive amount).", true);
     setWhBusy(true);
     try {
-      const kitRef: KitRef = { source: "local", localKitId: whKitId };
       // Phase D: opt-in delivery copied onto every run this webhook fires.
       const deliveryConfig = buildDeliveryConfig(whDelivery);
       const created = await jsonFetch<CreatedWebhook>(autoRoutes.webhooks(), {
@@ -682,7 +804,14 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
     }
   };
 
-  const kitLabel = (id?: string) => kits.find((k) => k.kitId === id)?.name ?? id ?? "(unknown kit)";
+  // Label a kit from a persisted kitRef (handles both local and Market sources).
+  const kitRefLabel = (ref: { source?: string; localKitId?: string; marketKitId?: string; slug?: string }) => {
+    if (ref.source === "market") {
+      const kit = ref.slug ? entitled.find((k) => k.slug === ref.slug) : undefined;
+      return kit ? `${kit.name} (Market)` : `${ref.slug ?? ref.marketKitId ?? "kit"} (Market)`;
+    }
+    return kits.find((k) => k.kitId === ref.localKitId)?.name ?? ref.localKitId ?? "(unknown kit)";
+  };
 
   return (
     <div style={brandVars(AUTO_GREEN, AUTO_GREEN_STRONG)}>
@@ -705,13 +834,15 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
         <Field label="Kit">
           <Select value={apprKitId} onChange={(e) => setApprKitId(e.target.value)}>
             <option value="">Select a kit…</option>
-            {kits.map((k) => (
-              <option key={k.kitId} value={k.kitId}>
-                {k.name}
-              </option>
-            ))}
+            {renderKitOptions(false)}
           </Select>
         </Field>
+        {isMarketSelection(apprKitId) && (
+          <p className="form-copy" style={{ marginTop: -4 }}>
+            This is a purchased <strong>protected</strong> kit. It runs server-side on Auto and is billed to your
+            Auto credits; its contents are never downloaded to you.
+          </p>
+        )}
         <Field label="Allowed tools">
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
             {SANDBOX_TOOLS.map((t) => (
@@ -783,7 +914,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
               <div key={a.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: "0.85em" }}>
-                    <strong>{kitLabel(a.kitRef.localKitId)}</strong>
+                    <strong>{kitRefLabel(a.kitRef)}</strong>
                     <div style={{ color: "var(--color-text-secondary)" }}>
                       {a.toolAllowlist.join(", ") || "no tools"} · ceiling {centsToUsd(a.maxBudgetCents)}
                     </div>
@@ -888,31 +1019,69 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
         <Field label="Kit (must have an approval)">
           <Select value={runKitId} onChange={(e) => setRunKitId(e.target.value)}>
             <option value="">Select a kit…</option>
-            {kits
-              .filter((k) => kitsWithApproval.includes(k.kitId))
-              .map((k) => (
-                <option key={k.kitId} value={k.kitId}>
-                  {k.name}
-                </option>
-              ))}
+            {renderKitOptions(true)}
           </Select>
         </Field>
+        {/* ---- "Costs Auto credits" disclosure for a PROTECTED run (Part C) ----
+            Shown before starting a run of a protected Market kit. Reads the LIVE
+            rates/balance from /api/auto/billing (no hardcoded prices). Honest
+            about: server-side execution, output delivery (not the kit files), and
+            the residual prompt-extraction risk. Only on metered deployments with a
+            protected kit selected. */}
+        {creditsDisclosureKind(runKitId, billing?.metered === true) === "full" && billing && (
+          <Card style={{ margin: "0 0 12px", padding: "12px 14px" }}>
+            <h4 style={{ marginTop: 0 }}>This run costs Auto credits</h4>
+            <p className="form-copy" style={{ marginTop: 0 }}>
+              <strong>{selectionLabel(runKitId)}</strong> is a purchased protected kit. It runs on AgentKitAuto and is
+              billed to <strong>your</strong> Auto credits: a {billing.invocationFeeCents}¢ start fee plus{" "}
+              {billing.activeMinuteRateCents}¢ per active minute (the first {billing.freeMinutesPerMonth} active
+              minutes each month are free).
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
+              <Pill tone="brand">balance: ${(billing.balanceCents / 100).toFixed(2)}</Pill>
+              <Pill tone={billing.freeMinutesRemaining > 0 ? "brand" : "neutral"}>
+                {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free min left this month
+              </Pill>
+              {marketUrl && (
+                <a href={`${marketUrl}/account/credits`} style={{ textDecoration: "none" }}>
+                  <Button variant="secondary" size="sm">Buy credits</Button>
+                </a>
+              )}
+            </div>
+            <p className="form-copy" style={{ marginTop: 0, marginBottom: 0 }}>
+              The kit runs server-side and you receive its <strong>output</strong> — the kit&apos;s files are never
+              downloaded to you. (Protected kits resist, but cannot fully prevent, a determined attempt to extract
+              their instructions from the output.)
+            </p>
+          </Card>
+        )}
+        {creditsDisclosureKind(runKitId, billing?.metered === true) === "brief" && (
+          <p className="form-copy">
+            <strong>{selectionLabel(runKitId)}</strong> is a purchased protected kit. It runs server-side on Auto and
+            you receive its output; the kit&apos;s files are never downloaded to you.
+          </p>
+        )}
         <Field label="Task">
           <Textarea rows={4} value={runPrompt} onChange={(e) => setRunPrompt(e.target.value)} placeholder="What should the kit do, end to end?" />
         </Field>
         <Field label="This run's budget (USD, required)">
           <Input type="number" min="0.01" step="0.01" value={runBudgetUsd} onChange={(e) => setRunBudgetUsd(e.target.value)} />
         </Field>
-        {/* ---- Inference mode for THIS run (Phase 2) ---- */}
-        <Field label="Inference for this run">
-          <Select value={runInferenceMode} onChange={(e) => setRunInferenceMode(e.target.value as "" | "managed" | "byo")}>
-            <option value="">Use my account preference</option>
-            <option value="managed">Managed credits (this run)</option>
-            <option value="byo" disabled={!byoHasKey}>
-              My own key (this run){byoHasKey ? "" : " — add a key first"}
-            </option>
-          </Select>
-        </Field>
+        {/* ---- Inference mode for THIS run (Phase 2) ----
+            Hidden for a protected Market kit: it FORCES managed inference (a BYO
+            key would route the server-fetched kit prompt through the buyer's own
+            provider console, leaking it). The server coerces this regardless. */}
+        {!isMarketSelection(runKitId) && (
+          <Field label="Inference for this run">
+            <Select value={runInferenceMode} onChange={(e) => setRunInferenceMode(e.target.value as "" | "managed" | "byo")}>
+              <option value="">Use my account preference</option>
+              <option value="managed">Managed credits (this run)</option>
+              <option value="byo" disabled={!byoHasKey}>
+                My own key (this run){byoHasKey ? "" : " — add a key first"}
+              </option>
+            </Select>
+          </Field>
+        )}
         {/* ---- Input files (Phase C) ---- */}
         <Field label="Input files (optional)">
           <input
@@ -948,13 +1117,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
         <Field label="Kit (must have an approval)">
           <Select value={schedKitId} onChange={(e) => setSchedKitId(e.target.value)}>
             <option value="">Select a kit…</option>
-            {kits
-              .filter((k) => kitsWithApproval.includes(k.kitId))
-              .map((k) => (
-                <option key={k.kitId} value={k.kitId}>
-                  {k.name}
-                </option>
-              ))}
+            {renderKitOptions(true)}
           </Select>
         </Field>
         <Field label="Cron (minute hour dom month dow)">
@@ -984,7 +1147,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
               <div key={s.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: "0.85em" }}>
-                    <strong>{kitLabel(s.kitRef.localKitId)}</strong>{" "}
+                    <strong>{kitRefLabel(s.kitRef)}</strong>{" "}
                     <code style={{ fontSize: "0.9em" }}>{s.cron}</code>{" "}
                     <span style={{ color: "var(--color-text-secondary)" }}>({s.timezone})</span>
                     <div style={{ color: "var(--color-text-secondary)" }}>
@@ -1019,13 +1182,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
         <Field label="Kit (must have an approval)">
           <Select value={whKitId} onChange={(e) => setWhKitId(e.target.value)}>
             <option value="">Select a kit…</option>
-            {kits
-              .filter((k) => kitsWithApproval.includes(k.kitId))
-              .map((k) => (
-                <option key={k.kitId} value={k.kitId}>
-                  {k.name}
-                </option>
-              ))}
+            {renderKitOptions(true)}
           </Select>
         </Field>
         <Field label="Per-fire budget (USD, required)">
@@ -1065,7 +1222,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
               <div key={w.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: "0.85em", overflow: "hidden" }}>
-                    <strong>{kitLabel(w.kitRef.localKitId)}</strong>
+                    <strong>{kitRefLabel(w.kitRef)}</strong>
                     <div style={{ color: "var(--color-text-secondary)" }}>
                       {centsToUsd(w.budgetCents)}/fire · fired {w.fireCount}× · last <ClientTime ts={w.lastFiredAt} />
                     </div>
@@ -1104,7 +1261,7 @@ export function AutoSection({ kits, notify, marketUrl }: { kits: MyKitEntry[]; n
               onClick={() => setOpenRunId(r.id)}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", fontSize: "0.85em" }}>
-                <strong>{kitLabel(r.kitRef.localKitId)}</strong>
+                <strong>{kitRefLabel(r.kitRef)}</strong>
                 <Badge tone={ACTIVE.has(r.status) ? "brand" : "neutral"}>{r.status}</Badge>
               </div>
               <div style={{ fontSize: "0.78em", color: "var(--color-text-secondary)" }}>
