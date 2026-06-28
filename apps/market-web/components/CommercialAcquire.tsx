@@ -22,11 +22,14 @@ type AcquireProps = {
   licenseText: string;
   licenseVersion?: string;
   isAdmin: boolean;
-  /** Canonical Market kit id (passed into the "Run on Auto" deep link). */
+  /** Canonical Market kit id (passed into the run deep links). */
   marketKitId?: string;
-  /** Public AgentKitAuto base URL for the protected-kit "Run on Auto" action.
-   *  Undefined → the action hides (self-host with no Auto). */
+  /** Public AgentKitAuto base URL for the protected-kit "Run on Auto" action
+   *  (autonomous run). Undefined → the action hides (self-host with no Auto). */
   autoUrl?: string;
+  /** Public web-Forge base URL for the protected-kit "Use in Forge (web)" action
+   *  (interactive use). Undefined → the action hides (self-host with no Forge). */
+  forgeWebUrl?: string;
 };
 
 const commerceEnabled = process.env.NEXT_PUBLIC_COMMERCE_ENABLED === "1";

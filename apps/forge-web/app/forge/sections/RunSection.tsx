@@ -18,14 +18,34 @@ import { HttpError } from "@/forge-client";
 import type { GatewayStreamEvent } from "@/forge-client";
 import { CreditsPanel, InsufficientCreditsBanner, fetchCredits, type Credits } from "./CreditsPanel";
 import { useConfig } from "../config-context";
+import {
+  isMarketSelection,
+  marketSelectionValue,
+  parseMarketDeepLink,
+  resolveMarketSelection,
+  type EntitledKit
+} from "./market-kit-ref";
 
 type ManagedModel = { id: string; label: string; tier: string };
 type ChatMessage = { role: "user" | "assistant"; text: string; streaming?: boolean };
 type CreditsError = { message: string; requiredCents?: number; balanceCents?: number };
 
-export function RunSection({ forge, kits, notify }: { forge: Forge; kits: MyKitEntry[]; notify: Notify }) {
-  const { creditsEnabled } = useConfig();
+export function RunSection({
+  forge,
+  kits,
+  notify,
+  initialMarketSlug
+}: {
+  forge: Forge;
+  kits: MyKitEntry[];
+  notify: Notify;
+  /** Deep-link target: a `market:<slug>` slug to preselect + run (output-only kit). */
+  initialMarketSlug?: string | null;
+}) {
+  const { creditsEnabled, marketEnabled } = useConfig();
+  // The selected kit: a local kit id, or `market:<slug>` for a protected Market kit.
   const [kitId, setKitId] = useState<string>("");
+  const [entitled, setEntitled] = useState<EntitledKit[]>([]);
   const [models, setModels] = useState<ManagedModel[]>([]);
   const [model, setModel] = useState<string>("");
   const [prompt, setPrompt] = useState<string>("");
@@ -54,6 +74,18 @@ export function RunSection({ forge, kits, notify }: { forge: Forge; kits: MyKitE
     void loadCredits();
   }, [loadCredits]);
 
+  // Load the user's PROTECTED entitled Market kits (output-only kits that run
+  // server-side). Browser-safe: the list is only { marketKitId, slug, name } —
+  // never kit content. Fails closed to [] (Market disabled / service error →
+  // the run discovery list is simply absent).
+  useEffect(() => {
+    if (!marketEnabled) return;
+    void fetch("/api/forge/entitled-kits", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : { kits: [] }))
+      .then((res: { kits?: EntitledKit[] }) => setEntitled(res.kits ?? []))
+      .catch(() => {/* fail closed — no protected-run list */});
+  }, [marketEnabled]);
+
   // End the gateway session on unmount.
   useEffect(() => {
     return () => {
@@ -81,9 +113,25 @@ export function RunSection({ forge, kits, notify }: { forge: Forge; kits: MyKitE
     setKitId(id);
   };
 
+  // Deep-link: a `?kit=market:<slug>` link from Market preselects the protected
+  // kit once it's confirmed to be one of the user's entitled kits (a stale link
+  // for an un-owned slug is ignored; the run is also entitlement-gated server-
+  // side). Runs after the entitled list resolves.
+  useEffect(() => {
+    const slug = parseMarketDeepLink(initialMarketSlug);
+    if (!slug) return;
+    const value = marketSelectionValue(slug);
+    if (resolveMarketSelection(value, entitled)) {
+      resetSession();
+      setKitId(value);
+    }
+  }, [initialMarketSlug, entitled, resetSession]);
+
   const send = async () => {
     const text = prompt.trim();
     if (!kitId || !text || busy) return;
+    // Resolve a protected Market selection to its slug + id (browser-safe).
+    const marketRef = isMarketSelection(kitId) ? resolveMarketSelection(kitId, entitled) : null;
     setCreditsError(null);
     setPrompt("");
     setBusy(true);
@@ -104,7 +152,11 @@ export function RunSection({ forge, kits, notify }: { forge: Forge; kits: MyKitE
 
     try {
       const result = (await forge.runAgentKitWithAi({
-        kitId,
+        // Protected Market kit → keyed by slug (server fetches content); local
+        // kit → keyed by kitId. The browser never sends protected kit content.
+        ...(marketRef
+          ? { marketSlug: marketRef.slug, marketKitId: marketRef.marketKitId }
+          : { kitId }),
         prompt: text,
         ...(model ? { model } : {}),
         ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
@@ -159,11 +211,49 @@ export function RunSection({ forge, kits, notify }: { forge: Forge; kits: MyKitE
           <Field label="Kit">
             <Select value={kitId} onChange={(e) => onKitChange(e.target.value)}>
               <option value="">Select a kit…</option>
-              {kits.map((k) => (
-                <option key={k.kitId} value={k.kitId}>{k.name ?? k.kitId}</option>
-              ))}
+              {kits.length > 0 && (
+                <optgroup label="Your kits">
+                  {kits.map((k) => (
+                    <option key={k.kitId} value={k.kitId}>{k.name ?? k.kitId}</option>
+                  ))}
+                </optgroup>
+              )}
+              {entitled.length > 0 && (
+                <optgroup label="Protected kits (run online)">
+                  {entitled.map((k) => (
+                    <option key={k.marketKitId} value={marketSelectionValue(k.slug)}>
+                      {k.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           </Field>
+
+          {entitled.length > 0 && (
+            <div className="results-panel" style={{ marginTop: 4, marginBottom: 4 }}>
+              <strong>Your protected kits — run online</strong>
+              <p className="form-copy" style={{ marginTop: 2 }}>
+                These output-only kits run server-side — their contents never leave the server. Pick one to
+                use it interactively here.
+              </p>
+              <div className="button-row" style={{ flexWrap: "wrap" }}>
+                {entitled.map((k) => {
+                  const value = marketSelectionValue(k.slug);
+                  return (
+                    <Button
+                      key={k.marketKitId}
+                      variant={kitId === value ? "primary" : "secondary"}
+                      disabled={busy}
+                      onClick={() => onKitChange(value)}
+                    >
+                      Run {k.name}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <Field label="Model">
             <Select value={model} onChange={(e) => setModel(e.target.value)} disabled={!models.length}>

@@ -30,13 +30,15 @@ import type { StoredSession, TokenStore } from "@agentkitforge/core/market";
 import {
   marketServiceRoutes,
   marketServiceAuthHeader,
+  serviceEntitledKitsResponseSchema,
+  type ServiceEntitledKit,
   type ServiceLicensedPackageError,
   type ServiceLicensedPackageResponse
 } from "@agentkitforge/contracts";
 import { loadCoreMarket } from "@/server/core/load-core";
 import { unzipToTree } from "@/server/core/operations";
 import { withEphemeralTree } from "@/server/core/runner";
-import { getMarketBaseUrl } from "@/lib/self-host";
+import { getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
 
 /** Marker that tags a session's systemPromptRef as a protected Market kit whose
  *  prompt MUST be fetched server-side (never client-trusted) on every turn. */
@@ -370,6 +372,63 @@ export async function resolveProtectedSystemPromptViaService(
     downloadable: licensed.downloadable,
     onlineOnly: licensed.onlineOnly
   };
+}
+
+/** Build the Market service entitled-kits URL. Requires a Market base URL
+ *  (per-instance AGENTKITMARKET_BASE_URL; self-host without a Market fails
+ *  closed → undefined). */
+function serviceEntitledKitsUrl(override?: string): string | undefined {
+  const base = marketBaseUrl(override);
+  if (!base) return undefined;
+  return `${base.replace(/\/+$/, "")}${marketServiceRoutes.entitledKits()}`;
+}
+
+/**
+ * List the asserted user's PROTECTED (paid + non-downloadable) entitled kits
+ * SERVER-TO-SERVICE (no user session), via MARKET_SERVICE_KEY + the explicitly
+ * asserted userId. The Market service enforces entitlement (only ACTIVE
+ * entitlements are listed) and filters to protected kits, returning ONLY
+ * browser-safe display fields (name/slug/marketKitId) — never entitlement
+ * internals or kit content. Mirrors auto-web's listEntitledKitsViaService.
+ *
+ * Fails CLOSED:
+ *   - Market disabled on this instance (self-host, no own Market) → []. The
+ *     buyer-run surface is simply absent; local kits still build/run.
+ *   - MARKET_SERVICE_KEY unconfigured → []. No phone-home, no list.
+ *   - Any service/network/non-2xx/parse error → [] (the run discovery degrades
+ *     to empty rather than failing the page). The protected-RUN path is
+ *     unaffected and still entitlement-gated server-side at execution.
+ */
+export async function listEntitledKitsViaService(
+  userId: string,
+  override?: string
+): Promise<ServiceEntitledKit[]> {
+  // Self-host with Market disabled → no list (fail closed, never phone home).
+  if (!isMarketEnabled()) return [];
+  const key = marketServiceKey();
+  if (!key || key.length === 0) return [];
+  const url = serviceEntitledKitsUrl(override);
+  if (!url) return [];
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        [marketServiceAuthHeader]: key
+      },
+      body: JSON.stringify({ userId }),
+      cache: "no-store"
+    });
+  } catch {
+    return [];
+  }
+  if (!response.ok) return [];
+  const payload = (await response.json().catch(() => ({}))) as { kits?: unknown };
+  const parsed = serviceEntitledKitsResponseSchema.safeParse(payload);
+  return parsed.success ? parsed.data.kits : [];
 }
 
 // ---------------------------------------------------------------------------

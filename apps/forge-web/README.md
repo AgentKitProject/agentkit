@@ -149,7 +149,10 @@ WebForgeClient seam**, covering the primary flows:
 - **Validate** (profile selector), **Package**, **Export** (one-file / Claude Code /
   Codex) — all download in the browser.
 - **Import**: upload `.agentkit.zip`, from Git, from Market, favorite a Market kit.
-- **Licensed-kit in-memory preview** (online-only, never persisted).
+- **Run / Chat**: protected (output-only) kits the user has purchased run
+  server-side via an entitlement-gated gateway session — their contents never
+  reach the browser. Discovered from `/api/forge/entitled-kits` and reachable via
+  the `?kit=market:<slug>` deep link.
 
 **Deferred:** AI draft generate/revise UI, settings/AI-provider management, Market
 **submit** UI, update-check UI (the corresponding `/api/settings*`,
