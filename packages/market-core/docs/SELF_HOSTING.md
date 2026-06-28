@@ -203,6 +203,35 @@ helm upgrade agentkitmarket ./charts/agentkitmarket -f charts/agentkitmarket/val
 Generated credentials persist across upgrades. Pin `image.tag` / `web.image.tag`
 to release tags so upgrades are deliberate.
 
+## Paid / protected kits are not in open-core self-host
+
+A pure open-core self-host runs the **free / local** Market and Auto feature set.
+It deliberately ships **none** of the commercial surfaces — there is no paid-kit
+checkout, no seller payouts, and **no protected-kit ("run-on-Auto-only")
+capability**.
+
+What this means in practice:
+
+- A self-hosted Market **cannot serve protected paid kits.** Protection requires
+  the commercial pieces (the entitlement table, the output watermark/redaction
+  wiring, and the Market↔Auto service seam) that live outside open-core. None of
+  the seller pricing/protection UI appears, and there is nothing to set a kit
+  "protected".
+- Your self-host can still **run its own free / local kits on Auto** — the
+  autonomous run path is open-core. Local and free runs never invoke the
+  protected-kit prompt-resolution or leakage guards (the redactor defaults to
+  identity).
+- If a self-host has Market integration disabled (`isMarketEnabled()` is false —
+  e.g. `DISABLE_MARKET=true`, or no resolvable Market base URL), any attempt to
+  run a *Market* protected kit **fails closed** (`MarketDisabledError`): there is
+  no hosted fallback. This is correct and intentional — a self-host operator runs
+  only their own kits, and a protected kit's bytes are never resolvable without
+  the commercial Market + Auto pieces.
+
+In short: self-host gives you the full open-core product without the commercial
+moat. Protected paid kits are a hosted (or commercially-licensed) capability, and
+the fail-closed behavior on a Market-disabled self-host is by design.
+
 ## Build images locally (optional)
 
 The api/worker image builds from this repo's `Dockerfile`:
