@@ -400,8 +400,9 @@ function createLazyDynamoOrgRepository(): OrgRepository {
     setKitVisibility(kitId, visibility) { return getRepository().setKitVisibility(kitId, visibility); },
     listKitsForOrg(orgId) { return getRepository().listKitsForOrg(orgId); },
     setOrgProviderKey(orgId, input) { return getRepository().setOrgProviderKey(orgId, input); },
-    getOrgProviderKey(orgId) { return getRepository().getOrgProviderKey(orgId); },
-    clearOrgProviderKey(orgId) { return getRepository().clearOrgProviderKey(orgId); },
+    getOrgProviderKey(orgId, providerType) { return getRepository().getOrgProviderKey(orgId, providerType); },
+    listOrgProviderKeys(orgId) { return getRepository().listOrgProviderKeys(orgId); },
+    clearOrgProviderKey(orgId, providerType) { return getRepository().clearOrgProviderKey(orgId, providerType); },
   };
 }
 

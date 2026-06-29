@@ -759,38 +759,65 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           };
         }
 
-        it('set → status (masked, hasKey) → resolve (single org) → clear', async () => {
+        it('set (per provider) → status (lists providers) → resolve (single org, per provider) → clear', async () => {
           const created = await org().createOrg({ displayName: 'Key Org', ownerUserId: 'u_owner' });
 
-          const setRes = await routeRequest(
+          // Set two providers' keys on the org.
+          const setAnthropic = await routeRequest(
             req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, {
-              actorUserId: 'u_owner', apiKey: 'sk-ant-secret-Xy12', baseUrl: 'https://api.anthropic.com',
+              actorUserId: 'u_owner', providerType: 'anthropic', apiKey: 'sk-ant-secret-Xy12', baseUrl: 'https://api.anthropic.com',
             }),
             deps(),
           );
-          expect(setRes.statusCode).toBe(200);
-          expect(JSON.parse(setRes.body)).toEqual({ ok: true });
+          expect(setAnthropic.statusCode).toBe(200);
+          expect(JSON.parse(setAnthropic.body)).toEqual({ ok: true });
 
+          const setOpenai = await routeRequest(
+            req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, {
+              actorUserId: 'u_owner', providerType: 'openai', apiKey: 'sk-openai-secret-Ab34',
+            }),
+            deps(),
+          );
+          expect(setOpenai.statusCode).toBe(200);
+
+          // Status lists BOTH configured providers (one row each), masked.
           const statusRes = await routeRequest(
             req('GET', '/admin/orgs/{orgId}/api-key/status', { orgId: created.orgId }, undefined, { actorUserId: 'u_owner' }),
             deps(),
           );
           expect(statusRes.statusCode).toBe(200);
           const status = JSON.parse(statusRes.body);
-          expect(status.hasKey).toBe(true);
-          expect(status.providerType).toBe('anthropic');
-          expect(status.baseUrl).toBe('https://api.anthropic.com');
-          expect(status.updatedByUserId).toBe('u_owner');
-          // Masked: last 4 only, never the raw key.
-          expect(status.maskedKey).toBe('…Xy12');
+          expect(Array.isArray(status.providers)).toBe(true);
+          expect(status.providers).toHaveLength(2);
+          const byProvider: Record<string, any> = Object.fromEntries(
+            status.providers.map((p: any) => [p.providerType, p]),
+          );
+          expect(byProvider.anthropic.maskedKey).toBe('…Xy12');
+          expect(byProvider.anthropic.baseUrl).toBe('https://api.anthropic.com');
+          expect(byProvider.anthropic.updatedByUserId).toBe('u_owner');
+          expect(byProvider.openai.maskedKey).toBe('…Ab34');
           expect(JSON.stringify(status)).not.toContain('sk-ant-secret');
+          expect(JSON.stringify(status)).not.toContain('sk-openai-secret');
 
-          const resolveRes = await routeRequest(
-            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }),
+          // Resolve for openai → the openai key.
+          const resolveOpenai = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }, undefined, { providerType: 'openai' }),
             deps(),
           );
-          expect(resolveRes.statusCode).toBe(200);
-          expect(JSON.parse(resolveRes.body)).toEqual({
+          expect(resolveOpenai.statusCode).toBe(200);
+          expect(JSON.parse(resolveOpenai.body)).toEqual({
+            found: true,
+            orgId: created.orgId,
+            apiKey: 'sk-openai-secret-Ab34',
+            providerType: 'openai',
+          });
+
+          // Resolve for anthropic → the anthropic key (with baseUrl).
+          const resolveAnthropic = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }, undefined, { providerType: 'anthropic' }),
+            deps(),
+          );
+          expect(JSON.parse(resolveAnthropic.body)).toEqual({
             found: true,
             orgId: created.orgId,
             apiKey: 'sk-ant-secret-Xy12',
@@ -798,8 +825,16 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
             baseUrl: 'https://api.anthropic.com',
           });
 
+          // Resolve for a provider the org has no key for → not found.
+          const resolveGemini = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }, undefined, { providerType: 'gemini' }),
+            deps(),
+          );
+          expect(JSON.parse(resolveGemini.body)).toEqual({ found: false });
+
+          // Clear only the openai key; anthropic remains.
           const clearRes = await routeRequest(
-            req('DELETE', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_owner' }),
+            req('DELETE', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_owner' }, { providerType: 'openai' }),
             deps(),
           );
           expect(clearRes.statusCode).toBe(200);
@@ -808,7 +843,24 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
             req('GET', '/admin/orgs/{orgId}/api-key/status', { orgId: created.orgId }, undefined, { actorUserId: 'u_owner' }),
             deps(),
           );
-          expect(JSON.parse(afterStatus.body)).toEqual({ hasKey: false });
+          const after = JSON.parse(afterStatus.body);
+          expect(after.providers).toHaveLength(1);
+          expect(after.providers[0].providerType).toBe('anthropic');
+        });
+
+        it('DELETE / resolve require a providerType query param', async () => {
+          const created = await org().createOrg({ displayName: 'PT Org', ownerUserId: 'u_owner' });
+          const badDelete = await routeRequest(
+            req('DELETE', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_owner' }),
+            deps(),
+          );
+          expect(badDelete.statusCode).toBe(400);
+
+          const badResolve = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }),
+            deps(),
+          );
+          expect(badResolve.statusCode).toBe(400);
         });
 
         it('gates set/status to owner/admin (member → 403)', async () => {
@@ -817,7 +869,7 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           await org().acceptInvite(created.orgId, 'u_member');
 
           const setRes = await routeRequest(
-            req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_member', apiKey: 'sk-ant-nope' }),
+            req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_member', providerType: 'anthropic', apiKey: 'sk-ant-nope' }),
             deps(),
           );
           expect(setRes.statusCode).toBe(403);
@@ -829,35 +881,68 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           expect(statusRes.statusCode).toBe(403);
         });
 
-        it('multi-org resolve rule: 0 keys → not found; 2 → not found; exactly 1 → found', async () => {
+        it('multi-org resolve rule is PER PROVIDER: 0 → not found; 2 (same provider) → not found; exactly 1 → found', async () => {
           const orgA = await org().createOrg({ displayName: 'Resolve Org A', ownerUserId: 'u_multi' });
           const orgB = await org().createOrg({ displayName: 'Resolve Org B', ownerUserId: 'u_multi' });
 
-          // 0 keys → not found.
+          // 0 openai keys → not found.
           let res = await routeRequest(
-            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }, undefined, { providerType: 'openai' }),
             deps(),
           );
           expect(JSON.parse(res.body)).toEqual({ found: false });
 
-          // 2 orgs with keys → ambiguous → not found.
-          await org().setOrgProviderKey(orgA.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher-a', updatedByUserId: 'u_multi' });
-          await org().setOrgProviderKey(orgB.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher-b', updatedByUserId: 'u_multi' });
+          // Both orgs hold an OPENAI key → ambiguous for openai → not found.
+          await org().setOrgProviderKey(orgA.orgId, { providerType: 'openai', apiKeyCiphertext: 'cipher-a', updatedByUserId: 'u_multi' });
+          await org().setOrgProviderKey(orgB.orgId, { providerType: 'openai', apiKeyCiphertext: 'cipher-b', updatedByUserId: 'u_multi' });
           res = await routeRequest(
-            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }, undefined, { providerType: 'openai' }),
             deps(),
           );
           expect(JSON.parse(res.body)).toEqual({ found: false });
 
-          // Exactly 1 → found (orgB, after clearing orgA).
-          await org().clearOrgProviderKey(orgA.orgId);
+          // But resolving anthropic (which neither org has) → not found, independent of the openai ambiguity.
           res = await routeRequest(
-            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }, undefined, { providerType: 'anthropic' }),
+            deps(),
+          );
+          expect(JSON.parse(res.body)).toEqual({ found: false });
+
+          // Exactly 1 org with an openai key → found (orgB, after clearing orgA's openai).
+          await org().clearOrgProviderKey(orgA.orgId, 'openai');
+          res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }, undefined, { providerType: 'openai' }),
             deps(),
           );
           const resolved = JSON.parse(res.body);
           expect(resolved.found).toBe(true);
           expect(resolved.orgId).toBe(orgB.orgId);
+        });
+
+        it('resolve is per-provider: 2 orgs with DIFFERENT providers each resolve their own', async () => {
+          const orgA = await org().createOrg({ displayName: 'Diff Org A', ownerUserId: 'u_diff' });
+          const orgB = await org().createOrg({ displayName: 'Diff Org B', ownerUserId: 'u_diff' });
+          // orgA has an anthropic key; orgB has an openai key.
+          await org().setOrgProviderKey(orgA.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher-anthropic', updatedByUserId: 'u_diff' });
+          await org().setOrgProviderKey(orgB.orgId, { providerType: 'openai', apiKeyCiphertext: 'cipher-openai', updatedByUserId: 'u_diff' });
+
+          // Resolving anthropic → exactly one org (orgA) has it → found.
+          let res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_diff' }, undefined, { providerType: 'anthropic' }),
+            deps(),
+          );
+          let r = JSON.parse(res.body);
+          expect(r.found).toBe(true);
+          expect(r.orgId).toBe(orgA.orgId);
+
+          // Resolving openai → exactly one org (orgB) has it → found.
+          res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_diff' }, undefined, { providerType: 'openai' }),
+            deps(),
+          );
+          r = JSON.parse(res.body);
+          expect(r.found).toBe(true);
+          expect(r.orgId).toBe(orgB.orgId);
         });
 
         it('resolve only considers ACTIVE memberships', async () => {
@@ -867,13 +952,13 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           await org().addMember(created.orgId, 'u_invited', 'member', 'u_owner');
 
           const res = await routeRequest(
-            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_invited' }),
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_invited' }, undefined, { providerType: 'anthropic' }),
             deps(),
           );
           expect(JSON.parse(res.body)).toEqual({ found: false });
         });
 
-        it('persists ciphertext verbatim and round-trips through the repository', async () => {
+        it('persists ciphertext verbatim per provider and round-trips via get/list', async () => {
           const created = await org().createOrg({ displayName: 'Cipher Org', ownerUserId: 'u_owner' });
           await org().setOrgProviderKey(created.orgId, {
             providerType: 'anthropic',
@@ -881,7 +966,13 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
             baseUrl: 'https://example.test',
             updatedByUserId: 'u_owner',
           });
-          const record = await org().getOrgProviderKey(created.orgId);
+          await org().setOrgProviderKey(created.orgId, {
+            providerType: 'gemini',
+            apiKeyCiphertext: 'enc:v1:gemini',
+            updatedByUserId: 'u_owner',
+          });
+
+          const record = await org().getOrgProviderKey(created.orgId, 'anthropic');
           expect(record?.orgId).toBe(created.orgId);
           expect(record?.apiKeyCiphertext).toBe('enc:v1:opaque-ciphertext');
           expect(record?.baseUrl).toBe('https://example.test');
@@ -889,18 +980,25 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           expect(record?.updatedByUserId).toBe('u_owner');
           expect(typeof record?.updatedAt).toBe('string');
 
-          // Update replaces, and the upsert is keyed on orgId (one key per org).
+          // listOrgProviderKeys returns every configured provider for the org.
+          const list = await org().listOrgProviderKeys(created.orgId);
+          expect(list.map((k) => k.providerType).sort()).toEqual(['anthropic', 'gemini']);
+
+          // Upsert is keyed on (orgId, providerType): updating anthropic leaves gemini intact.
           await org().setOrgProviderKey(created.orgId, {
             providerType: 'anthropic',
             apiKeyCiphertext: 'enc:v1:second',
             updatedByUserId: 'u_owner',
           });
-          const updated = await org().getOrgProviderKey(created.orgId);
+          const updated = await org().getOrgProviderKey(created.orgId, 'anthropic');
           expect(updated?.apiKeyCiphertext).toBe('enc:v1:second');
           expect(updated?.baseUrl).toBeUndefined();
+          expect((await org().getOrgProviderKey(created.orgId, 'gemini'))?.apiKeyCiphertext).toBe('enc:v1:gemini');
 
-          await org().clearOrgProviderKey(created.orgId);
-          expect(await org().getOrgProviderKey(created.orgId)).toBeUndefined();
+          // Clearing one provider leaves the other.
+          await org().clearOrgProviderKey(created.orgId, 'anthropic');
+          expect(await org().getOrgProviderKey(created.orgId, 'anthropic')).toBeUndefined();
+          expect(await org().getOrgProviderKey(created.orgId, 'gemini')).toBeDefined();
         });
 
         it('encryption round-trips when the secret is set (ciphertext != plaintext)', () => {
@@ -918,11 +1016,12 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           }
         });
 
-        it('clearing the org key row when deleting the org leaves no key', async () => {
+        it('deleting the org removes ALL its per-provider key rows', async () => {
           const created = await org().createOrg({ displayName: 'Delete Key Org', ownerUserId: 'u_owner' });
           await org().setOrgProviderKey(created.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher', updatedByUserId: 'u_owner' });
+          await org().setOrgProviderKey(created.orgId, { providerType: 'openai', apiKeyCiphertext: 'cipher2', updatedByUserId: 'u_owner' });
           await org().deleteOrg(created.orgId);
-          expect(await org().getOrgProviderKey(created.orgId)).toBeUndefined();
+          expect(await org().listOrgProviderKeys(created.orgId)).toEqual([]);
         });
       });
     });

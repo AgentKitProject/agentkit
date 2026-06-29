@@ -24,6 +24,7 @@ export type {
   KitPricingUpdate,
   OrgStripeAccountFields,
   OrgProviderKeyRecord,
+  OrgKeyProviderType,
   // Commercial seam ports (implemented by @agentkit-commercial/market-core).
   CommercialPricingRepository,
   CommercialPayoutRepository,

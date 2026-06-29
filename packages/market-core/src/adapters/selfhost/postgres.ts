@@ -1173,8 +1173,7 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
       await pool.query(
         `INSERT INTO org_provider_keys (org_id, provider_type, api_key_ciphertext, base_url, updated_by_user_id, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (org_id) DO UPDATE SET
-           provider_type = EXCLUDED.provider_type,
+         ON CONFLICT (org_id, provider_type) DO UPDATE SET
            api_key_ciphertext = EXCLUDED.api_key_ciphertext,
            base_url = EXCLUDED.base_url,
            updated_by_user_id = EXCLUDED.updated_by_user_id,
@@ -1183,13 +1182,27 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
       );
     },
 
-    async getOrgProviderKey(orgId: string): Promise<OrgProviderKeyRecord | undefined> {
-      const result = await pool.query(`SELECT * FROM org_provider_keys WHERE org_id = $1`, [orgId]);
+    async getOrgProviderKey(orgId, providerType): Promise<OrgProviderKeyRecord | undefined> {
+      const result = await pool.query(
+        `SELECT * FROM org_provider_keys WHERE org_id = $1 AND provider_type = $2`,
+        [orgId, providerType],
+      );
       return result.rows[0] ? rowToProviderKey(result.rows[0]) : undefined;
     },
 
-    async clearOrgProviderKey(orgId: string): Promise<void> {
-      await pool.query(`DELETE FROM org_provider_keys WHERE org_id = $1`, [orgId]);
+    async listOrgProviderKeys(orgId: string): Promise<OrgProviderKeyRecord[]> {
+      const result = await pool.query(
+        `SELECT * FROM org_provider_keys WHERE org_id = $1 ORDER BY provider_type`,
+        [orgId],
+      );
+      return result.rows.map(rowToProviderKey);
+    },
+
+    async clearOrgProviderKey(orgId, providerType): Promise<void> {
+      await pool.query(
+        `DELETE FROM org_provider_keys WHERE org_id = $1 AND provider_type = $2`,
+        [orgId, providerType],
+      );
     },
   };
 }

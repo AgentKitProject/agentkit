@@ -268,23 +268,33 @@ export const marketBackendOrgRoutes = {
   adminOrgByStripeAccount: (stripeAccountId: string) =>
     `/admin/orgs/by-stripe-account/${encodeURIComponent(stripeAccountId)}`,
   /**
-   * POST (set) / DELETE (clear) an org's shared LLM API key.
-   * Body carries `actorUserId`; the backend gates to the org's owner/admin.
-   * The key is encrypted at rest; this route never returns the raw key.
+   * POST (set) one of an org's per-provider shared LLM API keys / DELETE (clear) one.
+   * An org stores ONE key per provider (composite key `(orgId, providerType)`).
+   *  - POST: body (`setOrgApiKeyRequestSchema`) carries `providerType` (which
+   *    provider's key to set) + `actorUserId`; upserts that provider's key.
+   *  - DELETE: the provider to clear is given as a `providerType` query param,
+   *    e.g. `/admin/orgs/{orgId}/api-key?providerType=openai`. `actorUserId` is
+   *    carried in the body.
+   * The backend gates both to the org's owner/admin. The key is encrypted at
+   * rest; this route never returns the raw key.
    */
   adminOrgApiKey: (orgId: string) =>
     `/admin/orgs/${encodeURIComponent(orgId)}/api-key`,
-  /** GET — masked status of an org's API key (hasKey + masked + meta; never the raw key). */
+  /** GET — masked status of ALL of an org's per-provider API keys
+   *  (`orgApiKeyStatusSchema`: `{ providers: [...] }`; never the raw keys). */
   adminOrgApiKeyStatus: (orgId: string) =>
     `/admin/orgs/${encodeURIComponent(orgId)}/api-key/status`,
   /**
-   * GET — resolve the effective org API key for a USER (decrypted; Seam B only).
+   * GET — resolve the effective org API key for a USER for a SPECIFIC provider
+   * (decrypted; Seam B only). `providerType` is a required query param, e.g.
+   * `/admin/users/{userId}/org-api-key/resolve?providerType=openai`.
    * Auto / Forge call this at inference time. The multi-org selection rule lives
-   * server-side: pick the user's single team org that has a key, else not-found.
+   * server-side: pick the user's single active-membership team org that holds a
+   * key FOR THAT provider, else not-found.
    * Returns the raw key over the admin-key-authenticated in-cluster channel only.
    */
-  adminResolveUserOrgApiKey: (userId: string) =>
-    `/admin/users/${encodeURIComponent(userId)}/org-api-key/resolve`
+  adminResolveUserOrgApiKey: (userId: string, providerType: string) =>
+    `/admin/users/${encodeURIComponent(userId)}/org-api-key/resolve?providerType=${encodeURIComponent(providerType)}`
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -309,46 +319,72 @@ export type SetOrgStripeAccountRequest = z.infer<typeof setOrgStripeAccountReque
 // ---------------------------------------------------------------------------
 
 /**
- * Provider an org key applies to. Anthropic only for now (Auto is Anthropic; the
- * Forge platform/managed path is Anthropic). Extensible if Forge BYO providers
- * diverge. A run only uses the org key when its provider matches.
+ * Provider an org key applies to. An org stores ONE key PER provider; a run uses
+ * the org key whose provider matches the run's provider.
+ *
+ * MIRROR: this is the exact 5-value `AiProviderType` union from
+ * `@agentkitforge/core` (`packages/core/src/providers/types.ts` + catalog.ts).
+ * It is mirrored here (not imported) because `@agentkitforge/contracts` has no
+ * dependency on `@agentkitforge/core`. Keep the two in sync if either changes.
  */
-export const orgKeyProviderTypeSchema = z.enum(["anthropic"]);
+export const orgKeyProviderTypeSchema = z.enum([
+  "anthropic",
+  "openai",
+  "gemini",
+  "ollama",
+  "openai-compatible"
+]);
 export type OrgKeyProviderType = z.infer<typeof orgKeyProviderTypeSchema>;
 
 /**
  * Browser routes (market-app, AuthKit-cookie auth, gated to org owner/admin) for
- * managing an org's shared API key. The web UI sets/clears it; the raw key is
- * never read back (GET returns masked status only).
+ * managing an org's per-provider shared API keys. The web UI sets/clears a
+ * provider's key; the raw key is never read back (GET returns masked status
+ * only, one row per configured provider).
  */
 export const orgApiKeyRoutes = {
-  /** GET (masked status) / PUT (set) / DELETE (clear) the org's shared API key. */
+  /**
+   * GET (masked status of ALL providers) / PUT (set one provider's key — body
+   * carries `providerType`) / DELETE (clear one provider — `providerType` query
+   * param, e.g. `?providerType=openai`) for the org's shared API keys.
+   */
   orgApiKey: (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/api-key`
 } as const;
 
 /**
  * Body of PUT /api/orgs/{orgId}/api-key (browser) and POST the Seam-B
- * adminOrgApiKey. `actorUserId` is injected server-side from the session on the
- * Seam-B hop (the browser body carries only the key fields). Owner/admin gated.
+ * adminOrgApiKey. `providerType` identifies WHICH provider's key is being set
+ * (an org holds one key per provider) and is required. `actorUserId` is injected
+ * server-side from the session on the Seam-B hop (the browser body carries only
+ * the key fields). Owner/admin gated.
  */
 export const setOrgApiKeyRequestSchema = z.object({
   apiKey: z.string().min(1),
-  providerType: orgKeyProviderTypeSchema.default("anthropic"),
+  providerType: orgKeyProviderTypeSchema,
   baseUrl: z.string().url().optional(),
   /** Set on the Seam-B hop from the authenticated session; absent on the browser body. */
   actorUserId: z.string().min(1).optional()
 });
 export type SetOrgApiKeyRequest = z.infer<typeof setOrgApiKeyRequestSchema>;
 
-/** Masked status of an org's API key — safe to return to the browser. */
-export const orgApiKeyStatusSchema = z.object({
-  hasKey: z.boolean(),
-  /** e.g. "sk-ant-…Xy12" — last few chars only; absent when hasKey is false. */
-  maskedKey: z.string().optional(),
-  providerType: orgKeyProviderTypeSchema.optional(),
+/** One configured per-provider org key, masked — safe to return to the browser. */
+export const orgApiKeyProviderStatusSchema = z.object({
+  providerType: orgKeyProviderTypeSchema,
+  /** e.g. "sk-ant-…Xy12" — last few chars only. */
+  maskedKey: z.string(),
   baseUrl: z.string().optional(),
-  updatedAt: z.string().optional(),
-  updatedByUserId: z.string().optional()
+  updatedAt: z.string(),
+  updatedByUserId: z.string()
+});
+export type OrgApiKeyProviderStatus = z.infer<typeof orgApiKeyProviderStatusSchema>;
+
+/**
+ * Masked status of ALL of an org's per-provider API keys — safe to return to the
+ * browser. The UI shows one row per configured provider; an empty list means the
+ * org has no keys configured. Never includes the raw key.
+ */
+export const orgApiKeyStatusSchema = z.object({
+  providers: z.array(orgApiKeyProviderStatusSchema)
 });
 export type OrgApiKeyStatus = z.infer<typeof orgApiKeyStatusSchema>;
 

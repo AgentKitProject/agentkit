@@ -139,27 +139,44 @@ export interface OrgRepository {
   /** All kits owned by an org, including private ones (for the org's own listing). */
   listKitsForOrg(orgId: string): Promise<KitRecord[]>;
   /**
-   * Org shared LLM API key (open-core; encrypted at rest). The repository deals
-   * in CIPHERTEXT only — encryption/decryption happens in the route/service
+   * Org shared LLM API keys (open-core; encrypted at rest). An org holds ONE key
+   * PER provider, keyed on the composite `(orgId, providerType)`. The repository
+   * deals in CIPHERTEXT only — encryption/decryption happens in the route/service
    * layer, never in the adapter. `apiKeyCiphertext` is opaque to the adapter.
    */
   setOrgProviderKey(orgId: string, input: {
-    providerType: 'anthropic';
+    providerType: OrgKeyProviderType;
     apiKeyCiphertext: string;
     baseUrl?: string;
     updatedByUserId: string;
   }): Promise<void>;
-  getOrgProviderKey(orgId: string): Promise<OrgProviderKeyRecord | undefined>;
-  clearOrgProviderKey(orgId: string): Promise<void>;
+  /** The org's key for a specific provider, or undefined if none is configured. */
+  getOrgProviderKey(orgId: string, providerType: OrgKeyProviderType): Promise<OrgProviderKeyRecord | undefined>;
+  /** Every configured per-provider key for the org. */
+  listOrgProviderKeys(orgId: string): Promise<OrgProviderKeyRecord[]>;
+  clearOrgProviderKey(orgId: string, providerType: OrgKeyProviderType): Promise<void>;
 }
 
 /**
- * A stored org shared LLM API key. `apiKeyCiphertext` is the opaque at-rest
- * value the repository persists/returns verbatim; the route layer decrypts it.
+ * Provider an org key applies to — the 5-value `AiProviderType` union (mirrors
+ * `@agentkitforge/contracts` `orgKeyProviderTypeSchema` / `@agentkitforge/core`
+ * `AiProviderType`). Kept as a local union to avoid a cross-package import here.
+ */
+export type OrgKeyProviderType =
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'openai-compatible';
+
+/**
+ * A stored org shared LLM API key (one per provider). `apiKeyCiphertext` is the
+ * opaque at-rest value the repository persists/returns verbatim; the route layer
+ * decrypts it.
  */
 export interface OrgProviderKeyRecord {
   orgId: string;
-  providerType: 'anthropic';
+  providerType: OrgKeyProviderType;
   apiKeyCiphertext: string;
   baseUrl?: string;
   updatedByUserId: string;

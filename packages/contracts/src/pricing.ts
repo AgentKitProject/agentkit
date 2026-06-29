@@ -341,13 +341,17 @@ export type ServiceEntitledKitsResponse = z.infer<typeof serviceEntitledKitsResp
 
 /**
  * POST {marketServiceRoutes.resolveOrgApiKey()} body. Asserts the user's id (no
- * session). The Market service maps the user → their single team org that holds a
- * shared API key (server-side rule) and returns the decrypted key. Auto / Forge
+ * session) and the `providerType` the consumer wants a key for. The Market
+ * service maps the user → their single team org that holds a shared API key FOR
+ * THAT PROVIDER (server-side rule) and returns the decrypted key. Auto / Forge
  * call this at inference time, AFTER a member's own key, BEFORE the operator key.
+ * `providerType` is the 5-value `orgKeyProviderTypeSchema` from orgs.ts (mirrored
+ * as a string here to avoid a cross-file import; the backend validates it).
  * Response = resolvedOrgApiKeySchema (orgs.ts): { found, orgId?, apiKey?, ... }.
  */
 export const serviceResolveOrgApiKeyRequestSchema = z.object({
-  userId: z.string().min(1)
+  userId: z.string().min(1),
+  providerType: z.string().min(1)
 });
 export type ServiceResolveOrgApiKeyRequest = z.infer<typeof serviceResolveOrgApiKeyRequestSchema>;
 

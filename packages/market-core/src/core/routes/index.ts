@@ -30,6 +30,7 @@ import type {
   AuditRepository,
   CatalogRepository,
   FavoritesRepository,
+  OrgKeyProviderType,
   OrgProviderKeyRecord,
   OrgRepository,
   PackageUploadService,
@@ -1541,6 +1542,22 @@ function maskApiKey(key: string): string {
   return `…${key.slice(-4)}`;
 }
 
+/** The 5-value provider union an org key can apply to (mirrors the contract). */
+const ORG_KEY_PROVIDER_TYPES: readonly OrgKeyProviderType[] = [
+  'anthropic',
+  'openai',
+  'gemini',
+  'ollama',
+  'openai-compatible',
+];
+
+/** Validates a `providerType` query param against the 5-value union. */
+function parseProviderType(value: unknown): OrgKeyProviderType | undefined {
+  return typeof value === 'string' && (ORG_KEY_PROVIDER_TYPES as readonly string[]).includes(value)
+    ? (value as OrgKeyProviderType)
+    : undefined;
+}
+
 /** POST /admin/orgs/{orgId}/api-key — set (encrypt at rest) the org's shared key. */
 async function setOrgApiKeyHandler(
   request: CoreRequest,
@@ -1565,7 +1582,11 @@ async function setOrgApiKeyHandler(
   return json(request, allowedOrigins, 200, { ok: true });
 }
 
-/** DELETE /admin/orgs/{orgId}/api-key — clear the org's shared key. */
+/**
+ * DELETE /admin/orgs/{orgId}/api-key?providerType=... — clear ONE of the org's
+ * per-provider keys. The provider to clear comes from the `providerType` query
+ * param.
+ */
 async function clearOrgApiKeyHandler(
   request: CoreRequest,
   orgRepository: OrgRepository,
@@ -1575,11 +1596,18 @@ async function clearOrgApiKeyHandler(
   if ('statusCode' in gate) {
     return gate;
   }
-  await orgRepository.clearOrgProviderKey(gate.orgId);
+  const providerType = parseProviderType(request.queryStringParameters?.providerType);
+  if (!providerType) {
+    return json(request, allowedOrigins, 400, { message: 'providerType query parameter is required' });
+  }
+  await orgRepository.clearOrgProviderKey(gate.orgId, providerType);
   return json(request, allowedOrigins, 200, { ok: true });
 }
 
-/** GET /admin/orgs/{orgId}/api-key/status — masked status (never the raw key). */
+/**
+ * GET /admin/orgs/{orgId}/api-key/status — masked status of ALL of the org's
+ * per-provider keys (`{ providers: [...] }`; never the raw keys).
+ */
 async function orgApiKeyStatusHandler(
   request: CoreRequest,
   orgRepository: OrgRepository,
@@ -1604,25 +1632,24 @@ async function orgApiKeyStatusHandler(
   if (!membership || membership.status !== 'active' || !MANAGE_ROLES.has(membership.role)) {
     return json(request, allowedOrigins, 403, { message: 'Only an owner or admin can read the API key status' });
   }
-  const record = await orgRepository.getOrgProviderKey(orgId);
-  if (!record) {
-    return json(request, allowedOrigins, 200, { hasKey: false });
-  }
+  const records = await orgRepository.listOrgProviderKeys(orgId);
   return json(request, allowedOrigins, 200, {
-    hasKey: true,
-    maskedKey: maskApiKey(decryptSecret(record.apiKeyCiphertext)),
-    providerType: record.providerType,
-    baseUrl: record.baseUrl,
-    updatedAt: record.updatedAt,
-    updatedByUserId: record.updatedByUserId,
+    providers: records.map((record) => ({
+      providerType: record.providerType,
+      maskedKey: maskApiKey(decryptSecret(record.apiKeyCiphertext)),
+      baseUrl: record.baseUrl,
+      updatedAt: record.updatedAt,
+      updatedByUserId: record.updatedByUserId,
+    })),
   });
 }
 
 /**
- * GET /admin/users/{userId}/org-api-key/resolve — runtime hot path (Auto/Forge).
- * Admin-key auth only. Multi-org selection rule: among the user's ACTIVE-member
- * orgs that carry a key, return it only when EXACTLY ONE has one (decrypted);
- * zero or more than one → { found: false }.
+ * GET /admin/users/{userId}/org-api-key/resolve?providerType=... — runtime hot
+ * path (Auto/Forge). Admin-key auth only. Multi-org selection rule, PER PROVIDER:
+ * among the user's ACTIVE-member orgs that carry a key FOR THE REQUESTED PROVIDER,
+ * return it only when EXACTLY ONE has one (decrypted); zero or more than one →
+ * { found: false }.
  */
 async function resolveUserOrgApiKeyHandler(
   request: CoreRequest,
@@ -1633,6 +1660,10 @@ async function resolveUserOrgApiKeyHandler(
   if (!userId) {
     return json(request, allowedOrigins, 400, { message: 'Missing userId' });
   }
+  const providerType = parseProviderType(request.queryStringParameters?.providerType);
+  if (!providerType) {
+    return json(request, allowedOrigins, 400, { message: 'providerType query parameter is required' });
+  }
   const orgs = await orgRepository.listOrgsForUser(userId);
   const withKey: { orgId: string; record: OrgProviderKeyRecord }[] = [];
   for (const org of orgs) {
@@ -1640,7 +1671,7 @@ async function resolveUserOrgApiKeyHandler(
     if (!membership || membership.status !== 'active') {
       continue;
     }
-    const record = await orgRepository.getOrgProviderKey(org.orgId);
+    const record = await orgRepository.getOrgProviderKey(org.orgId, providerType);
     if (record) {
       withKey.push({ orgId: org.orgId, record });
     }

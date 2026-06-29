@@ -223,11 +223,18 @@ const TABLE_DEFINITIONS: CreateTableCommandInput[] = [
     ],
   },
   {
-    // OrgProviderKeys: PK orgId (one shared LLM API key per org).
+    // OrgProviderKeys: composite key PK orgId / SK providerType
+    // (one shared LLM API key per provider per org).
     TableName: TABLES.orgProviderKeys,
     BillingMode: 'PAY_PER_REQUEST',
-    KeySchema: [{ AttributeName: 'orgId', KeyType: 'HASH' }],
-    AttributeDefinitions: [{ AttributeName: 'orgId', AttributeType: S }],
+    KeySchema: [
+      { AttributeName: 'orgId', KeyType: 'HASH' },
+      { AttributeName: 'providerType', KeyType: 'RANGE' },
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'orgId', AttributeType: S },
+      { AttributeName: 'providerType', AttributeType: S },
+    ],
   },
   {
     // Favorites: PK userId / SK kitId.

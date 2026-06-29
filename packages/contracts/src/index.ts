@@ -59,6 +59,7 @@ export {
   orgKeyProviderTypeSchema,
   orgApiKeyRoutes,
   setOrgApiKeyRequestSchema,
+  orgApiKeyProviderStatusSchema,
   orgApiKeyStatusSchema,
   resolvedOrgApiKeySchema,
   forgeOrgRoutes,
@@ -84,6 +85,7 @@ export {
   type SetOrgStripeAccountRequest,
   type OrgKeyProviderType,
   type SetOrgApiKeyRequest,
+  type OrgApiKeyProviderStatus,
   type OrgApiKeyStatus,
   type ResolvedOrgApiKey
 } from "./orgs.js";

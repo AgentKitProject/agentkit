@@ -204,15 +204,17 @@ CREATE INDEX IF NOT EXISTS org_invites_user_id_idx ON org_invites (user_id);
 -- Email-invite claim (pre-signup invites): lookups by email on first login.
 CREATE INDEX IF NOT EXISTS org_invites_email_idx ON org_invites (email) WHERE email IS NOT NULL;
 
--- Org shared LLM API key (open-core; encrypted at rest). One key per org;
--- `api_key_ciphertext` is the opaque at-rest value (route layer decrypts it).
+-- Org shared LLM API keys (open-core; encrypted at rest). One key PER provider;
+-- composite PK (org_id, provider_type). `api_key_ciphertext` is the opaque
+-- at-rest value (route layer decrypts it).
 CREATE TABLE IF NOT EXISTS org_provider_keys (
-  org_id              text PRIMARY KEY REFERENCES organizations(org_id) ON DELETE CASCADE,
+  org_id              text NOT NULL REFERENCES organizations(org_id) ON DELETE CASCADE,
   provider_type       text NOT NULL,
   api_key_ciphertext  text NOT NULL,
   base_url            text,
   updated_by_user_id  text NOT NULL,
-  updated_at          text NOT NULL
+  updated_at          text NOT NULL,
+  PRIMARY KEY (org_id, provider_type)
 );
 
 -- NOTE: The Tier-2 `entitlements` table (PK (user_id, kit_id) + kit_id index)
