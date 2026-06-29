@@ -195,3 +195,19 @@ backend effective admin key (so a self-hoster sets one key, not two).
 {{- include "agentkitmarket.effectiveAdminApiKey" . -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Effective MARKET_KEY_ENCRYPTION_SECRET (explicit | persisted | seeded-fallback).
+Used by market-core to encrypt org API keys at rest. If the operator does not
+supply one, the chart auto-generates a stable value on first install and persists
+it across upgrades (via lookup), exactly like SESSION_SECRET. The auto-generated
+value is always present so market-core never falls back to plaintext.
+*/}}
+{{- define "agentkitmarket.effectiveMarketKeyEncryptionSecret" -}}
+{{- if .Values.secrets.marketKeyEncryptionSecret -}}
+{{- .Values.secrets.marketKeyEncryptionSecret -}}
+{{- else -}}
+{{- $prev := include "agentkitmarket._liveSecretValue" (list . (include "agentkitmarket.secretName" .) "MARKET_KEY_ENCRYPTION_SECRET") -}}
+{{- $prev | default (include "agentkitmarket._seededSecret" (list . "market-key-encryption-secret")) -}}
+{{- end -}}
+{{- end }}

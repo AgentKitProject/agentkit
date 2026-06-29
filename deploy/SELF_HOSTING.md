@@ -542,3 +542,52 @@ seller payouts, and **no protected-kit ("run-on-Auto-only") capability**.
 In short: self-host gives you the full open-core product without the commercial moat.
 Protected paid kits and managed Auto billing are hosted (or commercially-licensed)
 capabilities.
+
+---
+
+## 11. Organization shared API keys (optional)
+
+Team orgs can hold a single shared Anthropic API key that Auto (and Forge-web) fall
+back to when a member has no BYO key of their own. The precedence is:
+
+> managed billing (if enabled) → member's own BYO key → **org shared key** → operator key
+
+This feature requires three apps to share the **same** `MARKET_SERVICE_KEY`:
+
+| App | Where to set it |
+|---|---|
+| Market | `secrets.marketServiceKey` in your values file (or in `existingSecret`) |
+| Forge-web | `secrets.marketServiceKey` in your values file (or in `existingSecret`) |
+| Auto | `secrets.marketServiceKey` in your values file (or in `existingSecret`) |
+
+When `MARKET_SERVICE_KEY` is identical across all three, Auto and Forge-web resolve
+an org's shared key by calling the Market service endpoint with that key. Without
+`MARKET_SERVICE_KEY` set (or when Market is disabled), org-key resolution **no-ops
+silently** and members fall back to the operator key — the fail-open guarantee is
+preserved. Local, offline, and `DISABLE_MARKET=true` installs are entirely unaffected.
+
+### At-rest encryption (optional but recommended)
+
+Market encrypts org API keys at rest using `MARKET_KEY_ENCRYPTION_SECRET`. The
+agentkitmarket chart **auto-generates** a stable value on first install and persists it
+across upgrades (the same mechanism as `SESSION_SECRET`), so encryption is active by
+default — you do not need to set it manually.
+
+To supply your own key (e.g. for key rotation or an external-secret workflow):
+
+```bash
+# Generate a strong 32-byte hex key:
+MARKET_KEY_ENCRYPTION_SECRET=$(openssl rand -hex 32)
+```
+
+Then set it in your values:
+
+```yaml
+# market-values.yaml
+secrets:
+  marketKeyEncryptionSecret: "<value>"  # or use existingSecret
+```
+
+If using `existingSecret`, include `MARKET_KEY_ENCRYPTION_SECRET` in that secret.
+Rotating the key requires re-encrypting existing org keys in the database before the
+old pods stop serving.
