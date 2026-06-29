@@ -16,8 +16,9 @@
  *     integration + provider API key). Billing is wireable, not hardcoded-off.
  *
  * MARKUP:
- *   - Default 15% (MARKUP_BPS = 1500 basis points). Env-overridable per
- *     deployment. Sized for break-even on Anthropic pass-through cost + infra.
+ *   - Default 0 (DEFAULT_MARKUP_BPS = 0 basis points): managed inference passes
+ *     through at cost. A deployment that wants a token margin sets MARKUP_BPS
+ *     server-side (env-overridable per deployment).
  *
  * SESSION:
  *   - Gateway sessions hold the injected system-prompt reference and

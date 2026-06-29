@@ -111,7 +111,7 @@ export interface UsageForPricing {
  *
  * @param usage      Token usage reported by the provider.
  * @param model      Canonical model id (e.g. "claude-sonnet-4-6").
- * @param markupBps  Markup in basis points (e.g. 1500 = 15%).
+ * @param markupBps  Markup in basis points (e.g. 2000 = 20%); 0 = at cost.
  * @returns          Debit amount in integer US cents, rounded UP.
  *
  * Pure function — no side effects, no I/O.

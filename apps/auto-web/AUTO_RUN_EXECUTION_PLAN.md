@@ -46,7 +46,7 @@ Anthropic.
                          │        runAutoRun():                          │
                          │          managed → runManagedTurn (ledger     │
                          │             hold+settle, Anthropic platform   │
-                         │             key, 25% markup)                  │
+                         │             key, configured token markup)     │
                          │          byo → chatProvider.sendMessage       │
                          │          tool_use → sandbox executor → loop   │
                          │        deliverResult() (opt-in email/webhook) │
@@ -62,7 +62,8 @@ Run status machine (auto-core): `queued → running → succeeded | failed | can
 
 Billing (server-chosen, never client-supplied):
 - **managed** (the DOKS default): platform Anthropic key; each turn debits the
-  credit ledger via gateway-core `runManagedTurn` at `AUTO_MARKUP_BPS` (25%).
+  credit ledger via gateway-core `runManagedTurn` at the configured token markup
+  (`AUTO_MARKUP_BPS`; 0 by default in open-core, set server-side).
 - **byo**: the user's own Anthropic key (resolved from user settings); inference is
   NOT debited. A per-minute cloud-run compute fee may apply (BYO + cloud only).
 
@@ -179,8 +180,9 @@ No new RBAC, no new endpoints, no new tables.
 ## 6. Usage metering / billing seam (NOTE — do not build here)
 
 - The driver already meters: managed turns go through gateway-core `runManagedTurn`,
-  which does the two-phase credit hold and settles actual metered cost (+25% markup)
-  against a `CreditLedgerRepository`. `recordSpend` persists per-run spend.
+  which does the two-phase credit hold and settles actual metered cost (plus the
+  configured token markup; `AUTO_MARKUP_BPS`, 0 by default in open-core, set
+  server-side) against a `CreditLedgerRepository`. `recordSpend` persists per-run spend.
 - The **ledger implementation** the worker uses is selected in auto-core's
   `buildBackendDeps`: `selfhost + free` → inert free ledger; `selfhost + managed` →
   **throws** (needs `@agentkit-commercial/gateway` `PostgresCreditLedgerRepository`).

@@ -77,7 +77,7 @@ export interface ManagedTurnDeps {
   /** Clock — returns an ISO 8601 timestamp. Injected for deterministic tests. */
   now: () => string;
   /**
-   * Markup in basis points. Defaults to DEFAULT_MARKUP_BPS (1500 = 15%).
+   * Markup in basis points. Defaults to DEFAULT_MARKUP_BPS (0 = at cost).
    * Override per-deployment via GATEWAY_MARKUP_BPS at the composition root.
    */
   markupBps?: number;

@@ -12,8 +12,8 @@
  *
  * BILLING MODEL (server-chosen by code path, never client-supplied):
  *   - inferenceMode "managed": platform provider + prepaid credits. Inference is
- *     debited at `markupBps` (Auto's own markup, e.g. 2500 = 25%) per turn. This
- *     is today's path.
+ *     debited at `markupBps` (Auto's own configured markup; 0 by default) per turn.
+ *     This is today's path.
  *   - inferenceMode "byo": the caller-supplied BYO ChatProvider (user's key) is
  *     called DIRECTLY — the credit ledger is NOT touched for inference (the user
  *     is billed by their provider). spentInferenceCents stays 0.

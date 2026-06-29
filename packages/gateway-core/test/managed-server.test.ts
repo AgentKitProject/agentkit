@@ -99,7 +99,7 @@ describe("managed gateway composition root", () => {
       pool,
       chatProvider: new FakeProvider(),
       now: () => NOW,
-      markupBps: 1500,
+      markupBps: 2000,
       commercialImporter: fakeCommercialImporter(ledger),
     });
 
@@ -133,7 +133,7 @@ describe("managed gateway composition root", () => {
       pool,
       chatProvider: new FakeProvider(),
       now: () => NOW,
-      markupBps: 1500,
+      markupBps: 2000,
       // Simulate the public / self-host build: the dynamic import rejects.
       commercialImporter: async () => {
         throw new Error("Cannot find module '@agentkit-commercial/gateway'");

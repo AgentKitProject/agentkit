@@ -11,7 +11,8 @@ import {
 } from "../src/core/pricing.js";
 
 const NO_MARKUP = 0;         // 0 bps = no markup
-const MARKUP_15 = 1500;      // 1500 bps = 15%
+// Illustrative, clearly non-production example markup used only in these tests.
+const MARKUP_20 = 2000;      // 2000 bps = 20% (example rate, not a real config value)
 
 describe("getModelPricing", () => {
   it("returns known pricing for claude-sonnet-4-6", () => {
@@ -63,7 +64,7 @@ describe("computeDebitCents — zero usage", () => {
       computeDebitCents(
         { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 },
         "claude-sonnet-4-6",
-        MARKUP_15,
+        MARKUP_20,
       ),
     ).toBe(0);
   });
@@ -134,40 +135,40 @@ describe("computeDebitCents — no markup", () => {
   });
 });
 
-describe("computeDebitCents — with 15% markup", () => {
-  it("applies 15% markup and rounds up", () => {
+describe("computeDebitCents — with a 20% example markup", () => {
+  it("applies a 20% example markup and rounds up", () => {
     // 1,000 input tokens at Sonnet $3/1M = $0.003
-    // with 15% markup = $0.00345 = 0.345 cents → ceil → 1 cent (minimum)
+    // with 20% markup = $0.0036 = 0.36 cents → ceil → 1 cent (minimum)
     const cents = computeDebitCents(
       { inputTokens: 1_000, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 },
       "claude-sonnet-4-6",
-      MARKUP_15,
+      MARKUP_20,
     );
     expect(cents).toBeGreaterThanOrEqual(1);
   });
 
-  it("applies 15% markup on a larger call", () => {
+  it("applies a 20% example markup on a larger call", () => {
     // 1,000,000 input + 100,000 output at Sonnet
     // = ($3.00 + $1.50) = $4.50 raw
-    // * 1.15 = $5.175 = ceil(517.5) = 518 cents
+    // * 1.20 = $5.40 = ceil(540) = 540 cents
     const cents = computeDebitCents(
       { inputTokens: 1_000_000, outputTokens: 100_000, cachedReadTokens: 0, cachedWriteTokens: 0 },
       "claude-sonnet-4-6",
-      MARKUP_15,
+      MARKUP_20,
     );
-    expect(cents).toBe(518);
+    expect(cents).toBe(540);
   });
 
-  it("15% markup on Opus is higher than Sonnet", () => {
+  it("a 20% example markup on Opus is higher than Sonnet", () => {
     const sonnet = computeDebitCents(
       { inputTokens: 100_000, outputTokens: 10_000, cachedReadTokens: 0, cachedWriteTokens: 0 },
       "claude-sonnet-4-6",
-      MARKUP_15,
+      MARKUP_20,
     );
     const opus = computeDebitCents(
       { inputTokens: 100_000, outputTokens: 10_000, cachedReadTokens: 0, cachedWriteTokens: 0 },
       "claude-opus-4-8",
-      MARKUP_15,
+      MARKUP_20,
     );
     expect(opus).toBeGreaterThan(sonnet);
   });
@@ -188,17 +189,17 @@ describe("computeDebitCents — minimum 1 cent", () => {
 describe("computeMaxHoldCents", () => {
   it("is always >= the actual debit for the same token counts", () => {
     // The hold is computed assuming no caching (worst case).
-    const hold = computeMaxHoldCents(50_000, 2_000, "claude-sonnet-4-6", MARKUP_15);
+    const hold = computeMaxHoldCents(50_000, 2_000, "claude-sonnet-4-6", MARKUP_20);
     const actual = computeDebitCents(
       { inputTokens: 50_000, outputTokens: 2_000, cachedReadTokens: 0, cachedWriteTokens: 0 },
       "claude-sonnet-4-6",
-      MARKUP_15,
+      MARKUP_20,
     );
     expect(hold).toBe(actual);
   });
 
   it("hold with cached input is larger than actual with cache savings", () => {
-    const hold = computeMaxHoldCents(50_000, 2_000, "claude-sonnet-4-6", MARKUP_15);
+    const hold = computeMaxHoldCents(50_000, 2_000, "claude-sonnet-4-6", MARKUP_20);
     // Actual: 30K cached-read (cheap) + 20K non-cached + 2K output
     const actual = computeDebitCents(
       {
@@ -208,7 +209,7 @@ describe("computeMaxHoldCents", () => {
         cachedWriteTokens: 0,
       },
       "claude-sonnet-4-6",
-      MARKUP_15,
+      MARKUP_20,
     );
     // Hold (no caching assumed) should be >= actual (with cache savings).
     expect(hold).toBeGreaterThanOrEqual(actual);

@@ -70,8 +70,9 @@ frontend:
         - 'printf "AUTO_INPUTS_BUCKET=%s\n" "$AUTO_INPUTS_BUCKET" >> .env.production'
         - 'printf "AUTO_INPUTS_PREFIX=%s\n" "$AUTO_INPUTS_PREFIX" >> .env.production'
         # Auto BILLING MODEL — both OPTIONAL with code defaults (server/core/auto.ts:
-        # AUTO_MARKUP_BPS=2500 / 25% on MANAGED Auto inference, separate from the
-        # gateway's 15%; AUTO_CLOUD_RUN_CENTS_PER_MIN=1 per-minute compute fee on
+        # AUTO_MARKUP_BPS — optional managed-inference token markup (bps), set
+        # server-side; 0 by default, separate from the interactive gateway's
+        # GATEWAY_MARKUP_BPS; AUTO_CLOUD_RUN_CENTS_PER_MIN per-minute compute fee on
         # BYO + CLOUD runs only). A missing value never breaks the build — NO
         # preBuild required-var check. Markup is server-chosen by code path.
         - 'printf "AUTO_MARKUP_BPS=%s\n" "$AUTO_MARKUP_BPS" >> .env.production'

@@ -190,8 +190,9 @@ function markupBps(): number | undefined {
 
 /**
  * The Auto MANAGED markup, in basis points. Separate from the interactive
- * gateway's GATEWAY_MARKUP_BPS (1500/15%) — Auto managed inference is marked up
- * at AUTO_MARKUP_BPS (default 2500 = 25%). Server-chosen; never client-supplied.
+ * gateway's GATEWAY_MARKUP_BPS — Auto managed inference is marked up at
+ * AUTO_MARKUP_BPS (default 0 = tokens at cost; set server-side). Server-chosen;
+ * never client-supplied.
  */
 export function autoMarkupBps(): number {
   const raw = process.env.AUTO_MARKUP_BPS;
@@ -199,7 +200,7 @@ export function autoMarkupBps(): number {
     const n = Number(raw);
     if (Number.isFinite(n) && n >= 0) return n;
   }
-  return 2500; // 25%
+  return 0;
 }
 
 /**
@@ -406,7 +407,8 @@ export function makeResolveKitContext(opts: KitContextOptions): ResolveKitContex
 
 /** The per-run billing facts the run-create + worker paths need. */
 export interface AutoBilling {
-  /** "byo" → user's own key (no inference debit); "managed" → platform key + 25%. */
+  /** "byo" → user's own key (no inference debit); "managed" → platform key +
+   * configured token markup (AUTO_MARKUP_BPS, 0 by default). */
   inferenceMode: "managed" | "byo";
   /** Built only in BYO mode (user's Anthropic key); else undefined. */
   byoChatProvider?: ChatProvider;
@@ -523,8 +525,8 @@ async function buildProcessDeps(
     now,
     // Auto v2 token markup. When the v2 run fee is active (hosted), tokens pass
     // through AT COST (markup 0) — the platform margin is the invocation +
-    // active-minute fee threaded below. The legacy AUTO_MARKUP_BPS (25%) is
-    // honored only on a self-host / when an operator explicitly wants a token
+    // active-minute fee threaded below. The legacy AUTO_MARKUP_BPS (0 by default;
+    // set server-side) is honored only on a self-host / when an operator wants a token
     // margin. Mirrors run-task's v2 default so app + worker bill identically.
     markupBps: rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0 ? 0 : autoMarkupBps(),
     // Auto v2 run fee (invocation + active-minute + monthly free allowance), in

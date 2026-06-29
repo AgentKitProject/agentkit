@@ -35,7 +35,8 @@ import type { ConfigProvider } from "./ports.js";
  * Auto v2 rationale: the platform margin moved off per-token markup onto a
  * RUN-based compute charge (a flat invocation fee + a per-active-minute rate),
  * so managed inference passes through at cost and the default markup is 0. A
- * deployment that wants a token margin sets GATEWAY_MARKUP_BPS (e.g. 1500 = 15%).
+ * deployment that wants a token margin sets GATEWAY_MARKUP_BPS (set server-side;
+ * e.g. 2000 = 20%).
  */
 export const DEFAULT_MARKUP_BPS = 0;
 

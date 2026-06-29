@@ -121,7 +121,7 @@ export interface StreamingTurnDeps {
   model: string;
   /** Max output tokens per provider round-trip. */
   maxTokens: number;
-  /** Markup in basis points. Defaults to DEFAULT_MARKUP_BPS (1500 = 15%). */
+  /** Markup in basis points. Defaults to DEFAULT_MARKUP_BPS (0 = at cost). */
   markupBps?: number;
   /**
    * Worst-case number of provider round-trips a single turn may take, used to

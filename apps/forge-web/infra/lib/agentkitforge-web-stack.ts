@@ -102,9 +102,9 @@ export class AgentKitForgeWebStack extends cdk.Stack {
     const gatewaySessionsName: string =
       this.node.tryGetContext("gatewaySessionsTable") ?? "GatewaySessions";
     const autoMarkupBps: string =
-      this.node.tryGetContext("autoMarkupBps") ?? "2500";
+      this.node.tryGetContext("autoMarkupBps") ?? "0";
     const autoCloudRunCentsPerMin: string =
-      this.node.tryGetContext("autoCloudRunCentsPerMin") ?? "1";
+      this.node.tryGetContext("autoCloudRunCentsPerMin") ?? "0";
     const webForgeInternalUrl: string =
       this.node.tryGetContext("webForgeInternalUrl") ??
       "https://webapp.forge.agentkitproject.com";

@@ -183,8 +183,8 @@ Not implemented:
 
 Paid kits use Stripe Checkout. Each sale routes proceeds to the selling
 organization via a Stripe Connect **destination charge** (Express connected
-account), and the platform keeps a **10% fee** (`PLATFORM_FEE_PERCENT` in
-`lib/stripe-connect.ts`). Paid sales are **blocked** until the owning org
+account), and the platform keeps a configurable platform fee
+(`PLATFORM_FEE_PERCENT`, set server-side). Paid sales are **blocked** until the owning org
 completes payout onboarding (no escrow / held funds): the Buy button shows
 "Seller hasn't set up payouts yet" and checkout returns a `409
 seller_payout_setup_pending`. Org owners/admins set this up under
