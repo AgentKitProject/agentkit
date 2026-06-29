@@ -108,7 +108,7 @@ The chart **default** tags are still `:latest` (which tracks `main`); every inst
 example below overrides them to `v0.2.4`.
 
 The five **app** images above are the only ones the versioned release pins. The
-bundled **data-service** images (`postgres:16`, `minio/minio:latest`, `redis:7`) are
+bundled **data-service** images (`postgres:16.14`, a pinned `minio/minio:RELEASE.*`, `redis:7.4.9-alpine` — pinned in the chart defaults) are
 pulled from Docker Hub and are **not** part of the versioned self-host release — pin
 them yourself via the charts' `postgres.image` / `minio.image` / `redis.image` values
 if you need fully reproducible data-tier images.
