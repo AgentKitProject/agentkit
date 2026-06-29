@@ -1,0 +1,41 @@
+{{- /*
+ingress-nginx front door for the apex site (apex + www + docs).
+
+cert-manager OWNS the TLS Secret named by .Values.ingress.tlsSecret: the
+`cert-manager.io/cluster-issuer` annotation triggers HTTP-01 orders against the
+letsencrypt-prod ClusterIssuer for ALL three hosts, and cert-manager writes the
+combined cert into that one Secret. This chart must NEVER template the Secret
+itself, or it would fight cert-manager for ownership.
+
+All three hosts route to the SAME backend Service over HTTP; the Host header is
+preserved so the image's nginx.conf can redirect www→apex and docs→apex/docs.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agentkitproject-site.fullname" . }}
+  labels:
+    {{- include "agentkitproject-site.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        {{- range .Values.ingress.hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.ingress.tlsSecret | quote }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agentkitproject-site.fullname" $ }}
+                port:
+                  name: http
+    {{- end }}

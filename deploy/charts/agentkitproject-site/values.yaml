@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# agentkitproject-site — apex ecosystem site (DEFAULT values).
+#
+# A self-contained nginx image that BAKES the built Astro static site
+# (apps/site/dist) — no upstream, no Spaces proxy, no runtime config. One image
+# serves apex + www + docs:
+#
+#   browser -> DOKS ingress-nginx (TLS via cert-manager / letsencrypt-prod)
+#           -> this nginx pod (static dist + host-based www/docs redirects)
+#
+# The ingress lists all three hosts and forwards them to the single Service over
+# HTTP, preserving the Host header; the redirects (www→apex, docs→apex/docs) are
+# done inside the image's nginx.conf.
+# ---------------------------------------------------------------------------
+
+# Escape hatch only — leave empty so resource names stay `agentkitproject-site`.
+fullnameOverride: ""
+
+# Self-contained site image (static dist baked into nginx). Pin tag to a release
+# (e.g. a sha- tag) for reproducible deploys; "latest" tracks the default branch.
+image:
+  repository: ghcr.io/agentkitproject/agentkitproject-site
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Pull secrets for the container image. The GHCR image is PUBLIC, so none needed.
+imagePullSecrets: []
+
+# Stateless static server.
+replicas: 1
+
+# Listen / Service / container port. nginx listens on 80 inside the image.
+port: 80
+
+service:
+  type: ClusterIP
+
+# Public hosts served by the ingress. apex is canonical; www + docs redirect to
+# it inside the image. All three terminate TLS at the ingress (single tls block
+# / single cert covering all three hosts).
+ingress:
+  className: nginx
+  clusterIssuer: letsencrypt-prod
+  tlsSecret: agentkitproject-site-tls
+  hosts:
+    - agentkitproject.com
+    - www.agentkitproject.com
+    - docs.agentkitproject.com
+
+# Modest footprint — this pod only serves baked static files.
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 64Mi
