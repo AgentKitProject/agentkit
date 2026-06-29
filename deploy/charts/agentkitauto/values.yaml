@@ -227,7 +227,7 @@ auto:
 # ---------------------------------------------------------------------------
 postgres:
   enabled: true
-  image: postgres:16.14-alpine
+  image: postgres:16.14
   database: agentkitauto
   user: agentkitauto
   # GENERATED + preserved across upgrades when empty (never "changeme"). Set only

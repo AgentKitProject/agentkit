@@ -263,7 +263,7 @@ secrets:
 # ---------------------------------------------------------------------------
 postgres:
   enabled: true
-  image: postgres:16.14-alpine
+  image: postgres:16.14
   database: agentkitmarket
   user: agentkitmarket
   # Leave empty to let the chart generate + persist a strong password

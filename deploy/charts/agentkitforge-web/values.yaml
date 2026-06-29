@@ -173,7 +173,7 @@ web:
 # ---------------------------------------------------------------------------
 postgres:
   enabled: true
-  image: postgres:16.14-alpine
+  image: postgres:16.14
   database: agentkitforge_web
   user: agentkitforge
   # GENERATED + preserved across upgrades when empty (never "changeme"). Set only
