@@ -1,0 +1,26 @@
+# Build-specific ignore for apps/site/Dockerfile (BuildKit uses
+# <dockerfile>.dockerignore in preference to the repo-root .dockerignore).
+#
+# The root .dockerignore excludes `apps/site`, `**/docs`, `**/reference`, and
+# `**/README.md` (the site was historically NOT containerized). This build IS the
+# site, so it must INCLUDE apps/site and its docs pages — we only strip build
+# artifacts + node_modules so the workspace install/build is clean and the
+# context stays small.
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/out
+**/build
+.git
+.github
+**/.github
+**/*.tsbuildinfo
+**/coverage
+**/package-lock.json
+**/.env
+**/.env.*
+!**/.env.example
+**/npm-debug.log*
+**/.DS_Store
+apps/forge-desktop
