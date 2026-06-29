@@ -52,6 +52,7 @@ const TABLES = {
   organizations: 'Organizations',
   orgMemberships: 'OrgMemberships',
   orgInvites: 'OrgInvites',
+  orgProviderKeys: 'OrgProviderKeys',
   favorites: 'Favorites',
   auditLog: 'AuditLog',
 } as const;
@@ -222,6 +223,13 @@ const TABLE_DEFINITIONS: CreateTableCommandInput[] = [
     ],
   },
   {
+    // OrgProviderKeys: PK orgId (one shared LLM API key per org).
+    TableName: TABLES.orgProviderKeys,
+    BillingMode: 'PAY_PER_REQUEST',
+    KeySchema: [{ AttributeName: 'orgId', KeyType: 'HASH' }],
+    AttributeDefinitions: [{ AttributeName: 'orgId', AttributeType: S }],
+  },
+  {
     // Favorites: PK userId / SK kitId.
     TableName: TABLES.favorites,
     BillingMode: 'PAY_PER_REQUEST',
@@ -327,6 +335,7 @@ if (!endpoint) {
       organizationsTableName: TABLES.organizations,
       orgMembershipsTableName: TABLES.orgMemberships,
       orgInvitesTableName: TABLES.orgInvites,
+      orgProviderKeysTableName: TABLES.orgProviderKeys,
       kitsTableName: TABLES.kits,
       client: overrides,
     });

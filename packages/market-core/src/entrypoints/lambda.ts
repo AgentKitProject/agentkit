@@ -202,6 +202,7 @@ function orgConfigFromEnv() {
     organizationsTableName: requiredEnv('ORGANIZATIONS_TABLE_NAME'),
     orgMembershipsTableName: requiredEnv('ORG_MEMBERSHIPS_TABLE_NAME'),
     orgInvitesTableName: requiredEnv('ORG_INVITES_TABLE_NAME'),
+    orgProviderKeysTableName: requiredEnv('ORG_PROVIDER_KEYS_TABLE_NAME'),
     kitsTableName: requiredEnv('KITS_TABLE_NAME'),
   };
 }
@@ -398,6 +399,9 @@ function createLazyDynamoOrgRepository(): OrgRepository {
     setKitOwnerOrg(kitId, orgId) { return getRepository().setKitOwnerOrg(kitId, orgId); },
     setKitVisibility(kitId, visibility) { return getRepository().setKitVisibility(kitId, visibility); },
     listKitsForOrg(orgId) { return getRepository().listKitsForOrg(orgId); },
+    setOrgProviderKey(orgId, input) { return getRepository().setOrgProviderKey(orgId, input); },
+    getOrgProviderKey(orgId) { return getRepository().getOrgProviderKey(orgId); },
+    clearOrgProviderKey(orgId) { return getRepository().clearOrgProviderKey(orgId); },
   };
 }
 

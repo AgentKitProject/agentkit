@@ -28,6 +28,7 @@ import {
 import { isHiddenFromDefaultReviewQueue } from '../src/core/services/index.js';
 import { routeRequest } from '../src/core/routes/index.js';
 import type { CoreRequest, RouterDeps } from '../src/core/routes/types.js';
+import { decryptSecret, encryptSecret } from '../src/core/crypto.js';
 
 export interface ContractRepos {
   catalog: CatalogRepository;
@@ -734,6 +735,194 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
         it('returns 404 for an unknown org', async () => {
           const res = await routeRequest(adminRequest('org_nope', { actorUserId: 'u_owner' }), deps());
           expect(res.statusCode).toBe(404);
+        });
+      });
+
+      describe('org shared LLM API key (encrypted at rest)', () => {
+        function req(method: string, resource: string, pathParameters: Record<string, string>, body?: unknown, query?: Record<string, string>): CoreRequest {
+          return {
+            method,
+            resource,
+            pathParameters,
+            queryStringParameters: query ?? null,
+            headers: { 'x-agentkitmarket-admin-key': 'test-admin-key' },
+            body: body === undefined ? null : JSON.stringify(body),
+          };
+        }
+
+        function deps(): RouterDeps {
+          return {
+            repository: repos.catalog,
+            adminRepository: repos.admin,
+            orgRepository: repos.org,
+            adminKey: 'test-admin-key',
+          };
+        }
+
+        it('set → status (masked, hasKey) → resolve (single org) → clear', async () => {
+          const created = await org().createOrg({ displayName: 'Key Org', ownerUserId: 'u_owner' });
+
+          const setRes = await routeRequest(
+            req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, {
+              actorUserId: 'u_owner', apiKey: 'sk-ant-secret-Xy12', baseUrl: 'https://api.anthropic.com',
+            }),
+            deps(),
+          );
+          expect(setRes.statusCode).toBe(200);
+          expect(JSON.parse(setRes.body)).toEqual({ ok: true });
+
+          const statusRes = await routeRequest(
+            req('GET', '/admin/orgs/{orgId}/api-key/status', { orgId: created.orgId }, undefined, { actorUserId: 'u_owner' }),
+            deps(),
+          );
+          expect(statusRes.statusCode).toBe(200);
+          const status = JSON.parse(statusRes.body);
+          expect(status.hasKey).toBe(true);
+          expect(status.providerType).toBe('anthropic');
+          expect(status.baseUrl).toBe('https://api.anthropic.com');
+          expect(status.updatedByUserId).toBe('u_owner');
+          // Masked: last 4 only, never the raw key.
+          expect(status.maskedKey).toBe('…Xy12');
+          expect(JSON.stringify(status)).not.toContain('sk-ant-secret');
+
+          const resolveRes = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_owner' }),
+            deps(),
+          );
+          expect(resolveRes.statusCode).toBe(200);
+          expect(JSON.parse(resolveRes.body)).toEqual({
+            found: true,
+            orgId: created.orgId,
+            apiKey: 'sk-ant-secret-Xy12',
+            providerType: 'anthropic',
+            baseUrl: 'https://api.anthropic.com',
+          });
+
+          const clearRes = await routeRequest(
+            req('DELETE', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_owner' }),
+            deps(),
+          );
+          expect(clearRes.statusCode).toBe(200);
+
+          const afterStatus = await routeRequest(
+            req('GET', '/admin/orgs/{orgId}/api-key/status', { orgId: created.orgId }, undefined, { actorUserId: 'u_owner' }),
+            deps(),
+          );
+          expect(JSON.parse(afterStatus.body)).toEqual({ hasKey: false });
+        });
+
+        it('gates set/status to owner/admin (member → 403)', async () => {
+          const created = await org().createOrg({ displayName: 'Gated Key Org', ownerUserId: 'u_owner' });
+          await org().addMember(created.orgId, 'u_member', 'member', 'u_owner');
+          await org().acceptInvite(created.orgId, 'u_member');
+
+          const setRes = await routeRequest(
+            req('POST', '/admin/orgs/{orgId}/api-key', { orgId: created.orgId }, { actorUserId: 'u_member', apiKey: 'sk-ant-nope' }),
+            deps(),
+          );
+          expect(setRes.statusCode).toBe(403);
+
+          const statusRes = await routeRequest(
+            req('GET', '/admin/orgs/{orgId}/api-key/status', { orgId: created.orgId }, undefined, { actorUserId: 'u_member' }),
+            deps(),
+          );
+          expect(statusRes.statusCode).toBe(403);
+        });
+
+        it('multi-org resolve rule: 0 keys → not found; 2 → not found; exactly 1 → found', async () => {
+          const orgA = await org().createOrg({ displayName: 'Resolve Org A', ownerUserId: 'u_multi' });
+          const orgB = await org().createOrg({ displayName: 'Resolve Org B', ownerUserId: 'u_multi' });
+
+          // 0 keys → not found.
+          let res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            deps(),
+          );
+          expect(JSON.parse(res.body)).toEqual({ found: false });
+
+          // 2 orgs with keys → ambiguous → not found.
+          await org().setOrgProviderKey(orgA.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher-a', updatedByUserId: 'u_multi' });
+          await org().setOrgProviderKey(orgB.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher-b', updatedByUserId: 'u_multi' });
+          res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            deps(),
+          );
+          expect(JSON.parse(res.body)).toEqual({ found: false });
+
+          // Exactly 1 → found (orgB, after clearing orgA).
+          await org().clearOrgProviderKey(orgA.orgId);
+          res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_multi' }),
+            deps(),
+          );
+          const resolved = JSON.parse(res.body);
+          expect(resolved.found).toBe(true);
+          expect(resolved.orgId).toBe(orgB.orgId);
+        });
+
+        it('resolve only considers ACTIVE memberships', async () => {
+          const created = await org().createOrg({ displayName: 'Invited Key Org', ownerUserId: 'u_owner' });
+          await org().setOrgProviderKey(created.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher', updatedByUserId: 'u_owner' });
+          // An invited (not yet active) member must not resolve the org's key.
+          await org().addMember(created.orgId, 'u_invited', 'member', 'u_owner');
+
+          const res = await routeRequest(
+            req('GET', '/admin/users/{userId}/org-api-key/resolve', { userId: 'u_invited' }),
+            deps(),
+          );
+          expect(JSON.parse(res.body)).toEqual({ found: false });
+        });
+
+        it('persists ciphertext verbatim and round-trips through the repository', async () => {
+          const created = await org().createOrg({ displayName: 'Cipher Org', ownerUserId: 'u_owner' });
+          await org().setOrgProviderKey(created.orgId, {
+            providerType: 'anthropic',
+            apiKeyCiphertext: 'enc:v1:opaque-ciphertext',
+            baseUrl: 'https://example.test',
+            updatedByUserId: 'u_owner',
+          });
+          const record = await org().getOrgProviderKey(created.orgId);
+          expect(record?.orgId).toBe(created.orgId);
+          expect(record?.apiKeyCiphertext).toBe('enc:v1:opaque-ciphertext');
+          expect(record?.baseUrl).toBe('https://example.test');
+          expect(record?.providerType).toBe('anthropic');
+          expect(record?.updatedByUserId).toBe('u_owner');
+          expect(typeof record?.updatedAt).toBe('string');
+
+          // Update replaces, and the upsert is keyed on orgId (one key per org).
+          await org().setOrgProviderKey(created.orgId, {
+            providerType: 'anthropic',
+            apiKeyCiphertext: 'enc:v1:second',
+            updatedByUserId: 'u_owner',
+          });
+          const updated = await org().getOrgProviderKey(created.orgId);
+          expect(updated?.apiKeyCiphertext).toBe('enc:v1:second');
+          expect(updated?.baseUrl).toBeUndefined();
+
+          await org().clearOrgProviderKey(created.orgId);
+          expect(await org().getOrgProviderKey(created.orgId)).toBeUndefined();
+        });
+
+        it('encryption round-trips when the secret is set (ciphertext != plaintext)', () => {
+          const prev = process.env.MARKET_KEY_ENCRYPTION_SECRET;
+          process.env.MARKET_KEY_ENCRYPTION_SECRET = 'a'.repeat(64); // 32-byte hex key
+          try {
+            const plain = 'sk-ant-roundtrip-9999';
+            const ciphertext = encryptSecret(plain);
+            expect(ciphertext).not.toBe(plain);
+            expect(ciphertext.startsWith('enc:v1:')).toBe(true);
+            expect(decryptSecret(ciphertext)).toBe(plain);
+          } finally {
+            if (prev === undefined) delete process.env.MARKET_KEY_ENCRYPTION_SECRET;
+            else process.env.MARKET_KEY_ENCRYPTION_SECRET = prev;
+          }
+        });
+
+        it('clearing the org key row when deleting the org leaves no key', async () => {
+          const created = await org().createOrg({ displayName: 'Delete Key Org', ownerUserId: 'u_owner' });
+          await org().setOrgProviderKey(created.orgId, { providerType: 'anthropic', apiKeyCiphertext: 'cipher', updatedByUserId: 'u_owner' });
+          await org().deleteOrg(created.orgId);
+          expect(await org().getOrgProviderKey(created.orgId)).toBeUndefined();
         });
       });
     });

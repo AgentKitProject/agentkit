@@ -204,6 +204,17 @@ CREATE INDEX IF NOT EXISTS org_invites_user_id_idx ON org_invites (user_id);
 -- Email-invite claim (pre-signup invites): lookups by email on first login.
 CREATE INDEX IF NOT EXISTS org_invites_email_idx ON org_invites (email) WHERE email IS NOT NULL;
 
+-- Org shared LLM API key (open-core; encrypted at rest). One key per org;
+-- `api_key_ciphertext` is the opaque at-rest value (route layer decrypts it).
+CREATE TABLE IF NOT EXISTS org_provider_keys (
+  org_id              text PRIMARY KEY REFERENCES organizations(org_id) ON DELETE CASCADE,
+  provider_type       text NOT NULL,
+  api_key_ciphertext  text NOT NULL,
+  base_url            text,
+  updated_by_user_id  text NOT NULL,
+  updated_at          text NOT NULL
+);
+
 -- NOTE: The Tier-2 `entitlements` table (PK (user_id, kit_id) + kit_id index)
 -- lives in the COMMERCIAL schema (@agentkit-commercial/market-core); the free
 -- build does not define it.

@@ -56,6 +56,11 @@ export {
   setKitVisibilityRequestSchema,
   deleteOrgResponseSchema,
   setOrgStripeAccountRequestSchema,
+  orgKeyProviderTypeSchema,
+  orgApiKeyRoutes,
+  setOrgApiKeyRequestSchema,
+  orgApiKeyStatusSchema,
+  resolvedOrgApiKeySchema,
   forgeOrgRoutes,
   orgPayoutRoutes,
   marketBackendOrgRoutes,
@@ -76,7 +81,11 @@ export {
   type TransferKitRequest,
   type SetKitVisibilityRequest,
   type DeleteOrgResponse,
-  type SetOrgStripeAccountRequest
+  type SetOrgStripeAccountRequest,
+  type OrgKeyProviderType,
+  type SetOrgApiKeyRequest,
+  type OrgApiKeyStatus,
+  type ResolvedOrgApiKey
 } from "./orgs.js";
 
 export {

@@ -138,6 +138,32 @@ export interface OrgRepository {
   setKitVisibility(kitId: string, visibility: KitVisibility): Promise<KitRecord | undefined>;
   /** All kits owned by an org, including private ones (for the org's own listing). */
   listKitsForOrg(orgId: string): Promise<KitRecord[]>;
+  /**
+   * Org shared LLM API key (open-core; encrypted at rest). The repository deals
+   * in CIPHERTEXT only — encryption/decryption happens in the route/service
+   * layer, never in the adapter. `apiKeyCiphertext` is opaque to the adapter.
+   */
+  setOrgProviderKey(orgId: string, input: {
+    providerType: 'anthropic';
+    apiKeyCiphertext: string;
+    baseUrl?: string;
+    updatedByUserId: string;
+  }): Promise<void>;
+  getOrgProviderKey(orgId: string): Promise<OrgProviderKeyRecord | undefined>;
+  clearOrgProviderKey(orgId: string): Promise<void>;
+}
+
+/**
+ * A stored org shared LLM API key. `apiKeyCiphertext` is the opaque at-rest
+ * value the repository persists/returns verbatim; the route layer decrypts it.
+ */
+export interface OrgProviderKeyRecord {
+  orgId: string;
+  providerType: 'anthropic';
+  apiKeyCiphertext: string;
+  baseUrl?: string;
+  updatedByUserId: string;
+  updatedAt: string;
 }
 
 /** Stripe Connect seller-payout fields to persist on an org (set by market-app). */

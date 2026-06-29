@@ -49,6 +49,11 @@ export const ROUTES: RoutePattern[] = [
   { method: 'POST', template: '/admin/orgs/{orgId}/invites/{userId}/accept' },
   { method: 'POST', template: '/admin/kits/{kitId}/transfer' },
   { method: 'POST', template: '/admin/kits/{kitId}/visibility' },
+  // Org shared LLM API key (open-core; encrypted at rest, Seam B).
+  { method: 'POST', template: '/admin/orgs/{orgId}/api-key' },
+  { method: 'DELETE', template: '/admin/orgs/{orgId}/api-key' },
+  { method: 'GET', template: '/admin/orgs/{orgId}/api-key/status' },
+  { method: 'GET', template: '/admin/users/{userId}/org-api-key/resolve' },
   // NOTE: Tier-2 paid/licensed-kit + Stripe-payout route templates live in
   // @agentkit-commercial/market-core (registered by the commercial router); they
   // are intentionally absent here so the free build carries no paid surface.

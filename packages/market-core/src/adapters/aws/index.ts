@@ -32,6 +32,7 @@ import type {
   CatalogRepository,
   FavoritesRepository,
   ObjectStore,
+  OrgProviderKeyRecord,
   OrgRepository,
   PackageUploadService,
   SubmissionValidationUpdate,
@@ -726,6 +727,8 @@ export interface DynamoOrgConfig {
   organizationsTableName: string;
   orgMembershipsTableName: string;
   orgInvitesTableName: string;
+  /** Org shared LLM API key table (PK orgId). One key per org, encrypted at rest. */
+  orgProviderKeysTableName: string;
   kitsTableName: string;
   /** Optional client overrides (dynamodb-local). Omit for hosted. */
   client?: DynamoClientOverrides;
@@ -734,6 +737,12 @@ export interface DynamoOrgConfig {
 function isOrganization(item: unknown): item is Organization {
   return typeof item === 'object' && item !== null
     && typeof (item as { orgId?: unknown }).orgId === 'string';
+}
+
+function isProviderKey(item: unknown): item is OrgProviderKeyRecord {
+  return typeof item === 'object' && item !== null
+    && typeof (item as { orgId?: unknown }).orgId === 'string'
+    && typeof (item as { apiKeyCiphertext?: unknown }).apiKeyCiphertext === 'string';
 }
 
 function isMembership(item: unknown): item is OrgMembership {
@@ -774,7 +783,7 @@ function toReturnedInvite(item: OrgInvite): OrgInvite {
 }
 
 export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepository {
-  const { organizationsTableName, orgMembershipsTableName, orgInvitesTableName, kitsTableName } = config;
+  const { organizationsTableName, orgMembershipsTableName, orgInvitesTableName, orgProviderKeysTableName, kitsTableName } = config;
   const dynamo = buildDynamoDocumentClient(config.client);
 
   async function takenSlugs(base: string): Promise<string[]> {
@@ -1051,6 +1060,8 @@ export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepositor
           Key: { orgId, userId: item.userId },
         }));
       }
+      // Delete the org's shared API key, if any.
+      await dynamo.send(new DeleteCommand({ TableName: orgProviderKeysTableName, Key: { orgId } }));
       // Delete the org row.
       await dynamo.send(new DeleteCommand({ TableName: organizationsTableName, Key: { orgId } }));
     },
@@ -1094,6 +1105,32 @@ export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepositor
       return (result.Items ?? [])
         .filter(isKitRecord)
         .sort((a, b) => a.kitId.localeCompare(b.kitId));
+    },
+
+    async setOrgProviderKey(orgId, input): Promise<void> {
+      const record: OrgProviderKeyRecord = {
+        orgId,
+        providerType: input.providerType,
+        apiKeyCiphertext: input.apiKeyCiphertext,
+        baseUrl: input.baseUrl,
+        updatedByUserId: input.updatedByUserId,
+        updatedAt: new Date().toISOString(),
+      };
+      // Omit baseUrl when absent (DynamoDB rejects undefined attribute values).
+      const item: Record<string, unknown> = { ...record };
+      if (record.baseUrl === undefined) {
+        delete item.baseUrl;
+      }
+      await dynamo.send(new PutCommand({ TableName: orgProviderKeysTableName, Item: item }));
+    },
+
+    async getOrgProviderKey(orgId: string): Promise<OrgProviderKeyRecord | undefined> {
+      const result = await dynamo.send(new GetCommand({ TableName: orgProviderKeysTableName, Key: { orgId } }));
+      return isProviderKey(result.Item) ? result.Item : undefined;
+    },
+
+    async clearOrgProviderKey(orgId: string): Promise<void> {
+      await dynamo.send(new DeleteCommand({ TableName: orgProviderKeysTableName, Key: { orgId } }));
     },
   };
 }

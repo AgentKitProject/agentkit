@@ -22,6 +22,7 @@ import type {
   AuditRepository,
   CatalogRepository,
   FavoritesRepository,
+  OrgProviderKeyRecord,
   OrgRepository,
   SubmissionValidationUpdate,
   ValidationJobUpdate,
@@ -1137,6 +1138,7 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
     },
 
     async deleteOrg(orgId: string): Promise<void> {
+      await pool.query(`DELETE FROM org_provider_keys WHERE org_id = $1`, [orgId]);
       await pool.query(`DELETE FROM org_invites WHERE org_id = $1`, [orgId]);
       await pool.query(`DELETE FROM org_memberships WHERE org_id = $1`, [orgId]);
       await pool.query(`DELETE FROM organizations WHERE org_id = $1`, [orgId]);
@@ -1165,6 +1167,41 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
       );
       return result.rows.map(rowToKit);
     },
+
+    async setOrgProviderKey(orgId, input): Promise<void> {
+      const now = new Date().toISOString();
+      await pool.query(
+        `INSERT INTO org_provider_keys (org_id, provider_type, api_key_ciphertext, base_url, updated_by_user_id, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (org_id) DO UPDATE SET
+           provider_type = EXCLUDED.provider_type,
+           api_key_ciphertext = EXCLUDED.api_key_ciphertext,
+           base_url = EXCLUDED.base_url,
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_at = EXCLUDED.updated_at`,
+        [orgId, input.providerType, input.apiKeyCiphertext, input.baseUrl ?? null, input.updatedByUserId, now],
+      );
+    },
+
+    async getOrgProviderKey(orgId: string): Promise<OrgProviderKeyRecord | undefined> {
+      const result = await pool.query(`SELECT * FROM org_provider_keys WHERE org_id = $1`, [orgId]);
+      return result.rows[0] ? rowToProviderKey(result.rows[0]) : undefined;
+    },
+
+    async clearOrgProviderKey(orgId: string): Promise<void> {
+      await pool.query(`DELETE FROM org_provider_keys WHERE org_id = $1`, [orgId]);
+    },
+  };
+}
+
+function rowToProviderKey(row: any): OrgProviderKeyRecord {
+  return {
+    orgId: row.org_id,
+    providerType: row.provider_type,
+    apiKeyCiphertext: row.api_key_ciphertext,
+    baseUrl: row.base_url ?? undefined,
+    updatedByUserId: row.updated_by_user_id,
+    updatedAt: row.updated_at,
   };
 }
 

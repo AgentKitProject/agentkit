@@ -30,6 +30,7 @@ import type {
   AuditRepository,
   CatalogRepository,
   FavoritesRepository,
+  OrgProviderKeyRecord,
   OrgRepository,
   PackageUploadService,
 } from '../ports.js';
@@ -41,10 +42,12 @@ import {
   createOrgRequestSchema,
   removeOrgMemberRequestSchema,
   setKitVisibilityRequestSchema,
+  setOrgApiKeyRequestSchema,
   transferKitRequestSchema,
   addFavoriteRequestSchema,
 } from '@agentkitforge/contracts';
 import type { CoreRequest, CoreResponse, RouterDeps } from './types.js';
+import { decryptSecret, encryptSecret } from '../crypto.js';
 import {
   ADMIN_HEADER,
   API_VERSION,
@@ -322,6 +325,24 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
             const visibility = typeof b?.visibility === 'string' ? (b.visibility as string) : null;
             return { action: 'kit.visibility_set', targetType: 'kit', targetId: kitId, metadata: { visibility } };
           });
+      }
+
+      // --- Org shared LLM API key (open-core; encrypted at rest) ---
+      if (request.resource === '/admin/orgs/{orgId}/api-key') {
+        if (request.method === 'POST') {
+          return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setOrgApiKeyHandler(request, repo, allowedOrigins));
+        }
+        if (request.method === 'DELETE') {
+          return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => clearOrgApiKeyHandler(request, repo, allowedOrigins));
+        }
+      }
+
+      if (request.method === 'GET' && request.resource === '/admin/orgs/{orgId}/api-key/status') {
+        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => orgApiKeyStatusHandler(request, repo, allowedOrigins));
+      }
+
+      if (request.method === 'GET' && request.resource === '/admin/users/{userId}/org-api-key/resolve') {
+        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => resolveUserOrgApiKeyHandler(request, repo, allowedOrigins));
       }
 
       // --- Commercial Tier-2 + Stripe-payout routes (optional) ---
@@ -1484,6 +1505,156 @@ async function setKitVisibilityHandler(
   const updated = await orgRepository.setKitVisibility(kitId, parsed.data.visibility as KitVisibility);
   return json(request, allowedOrigins, 200, {
     item: { kitId, visibility: updated?.visibility ?? parsed.data.visibility, updatedAt: updated?.updatedAt ?? null },
+  });
+}
+
+// --- Org shared LLM API key (open-core; encrypted at rest) ----------------------
+
+/** Resolves the actorUserId (owner/admin) from the body, gating the set/clear ops. */
+async function requireOrgManager(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<{ orgId: string; actorUserId: string } | CoreResponse> {
+  const orgId = request.pathParameters?.orgId;
+  if (!orgId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing orgId' });
+  }
+  const body = parseJsonBody(request) as Record<string, unknown> | undefined;
+  const actorUserId = typeof body?.actorUserId === 'string' ? body.actorUserId : undefined;
+  if (!actorUserId) {
+    return json(request, allowedOrigins, 400, { message: 'actorUserId is required' });
+  }
+  const org = await orgRepository.getOrg(orgId);
+  if (!org) {
+    return json(request, allowedOrigins, 404, { message: 'Organization not found' });
+  }
+  const membership = await orgRepository.getMembership(orgId, actorUserId);
+  if (!membership || membership.status !== 'active' || !MANAGE_ROLES.has(membership.role)) {
+    return json(request, allowedOrigins, 403, { message: 'Only an owner or admin can manage the API key' });
+  }
+  return { orgId, actorUserId };
+}
+
+/** Last-4 mask of a decrypted key — never returns the raw key. */
+function maskApiKey(key: string): string {
+  return `…${key.slice(-4)}`;
+}
+
+/** POST /admin/orgs/{orgId}/api-key — set (encrypt at rest) the org's shared key. */
+async function setOrgApiKeyHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const gate = await requireOrgManager(request, orgRepository, allowedOrigins);
+  if ('statusCode' in gate) {
+    return gate;
+  }
+  const body = parseJsonBody(request) as Record<string, unknown> | undefined;
+  const parsed = setOrgApiKeyRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return json(request, allowedOrigins, 400, { message: 'Invalid API key payload' });
+  }
+  await orgRepository.setOrgProviderKey(gate.orgId, {
+    providerType: parsed.data.providerType,
+    apiKeyCiphertext: encryptSecret(parsed.data.apiKey),
+    baseUrl: parsed.data.baseUrl,
+    updatedByUserId: gate.actorUserId,
+  });
+  return json(request, allowedOrigins, 200, { ok: true });
+}
+
+/** DELETE /admin/orgs/{orgId}/api-key — clear the org's shared key. */
+async function clearOrgApiKeyHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const gate = await requireOrgManager(request, orgRepository, allowedOrigins);
+  if ('statusCode' in gate) {
+    return gate;
+  }
+  await orgRepository.clearOrgProviderKey(gate.orgId);
+  return json(request, allowedOrigins, 200, { ok: true });
+}
+
+/** GET /admin/orgs/{orgId}/api-key/status — masked status (never the raw key). */
+async function orgApiKeyStatusHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const orgId = request.pathParameters?.orgId;
+  if (!orgId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing orgId' });
+  }
+  const actorUserId =
+    typeof request.queryStringParameters?.actorUserId === 'string'
+      ? request.queryStringParameters.actorUserId
+      : undefined;
+  if (!actorUserId) {
+    return json(request, allowedOrigins, 400, { message: 'actorUserId query parameter is required' });
+  }
+  const org = await orgRepository.getOrg(orgId);
+  if (!org) {
+    return json(request, allowedOrigins, 404, { message: 'Organization not found' });
+  }
+  const membership = await orgRepository.getMembership(orgId, actorUserId);
+  if (!membership || membership.status !== 'active' || !MANAGE_ROLES.has(membership.role)) {
+    return json(request, allowedOrigins, 403, { message: 'Only an owner or admin can read the API key status' });
+  }
+  const record = await orgRepository.getOrgProviderKey(orgId);
+  if (!record) {
+    return json(request, allowedOrigins, 200, { hasKey: false });
+  }
+  return json(request, allowedOrigins, 200, {
+    hasKey: true,
+    maskedKey: maskApiKey(decryptSecret(record.apiKeyCiphertext)),
+    providerType: record.providerType,
+    baseUrl: record.baseUrl,
+    updatedAt: record.updatedAt,
+    updatedByUserId: record.updatedByUserId,
+  });
+}
+
+/**
+ * GET /admin/users/{userId}/org-api-key/resolve — runtime hot path (Auto/Forge).
+ * Admin-key auth only. Multi-org selection rule: among the user's ACTIVE-member
+ * orgs that carry a key, return it only when EXACTLY ONE has one (decrypted);
+ * zero or more than one → { found: false }.
+ */
+async function resolveUserOrgApiKeyHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const userId = request.pathParameters?.userId;
+  if (!userId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing userId' });
+  }
+  const orgs = await orgRepository.listOrgsForUser(userId);
+  const withKey: { orgId: string; record: OrgProviderKeyRecord }[] = [];
+  for (const org of orgs) {
+    const membership = await orgRepository.getMembership(org.orgId, userId);
+    if (!membership || membership.status !== 'active') {
+      continue;
+    }
+    const record = await orgRepository.getOrgProviderKey(org.orgId);
+    if (record) {
+      withKey.push({ orgId: org.orgId, record });
+    }
+  }
+  if (withKey.length !== 1) {
+    return json(request, allowedOrigins, 200, { found: false });
+  }
+  const { orgId, record } = withKey[0]!;
+  return json(request, allowedOrigins, 200, {
+    found: true,
+    orgId,
+    apiKey: decryptSecret(record.apiKeyCiphertext),
+    providerType: record.providerType,
+    baseUrl: record.baseUrl,
   });
 }
 
