@@ -40,7 +40,8 @@ function fill(template, { title, tagline, accent }) {
   return template
     .replace(/\{\{TITLE\}\}/g, title)
     .replace(/\{\{TAGLINE\}\}/g, tagline)
-    .replace(/\{\{ACCENT\}\}/g, accent);
+    .replace(/\{\{ACCENT\}\}/g, accent)
+    .replace(/\{\{TITLESIZE\}\}/g, title.length > 16 ? 58 : 86);
 }
 
 async function loadSharp() {

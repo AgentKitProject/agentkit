@@ -1,100 +1,115 @@
 <!--
-  OG-card template (1200x630) — interim v2.
+  OG-card template (1200x630) — v3.
   Placeholders replaced by scripts/generate-og.mjs:
     AgentKitAuto    — large headline (e.g. "AgentKitMarket")
     Schedule and automate trusted kits.  — one-line subtitle
     #16a34a   — accent hex (per-app brand color from BRAND_ACCENTS)
-  Single shared template, per-app accent drives the visual personality.
-  Designed as a programmatic interim until final designer artwork is ready.
+  One shared template; the per-app accent drives the personality. v3 adds a
+  brand-mark lockup, a "kit-card stack" product motif, a dot-grid texture, and a
+  tighter typographic rhythm. Pure gradients/shapes/text (no SVG filters) so it
+  rasterizes identically under sharp.
 -->
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Dark navy background gradient, diagonal -->
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0b1120"/>
-      <stop offset="100%" stop-color="#0f1a30"/>
+      <stop offset="0%" stop-color="#0a0f1e"/>
+      <stop offset="100%" stop-color="#0f1c34"/>
     </linearGradient>
-    <!-- Accent bloom: large soft radial at top-right -->
-    <radialGradient id="bloom" cx="1" cy="0" r="1" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#16a34a" stop-opacity="0.30"/>
-      <stop offset="55%" stop-color="#16a34a" stop-opacity="0.06"/>
+    <radialGradient id="bloom" cx="0.78" cy="0.28" r="0.7">
+      <stop offset="0%" stop-color="#16a34a" stop-opacity="0.34"/>
+      <stop offset="55%" stop-color="#16a34a" stop-opacity="0.08"/>
       <stop offset="100%" stop-color="#16a34a" stop-opacity="0"/>
     </radialGradient>
-    <!-- Counter-bloom: lower-left in muted blue -->
-    <radialGradient id="bloom2" cx="0" cy="1" r="0.9" gradientUnits="objectBoundingBox">
-      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.14"/>
+    <radialGradient id="bloom2" cx="0" cy="1" r="0.9">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.16"/>
       <stop offset="100%" stop-color="#2563eb" stop-opacity="0"/>
     </radialGradient>
-    <!-- Left accent bar gradient: accent → transparent downward -->
     <linearGradient id="sidebar" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#16a34a"/>
-      <stop offset="60%" stop-color="#16a34a" stop-opacity="0.5"/>
+      <stop offset="55%" stop-color="#16a34a" stop-opacity="0.5"/>
       <stop offset="100%" stop-color="#16a34a" stop-opacity="0"/>
     </linearGradient>
-    <!-- Ecosystem rainbow bar: accent + flanking ecosystem colors -->
     <linearGradient id="rainbar" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#4f46e5"/>
       <stop offset="33%" stop-color="#0fb3d1"/>
       <stop offset="66%" stop-color="#16a34a"/>
       <stop offset="100%" stop-color="#6d46e9"/>
     </linearGradient>
+    <!-- Kit-card fills: accent-tinted glass, brightest on top of the stack -->
+    <linearGradient id="card1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16a34a" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#cdd9ec"/>
+    </linearGradient>
+    <!-- Dot-grid texture for depth -->
+    <pattern id="dots" width="34" height="34" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#9fb4d6" opacity="0.05"/>
+    </pattern>
   </defs>
 
-  <!-- Base background -->
+  <!-- Background layers -->
   <rect width="1200" height="630" fill="url(#bg)"/>
-
-  <!-- Accent bloom (top-right) -->
+  <rect width="1200" height="630" fill="url(#dots)"/>
   <rect width="1200" height="630" fill="url(#bloom)"/>
-
-  <!-- Counter-bloom (bottom-left) -->
   <rect width="1200" height="630" fill="url(#bloom2)"/>
 
-  <!-- Left vertical accent stripe — 6px, full height, fades out below center -->
+  <!-- Ecosystem identity marks -->
   <rect x="0" y="0" width="6" height="630" fill="url(#sidebar)"/>
-
-  <!-- Top rainbow bar — 3px, ecosystem identity marker -->
   <rect x="0" y="0" width="1200" height="3" fill="url(#rainbar)"/>
 
-  <!-- Geometric accent rings (top-right corner, behind content) -->
-  <circle cx="1100" cy="80" r="280" fill="none" stroke="#16a34a" stroke-width="1" opacity="0.12"/>
-  <circle cx="1100" cy="80" r="180" fill="none" stroke="#16a34a" stroke-width="1" opacity="0.18"/>
+  <!-- ===== Right side: "kit-card stack" product motif ===== -->
+  <g transform="translate(842 196)">
+    <!-- back card -->
+    <g transform="rotate(-9 150 120)">
+      <rect x="34" y="40" width="300" height="208" rx="20" fill="url(#card1)" stroke="#16a34a" stroke-opacity="0.28" stroke-width="1.5"/>
+    </g>
+    <!-- middle card -->
+    <g transform="rotate(4 150 120)">
+      <rect x="14" y="22" width="300" height="208" rx="20" fill="url(#card1)" stroke="#16a34a" stroke-opacity="0.4" stroke-width="1.5"/>
+    </g>
+    <!-- front card -->
+    <g transform="rotate(-2 150 120)">
+      <rect x="0" y="0" width="300" height="208" rx="20" fill="#0d1730" fill-opacity="0.66" stroke="#16a34a" stroke-opacity="0.85" stroke-width="2"/>
+      <!-- card header dot + lines (an "agent kit" glyph) -->
+      <circle cx="34" cy="40" r="11" fill="#16a34a"/>
+      <rect x="56" y="33" width="150" height="9" rx="4.5" fill="#9fb4d6" opacity="0.55"/>
+      <rect x="34" y="78" width="232" height="8" rx="4" fill="#9fb4d6" opacity="0.28"/>
+      <rect x="34" y="100" width="200" height="8" rx="4" fill="#9fb4d6" opacity="0.28"/>
+      <rect x="34" y="122" width="216" height="8" rx="4" fill="#9fb4d6" opacity="0.2"/>
+      <!-- a 2x2 "kit module" grid, accent -->
+      <rect x="34" y="150" width="26" height="26" rx="6" fill="#16a34a" opacity="0.85"/>
+      <rect x="68" y="150" width="26" height="26" rx="6" fill="#16a34a" opacity="0.45"/>
+      <rect x="34" y="184" width="26" height="14" rx="6" fill="#16a34a" opacity="0.45"/>
+      <rect x="68" y="184" width="26" height="14" rx="6" fill="#16a34a" opacity="0.85"/>
+    </g>
+  </g>
 
-  <!-- Eyebrow label -->
-  <text
-    x="80" y="230"
-    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-    font-size="22" font-weight="700" letter-spacing="6"
-    fill="#16a34a" opacity="0.9"
-  >AGENTKITPROJECT</text>
+  <!-- ===== Left side: brand lockup + headline ===== -->
+  <!-- Brand mark: rounded tile with a 2x2 accent dot grid (the ecosystem motif) -->
+  <g transform="translate(80 120)">
+    <rect x="0" y="0" width="62" height="62" rx="16" fill="#0d1730" stroke="#16a34a" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="15" y="15" width="14" height="14" rx="4" fill="#16a34a"/>
+    <rect x="33" y="15" width="14" height="14" rx="4" fill="#16a34a" opacity="0.55"/>
+    <rect x="15" y="33" width="14" height="14" rx="4" fill="#16a34a" opacity="0.55"/>
+    <rect x="33" y="33" width="14" height="14" rx="4" fill="#16a34a"/>
+  </g>
+  <text x="160" y="147" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="5" fill="#16a34a">AGENTKITPROJECT</text>
+  <text x="160" y="176" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="500" letter-spacing="1" fill="#6f86a8">Open ecosystem for Agent Kits</text>
 
-  <!-- Separator rule under eyebrow -->
-  <rect x="80" y="244" width="48" height="2" fill="#16a34a" opacity="0.5" rx="1"/>
-
-  <!-- App title — primary headline -->
-  <text
-    x="78" y="360"
-    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-    font-size="88" font-weight="800" letter-spacing="-2"
-    fill="#ffffff"
-  >AgentKitAuto</text>
+  <!-- App title -->
+  <text x="78" y="372" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="86" font-weight="800" letter-spacing="-2.5" fill="url(#title)">AgentKitAuto</text>
+  <!-- Accent underline beneath the title -->
+  <rect x="82" y="398" width="120" height="5" rx="2.5" fill="#16a34a"/>
 
   <!-- Tagline -->
-  <text
-    x="80" y="432"
-    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-    font-size="34" font-weight="400" letter-spacing="0"
-    fill="#8fa3bf"
-  >Schedule and automate trusted kits.</text>
+  <text x="80" y="456" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="33" font-weight="400" fill="#94a7c4">Schedule and automate trusted kits.</text>
 
-  <!-- Footer area: accent dot trio + domain -->
-  <circle cx="80" cy="548" r="7" fill="#4f46e5" opacity="0.9"/>
-  <circle cx="100" cy="548" r="7" fill="#0fb3d1" opacity="0.9"/>
-  <circle cx="120" cy="548" r="7" fill="#16a34a" opacity="0.9"/>
-
-  <text
-    x="144" y="554"
-    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-    font-size="24" font-weight="500"
-    fill="#5a7090"
-  >agentkitproject.com</text>
+  <!-- Footer: dot trio + domain -->
+  <circle cx="82" cy="552" r="7" fill="#4f46e5"/>
+  <circle cx="102" cy="552" r="7" fill="#0fb3d1"/>
+  <circle cx="122" cy="552" r="7" fill="#16a34a"/>
+  <text x="146" y="559" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="24" font-weight="500" fill="#62799a">agentkitproject.com</text>
 </svg>
