@@ -1,0 +1,49 @@
+# release-selfhost — cut a versioned self-host release.
+#
+# Self-host operators should pin to a RELEASE tag (e.g. v0.1.0), not :latest or a
+# raw sha. This workflow retags the already-built+tested multi-arch self-host
+# images (the per-commit `sha-<sha>` / `latest` builds) to a version tag — no
+# rebuild, so the released artifacts are byte-identical to what was tested.
+#
+# Usage: Actions → release-selfhost → Run workflow → version=v0.1.0
+#   (optionally source_tag=<sha-... or latest> to pick the exact build to release).
+name: release-selfhost
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag to publish (e.g. v0.1.0)"
+        required: true
+      source_tag:
+        description: "Existing image tag to promote (default: latest)"
+        required: false
+        default: latest
+
+permissions:
+  packages: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote self-host images to ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          IMAGES="agentkitforge-web agentkitmarket-core agentkitmarket-app agentkitauto-app agentkitauto-worker"
+          for img in $IMAGES; do
+            src="ghcr.io/agentkitproject/${img}:${{ inputs.source_tag }}"
+            dst="ghcr.io/agentkitproject/${img}:${{ inputs.version }}"
+            echo "::group::${img}: ${{ inputs.source_tag }} -> ${{ inputs.version }}"
+            docker buildx imagetools create --tag "$dst" "$src"
+            docker buildx imagetools inspect "$dst" --format '{{.Manifest.MediaType}}' | head -1
+            echo "::endgroup::"
+          done
+          echo "Released self-host images at ${{ inputs.version }}: $IMAGES"
