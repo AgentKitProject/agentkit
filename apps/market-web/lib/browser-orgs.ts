@@ -14,7 +14,8 @@ import {
   acceptOrgInviteRequestSchema,
   transferKitRequestSchema,
   setKitVisibilityRequestSchema,
-  setOrgApiKeyRequestSchema
+  setOrgApiKeyRequestSchema,
+  orgKeyProviderTypeSchema
 } from "@agentkitforge/contracts";
 import { fetchAdminBackend } from "@/lib/admin-api";
 import { requireUserForApi, UnauthorizedError, ForbiddenError } from "@/lib/auth";
@@ -322,7 +323,8 @@ export async function browserSetOrgApiKey(request: Request, orgId: string) {
     const body = (await request.json()) as unknown;
 
     // Validate the incoming browser body WITHOUT actorUserId (the browser never
-    // sends it); inject the session user's id on the Seam-B hop.
+    // sends it); inject the session user's id on the Seam-B hop. The body carries
+    // `providerType` (which provider's key) + apiKey + optional baseUrl.
     const parsed = setOrgApiKeyRequestSchema.omit({ actorUserId: true }).safeParse(body);
 
     if (!parsed.success) {
@@ -336,10 +338,22 @@ export async function browserSetOrgApiKey(request: Request, orgId: string) {
   }
 }
 
-export async function browserClearOrgApiKey(_request: Request, orgId: string) {
+export async function browserClearOrgApiKey(request: Request, orgId: string) {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKey(orgId), "DELETE", {
+
+    // The provider to clear comes from the request `?providerType=` query param;
+    // it is required and forwarded to the backend as a query param.
+    const providerType = new URL(request.url).searchParams.get("providerType");
+    const parsedProvider = orgKeyProviderTypeSchema.safeParse(providerType);
+    if (!parsedProvider.success) {
+      return browserOrgError("A valid providerType query param is required.", 400);
+    }
+
+    const backendPath = `${marketBackendOrgRoutes.adminOrgApiKey(orgId)}?providerType=${encodeURIComponent(
+      parsedProvider.data
+    )}`;
+    return proxyToBackend(backendPath, "DELETE", {
       actorUserId: user.id
     });
   } catch (error) {

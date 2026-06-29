@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import type { Organization, OrgMembership, OrgInvite } from "@agentkitforge/contracts";
+import type {
+  Organization,
+  OrgMembership,
+  OrgInvite,
+  OrgKeyProviderType,
+  OrgApiKeyStatus,
+  OrgApiKeyProviderStatus
+} from "@agentkitforge/contracts";
+import { orgApiKeyStatusSchema } from "@agentkitforge/contracts";
 import { Button, Input, Select } from "@agentkitforge/ui";
 
 // ---------------------------------------------------------------------------
@@ -526,27 +534,39 @@ export function OrgMembersPanel({ orgId }: { orgId: string }) {
 // Org shared API key — owner/admin only
 // ---------------------------------------------------------------------------
 
-type OrgApiKeyStatusView = {
-  hasKey: boolean;
-  maskedKey?: string;
-  providerType?: string;
-  baseUrl?: string;
-  updatedAt?: string;
-};
+// The 5 provider types an org can store one key each for (mirrors
+// orgKeyProviderTypeSchema). Order/labels are display-only.
+const ORG_KEY_PROVIDERS: { value: OrgKeyProviderType; label: string }[] = [
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "openai-compatible", label: "OpenAI-compatible" },
+  { value: "gemini", label: "Gemini" },
+  { value: "ollama", label: "Ollama" }
+];
+
+function providerLabel(value: string): string {
+  return ORG_KEY_PROVIDERS.find((p) => p.value === value)?.label ?? value;
+}
+
+// Base URL is only meaningful for self-hosted / custom endpoints.
+const BASE_URL_PROVIDERS = new Set<OrgKeyProviderType>(["openai-compatible", "ollama"]);
 
 /**
- * Owner/admin surface for the org's shared LLM API key. The viewer's role is
- * derived from the org membership list (the page passes the viewer's user id);
- * the panel renders nothing for members/viewers. The backend independently
- * enforces owner/admin on every write — this gate is UI-only.
+ * Owner/admin surface for the org's PER-PROVIDER shared LLM API keys. An org
+ * holds one key per provider (5 types); this panel lists each configured
+ * provider (masked) with a per-row Clear, plus an add/update form. The viewer's
+ * role is derived from the org membership list (the page passes the viewer's
+ * user id); the panel renders nothing for members/viewers. The backend
+ * independently enforces owner/admin on every write — this gate is UI-only.
  */
 export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerUserId: string }) {
   const [canManage, setCanManage] = useState<boolean | null>(null);
-  const [status, setStatus] = useState<Loadable<OrgApiKeyStatusView>>({ status: "loading" });
+  const [status, setStatus] = useState<Loadable<OrgApiKeyStatus>>({ status: "loading" });
+  const [providerType, setProviderType] = useState<OrgKeyProviderType>("anthropic");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [clearing, setClearing] = useState(false);
+  const [clearing, setClearing] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
 
@@ -581,8 +601,9 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
     fetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, { headers: { Accept: "application/json" } })
       .then((r) => r.json())
       .then((payload: unknown) => {
-        const view = (payload && typeof payload === "object" ? payload : {}) as OrgApiKeyStatusView;
-        setStatus({ status: "loaded", data: { ...view, hasKey: Boolean(view.hasKey) } });
+        const parsed = orgApiKeyStatusSchema.safeParse(payload);
+        const data: OrgApiKeyStatus = parsed.success ? parsed.data : { providers: [] };
+        setStatus({ status: "loaded", data });
       })
       .catch((err: unknown) => {
         setStatus({ status: "failed", message: err instanceof Error ? err.message : "Could not load the org API key status." });
@@ -600,7 +621,7 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
     setFormError(null);
     setFormNotice(null);
     try {
-      const body: Record<string, string> = { apiKey: apiKey.trim() };
+      const body: Record<string, string> = { providerType, apiKey: apiKey.trim() };
       if (baseUrl.trim()) body.baseUrl = baseUrl.trim();
       await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, {
         method: "PUT",
@@ -608,7 +629,7 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
       });
       setApiKey("");
       setBaseUrl("");
-      setFormNotice("Organization API key saved.");
+      setFormNotice(`${providerLabel(providerType)} key saved.`);
       loadStatus();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save the API key.");
@@ -617,18 +638,21 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
     }
   };
 
-  const handleClear = async () => {
-    setClearing(true);
+  const handleClear = async (provider: OrgKeyProviderType) => {
+    setClearing(provider);
     setFormError(null);
     setFormNotice(null);
     try {
-      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, { method: "DELETE" });
-      setFormNotice("Organization API key cleared.");
+      await apiFetch(
+        `/api/orgs/${encodeURIComponent(orgId)}/api-key?providerType=${encodeURIComponent(provider)}`,
+        { method: "DELETE" }
+      );
+      setFormNotice(`${providerLabel(provider)} key cleared.`);
       loadStatus();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to clear the API key.");
     } finally {
-      setClearing(false);
+      setClearing(null);
     }
   };
 
@@ -637,11 +661,13 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
     return null;
   }
 
+  const providers: OrgApiKeyProviderStatus[] = status.status === "loaded" ? status.data.providers : [];
+
   return (
     <div>
-      <h2>Organization API key</h2>
+      <h2>Organization API keys</h2>
       <p>
-        Members&apos; personal keys take precedence; this org key is the shared fallback. Used by Auto and Web Forge.
+        Members&apos; own keys take precedence; these org keys are the shared fallback per provider. Used by Auto and Web Forge.
       </p>
 
       {status.status === "loading" && (
@@ -656,22 +682,41 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
         </div>
       )}
       {status.status === "loaded" && (
-        <div className="table-panel" style={{ marginBottom: "1.5rem" }}>
-          <div className="table-row table-head">
-            <strong>Current key</strong>
-            <span>Provider</span>
-            <span>Updated</span>
+        providers.length === 0 ? (
+          <div className="empty-state" style={{ marginBottom: "1.5rem" }}>
+            <strong>No org keys configured</strong>
+            <p>Add a key below to set a shared fallback for a provider.</p>
           </div>
-          <div className="table-row">
-            <span>{status.data.hasKey ? (status.data.maskedKey ?? "Set") : "Not set"}</span>
-            <span>{status.data.providerType ?? "—"}</span>
-            <span>{status.data.updatedAt ? new Date(status.data.updatedAt).toLocaleDateString() : "—"}</span>
+        ) : (
+          <div className="table-panel" style={{ marginBottom: "1.5rem" }}>
+            <div className="table-row table-head">
+              <strong>Provider</strong>
+              <span>Key</span>
+              <span>Base URL</span>
+              <span>Updated</span>
+              <span />
+            </div>
+            {providers.map((p) => (
+              <div className="table-row" key={p.providerType}>
+                <strong>{providerLabel(p.providerType)}</strong>
+                <span>{p.maskedKey}</span>
+                <span>{p.baseUrl ?? "—"}</span>
+                <span>{p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : "—"}</span>
+                <Button
+                  variant="danger"
+                  disabled={clearing === p.providerType}
+                  onClick={() => { void handleClear(p.providerType); }}
+                >
+                  {clearing === p.providerType ? "Clearing…" : "Clear"}
+                </Button>
+              </div>
+            ))}
           </div>
-        </div>
+        )
       )}
 
       <form className="inline-form" style={{ marginBottom: "1rem" }} onSubmit={(e) => { void handleSave(e); }}>
-        <h3>Set API key</h3>
+        <h3>Add or update a key</h3>
         {formError && (
           <div className="rule-callout danger-callout">
             <strong>Error</strong>
@@ -685,6 +730,18 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
           </div>
         )}
         <label className="field-label">
+          Provider <span className="required">*</span>
+          <Select
+            value={providerType}
+            onChange={(e) => setProviderType(e.target.value as OrgKeyProviderType)}
+            disabled={saving}
+          >
+            {ORG_KEY_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </Select>
+        </label>
+        <label className="field-label">
           API key <span className="required">*</span>
           <Input
             type="password"
@@ -697,7 +754,7 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
           />
         </label>
         <label className="field-label">
-          Base URL (optional)
+          Base URL{BASE_URL_PROVIDERS.has(providerType) ? "" : " (optional)"}
           <Input
             type="url"
             value={baseUrl}
@@ -707,15 +764,9 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
           />
         </label>
         <Button type="submit" disabled={saving || !apiKey.trim()}>
-          {saving ? "Saving…" : "Save API key"}
+          {saving ? "Saving…" : "Save key"}
         </Button>
       </form>
-
-      {status.status === "loaded" && status.data.hasKey && (
-        <Button variant="danger" disabled={clearing} onClick={() => { void handleClear(); }}>
-          {clearing ? "Clearing…" : "Clear API key"}
-        </Button>
-      )}
     </div>
   );
 }

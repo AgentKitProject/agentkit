@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   let backendRes: Response;
   try {
     backendRes = await fetchAdminBackend(
-      marketBackendOrgRoutes.adminResolveUserOrgApiKey(parsed.data.userId),
+      marketBackendOrgRoutes.adminResolveUserOrgApiKey(parsed.data.userId, parsed.data.providerType),
       { method: "GET" }
     );
   } catch {
