@@ -13,7 +13,8 @@ import {
   createEmailInviteRequestSchema,
   acceptOrgInviteRequestSchema,
   transferKitRequestSchema,
-  setKitVisibilityRequestSchema
+  setKitVisibilityRequestSchema,
+  setOrgApiKeyRequestSchema
 } from "@agentkitforge/contracts";
 import { fetchAdminBackend } from "@/lib/admin-api";
 import { requireUserForApi, UnauthorizedError, ForbiddenError } from "@/lib/auth";
@@ -295,6 +296,52 @@ export async function browserSetKitVisibility(request: Request, kitId: string) {
 
     const backendBody = { ...parsed.data, actorUserId: user.id };
     return proxyToBackend(marketBackendOrgRoutes.adminSetKitVisibility(kitId), "POST", backendBody);
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Org shared API key — masked status / set / clear (owner/admin gated by the
+// backend via actorUserId). The raw key is NEVER returned to the browser; the
+// status route surfaces only the masked status from the backend.
+// ---------------------------------------------------------------------------
+
+export async function browserGetOrgApiKeyStatus(_request: Request, orgId: string) {
+  try {
+    await requireUserForApi();
+    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKeyStatus(orgId), "GET");
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+export async function browserSetOrgApiKey(request: Request, orgId: string) {
+  try {
+    const user = await requireUserForApi();
+    const body = (await request.json()) as unknown;
+
+    // Validate the incoming browser body WITHOUT actorUserId (the browser never
+    // sends it); inject the session user's id on the Seam-B hop.
+    const parsed = setOrgApiKeyRequestSchema.omit({ actorUserId: true }).safeParse(body);
+
+    if (!parsed.success) {
+      return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
+    }
+
+    const backendBody = { ...parsed.data, actorUserId: user.id };
+    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKey(orgId), "POST", backendBody);
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+export async function browserClearOrgApiKey(_request: Request, orgId: string) {
+  try {
+    const user = await requireUserForApi();
+    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKey(orgId), "DELETE", {
+      actorUserId: user.id
+    });
   } catch (error) {
     return handleBrowserOrgException(error);
   }

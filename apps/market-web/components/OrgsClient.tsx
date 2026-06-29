@@ -523,6 +523,204 @@ export function OrgMembersPanel({ orgId }: { orgId: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Org shared API key — owner/admin only
+// ---------------------------------------------------------------------------
+
+type OrgApiKeyStatusView = {
+  hasKey: boolean;
+  maskedKey?: string;
+  providerType?: string;
+  baseUrl?: string;
+  updatedAt?: string;
+};
+
+/**
+ * Owner/admin surface for the org's shared LLM API key. The viewer's role is
+ * derived from the org membership list (the page passes the viewer's user id);
+ * the panel renders nothing for members/viewers. The backend independently
+ * enforces owner/admin on every write — this gate is UI-only.
+ */
+export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerUserId: string }) {
+  const [canManage, setCanManage] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<Loadable<OrgApiKeyStatusView>>({ status: "loading" });
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
+
+  // Determine the viewer's role from the membership list (same source the
+  // members panel reads). Owner/admin → show the panel.
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/orgs/${encodeURIComponent(orgId)}/members`, { headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        if (!active) return;
+        const items = Array.isArray(payload)
+          ? (payload as OrgMembership[])
+          : Array.isArray((payload as Record<string, unknown>)?.items)
+            ? ((payload as Record<string, unknown[]>).items as OrgMembership[])
+            : Array.isArray((payload as Record<string, unknown>)?.members)
+              ? ((payload as Record<string, unknown[]>).members as OrgMembership[])
+              : [];
+        const mine = items.find((m) => m.userId === viewerUserId);
+        setCanManage(mine?.role === "owner" || mine?.role === "admin");
+      })
+      .catch(() => {
+        if (active) setCanManage(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [orgId, viewerUserId]);
+
+  const loadStatus = useCallback(() => {
+    setStatus({ status: "loading" });
+    fetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, { headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        const view = (payload && typeof payload === "object" ? payload : {}) as OrgApiKeyStatusView;
+        setStatus({ status: "loaded", data: { ...view, hasKey: Boolean(view.hasKey) } });
+      })
+      .catch((err: unknown) => {
+        setStatus({ status: "failed", message: err instanceof Error ? err.message : "Could not load the org API key status." });
+      });
+  }, [orgId]);
+
+  useEffect(() => {
+    if (canManage) loadStatus();
+  }, [canManage, loadStatus]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    setFormError(null);
+    setFormNotice(null);
+    try {
+      const body: Record<string, string> = { apiKey: apiKey.trim() };
+      if (baseUrl.trim()) body.baseUrl = baseUrl.trim();
+      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+      setApiKey("");
+      setBaseUrl("");
+      setFormNotice("Organization API key saved.");
+      loadStatus();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to save the API key.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setClearing(true);
+    setFormError(null);
+    setFormNotice(null);
+    try {
+      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/api-key`, { method: "DELETE" });
+      setFormNotice("Organization API key cleared.");
+      loadStatus();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to clear the API key.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  // Hide entirely for non-owner/admin (and while the role is still resolving).
+  if (canManage !== true) {
+    return null;
+  }
+
+  return (
+    <div>
+      <h2>Organization API key</h2>
+      <p>
+        Members&apos; personal keys take precedence; this org key is the shared fallback. Used by Auto and Web Forge.
+      </p>
+
+      {status.status === "loading" && (
+        <div className="empty-state">
+          <strong>Loading API key status</strong>
+        </div>
+      )}
+      {status.status === "failed" && (
+        <div className="empty-state danger-state">
+          <strong>Could not load API key status</strong>
+          <p>{status.message}</p>
+        </div>
+      )}
+      {status.status === "loaded" && (
+        <div className="table-panel" style={{ marginBottom: "1.5rem" }}>
+          <div className="table-row table-head">
+            <strong>Current key</strong>
+            <span>Provider</span>
+            <span>Updated</span>
+          </div>
+          <div className="table-row">
+            <span>{status.data.hasKey ? (status.data.maskedKey ?? "Set") : "Not set"}</span>
+            <span>{status.data.providerType ?? "—"}</span>
+            <span>{status.data.updatedAt ? new Date(status.data.updatedAt).toLocaleDateString() : "—"}</span>
+          </div>
+        </div>
+      )}
+
+      <form className="inline-form" style={{ marginBottom: "1rem" }} onSubmit={(e) => { void handleSave(e); }}>
+        <h3>Set API key</h3>
+        {formError && (
+          <div className="rule-callout danger-callout">
+            <strong>Error</strong>
+            <span>{formError}</span>
+          </div>
+        )}
+        {formNotice && (
+          <div className="rule-callout">
+            <strong>Saved</strong>
+            <span>{formNotice}</span>
+          </div>
+        )}
+        <label className="field-label">
+          API key <span className="required">*</span>
+          <Input
+            type="password"
+            value={apiKey}
+            required
+            autoComplete="off"
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-ant-…"
+            disabled={saving}
+          />
+        </label>
+        <label className="field-label">
+          Base URL (optional)
+          <Input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.anthropic.com"
+            disabled={saving}
+          />
+        </label>
+        <Button type="submit" disabled={saving || !apiKey.trim()}>
+          {saving ? "Saving…" : "Save API key"}
+        </Button>
+      </form>
+
+      {status.status === "loaded" && status.data.hasKey && (
+        <Button variant="danger" disabled={clearing} onClick={() => { void handleClear(); }}>
+          {clearing ? "Clearing…" : "Clear API key"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Kit controls — transfer + visibility
 // ---------------------------------------------------------------------------
 
