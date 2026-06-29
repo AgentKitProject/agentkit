@@ -2,7 +2,7 @@ apiVersion: v2
 name: agentkitproject-site
 description: Apex agentkitproject.com ecosystem site — a self-contained nginx image that BAKES the built Astro static site (apps/site/dist) and serves it directly. Replaces the AWS CloudFront/S3 hosting. Fronted by DOKS ingress-nginx with TLS via cert-manager (HTTP-01, letsencrypt-prod); the single backend serves apex + www + docs (www→apex and docs→apex/docs redirects handled inside the image's nginx.conf).
 type: application
-version: 0.2.2
+version: 0.2.3
 appVersion: "0.2.0"
 keywords:
   - agentkit
