@@ -112,6 +112,7 @@ export {
   serviceLicensedPackageResponseSchema,
   serviceEntitledKitsErrorSchema,
   serviceEntitledKitsRequestSchema,
+  serviceResolveOrgApiKeyRequestSchema,
   serviceEntitledKitSchema,
   serviceEntitledKitsResponseSchema,
   marketBackendPricingRoutes,
@@ -141,6 +142,7 @@ export {
   type ServiceLicensedPackageResponse,
   type ServiceEntitledKitsError,
   type ServiceEntitledKitsRequest,
+  type ServiceResolveOrgApiKeyRequest,
   type ServiceEntitledKit,
   type ServiceEntitledKitsResponse
 } from "./pricing.js";
