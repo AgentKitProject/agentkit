@@ -14,7 +14,7 @@ import {
   validateForgeUploadBackendRequest,
   type ForgeUploadUrlRequest
 } from "@/lib/forge-submission-payload";
-import { getPublicProfileForUser } from "@/lib/profile/profile-client";
+import { getPublisherSnapshotForUser } from "@/lib/profile/profile-client";
 import { forgeSubmissionError, forgeSubmissionException, logForgeSubmissionFailure, mapBackendError } from "@/lib/forge-route-errors";
 import { isOwnSubmission, type SubmissionUser } from "@/lib/user-submissions";
 
@@ -23,7 +23,7 @@ export async function createForgeUploadUrl(request: Request) {
     const forgeUser = await requireForgeUser(request);
     const forgePayload = (await request.json()) as ForgeUploadUrlRequest;
     const submissionUser = await resolveForgeSubmissionAccount(forgeUser);
-    const publisherSnapshot = await getPublicProfileForUser(submissionUser.id);
+    const publisherSnapshot = await getPublisherSnapshotForUser(submissionUser);
     const payload = buildForgeUploadBackendRequest({
       request: forgePayload,
       userId: submissionUser.id,

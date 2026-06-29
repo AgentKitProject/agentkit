@@ -141,6 +141,28 @@ The redirect URI is always **`<appUrl>/auth/callback`** (derived automatically f
   issuer URL. (`OIDC_ALLOW_INSECURE=true` exists for an `http://` dev IdP only — never
   in production.)
 
+### Users & admins
+
+**You don't create users in the app — they live in your IdP.** None of the three
+apps have a signup flow or a user database. The first time someone signs in through
+OIDC, a session is provisioned straight from their token claims (`sub` → user id,
+`email`, and a display name from `name` / `given_name`+`family_name` /
+`preferred_username`). To **onboard** a user, create or invite them in your IdP and
+grant them access to the app's OIDC client — that's it; they sign in and they're in.
+To **offboard**, remove or disable them in your IdP. (Pair this with
+`REQUIRE_LOGIN=true` — section 10 — if the instance is internet-facing and should be
+private, so only signed-in IdP users can reach it.)
+
+**Admins** are granted by an OIDC group claim (`ADMIN_OIDC_GROUP`) or the
+`ADMIN_EMAILS` allowlist — see *Granting Market admin* just below.
+
+**Display names / publisher attribution come from the IdP — you do NOT need to run
+AgentKitProfile.** When a user submits a kit, the publisher name is taken from their
+OIDC display name (falling back to the email local-part if the IdP emits no name). The
+public-profile service (the `/u/<handle>` pages) is **not** part of open-core self-host
+and is **not** required for submissions or any core flow — leaving `PROFILE_API_BASE_URL`
+unset is the supported path. A single user or a small team needs nothing extra.
+
 ### Granting Market admin
 
 A signed-in Market user becomes an **admin** when **either**:

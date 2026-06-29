@@ -2,32 +2,26 @@ import { NextResponse } from "next/server";
 import { AdminApiError, createUploadUrl, type UserCreateUploadUrlBackendRequest } from "@/lib/admin-api";
 import { validateAdminCreateUploadUrlRequest } from "@/lib/admin-upload";
 import { ForbiddenError, requireUserForApi, UnauthorizedError } from "@/lib/auth";
-import { getPublicProfileForUser } from "@/lib/profile/profile-client";
+import { getPublisherSnapshotForUser } from "@/lib/profile/profile-client";
 import { buildUserUploadBackendRequest, type UserCreateUploadUrlRequest } from "@/lib/user-submissions";
 
 export async function POST(request: Request) {
   try {
     const user = await requireUserForApi();
     const browserPayload = (await request.json()) as Partial<UserCreateUploadUrlRequest>;
-    const publisherSnapshot = await getPublicProfileForUser(user.id);
+    // Self-host without the Profile service derives the publisher name from the
+    // OIDC identity (handled in getPublisherSnapshotForUser). A CONFIGURED Profile
+    // that returns no display name still 409s (hosted path — user must set a name).
+    const publisherSnapshot = await getPublisherSnapshotForUser(user);
 
-    // Self-host fallback: when no Profile service is configured (PROFILE_API_BASE_URL
-    // unset, e.g. OIDC self-host), there is no display name to fetch, so derive the
-    // publisher name from the authenticated OIDC identity instead of 409ing. A
-    // configured Profile service that returns no displayName still 409s (hosted path).
-    let displayName = publisherSnapshot.displayName;
-    if (!displayName && !process.env.PROFILE_API_BASE_URL) {
-      displayName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email;
-    }
-
-    if (!displayName) {
+    if (!publisherSnapshot.displayName) {
       return NextResponse.json(
         { message: "AgentKitProfile display name is required for Market submission." },
         { status: 409 }
       );
     }
 
-    const payload = buildUserUploadBackendRequest(browserPayload, user, { ...publisherSnapshot, displayName });
+    const payload = buildUserUploadBackendRequest(browserPayload, user, publisherSnapshot);
     const validationError = validateAdminCreateUploadUrlRequest(payload);
 
     if (validationError) {
