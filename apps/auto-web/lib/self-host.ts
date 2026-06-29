@@ -29,9 +29,49 @@
 // pure/serializable, so it can be resolved on the server and handed to the client
 // as `PublicConfig`.
 
+import type { AiProviderType } from "@agentkitforge/gateway-core";
+
 type Env = Record<string, string | undefined>;
 
 const HOSTED_MARKET_BASE_URL = "https://market.agentkitproject.com";
+
+/** The five supported AI provider types (mirrors gateway-core's AiProviderType).
+ *  Used to validate the ALLOWED_PROVIDERS provider-lock env. */
+const ALL_AI_PROVIDER_TYPES: readonly AiProviderType[] = [
+  "anthropic",
+  "openai",
+  "openai-compatible",
+  "gemini",
+  "ollama"
+] as const;
+
+/**
+ * Provider-lock (self-host admin policy). Reads ALLOWED_PROVIDERS (comma-separated,
+ * e.g. "anthropic,openai") and returns the validated subset of the five provider
+ * types an operator permits. Semantics (IDENTICAL to forge-web's policy):
+ *
+ *   - unset / empty / whitespace-only        → null (UNRESTRICTED — any provider).
+ *   - otherwise                              → the parsed, de-duped subset of the
+ *     five known types. Unknown tokens are dropped. If EVERY token is unknown the
+ *     result is an EMPTY array (no provider allowed — a strict lock-down), which
+ *     is distinct from `null` (unrestricted).
+ *
+ * Case-insensitive; surrounding whitespace per token is trimmed. The settings
+ * store gates saveProvider() against this; the settings UI hides disallowed
+ * options via the `allowedProviders` PublicConfig field.
+ */
+export function getAllowedProviders(env: Env = process.env): AiProviderType[] | null {
+  const raw = env.ALLOWED_PROVIDERS;
+  if (raw === undefined || raw.trim() === "") return null;
+  const seen = new Set<AiProviderType>();
+  for (const token of raw.split(",")) {
+    const t = token.trim().toLowerCase();
+    if (t === "") continue;
+    const match = ALL_AI_PROVIDER_TYPES.find((p) => p === t);
+    if (match) seen.add(match);
+  }
+  return [...seen];
+}
 
 /**
  * Which credit ledger backs a deployment's billing. Decoupled from the
@@ -215,6 +255,9 @@ export interface PublicConfig {
   selfHost: boolean;
   marketEnabled: boolean;
   managedBilling: boolean;
+  /** Provider-lock: the AI provider types this deployment permits, or null when
+   *  unrestricted (any provider). The settings UI hides disallowed options. */
+  allowedProviders: AiProviderType[] | null;
   links: EcosystemLinks;
 }
 
@@ -223,6 +266,7 @@ export function getPublicConfig(env: Env = process.env): PublicConfig {
     selfHost: isSelfHost(env),
     marketEnabled: isMarketEnabled(env),
     managedBilling: isManagedInferenceEnabled(env),
+    allowedProviders: getAllowedProviders(env),
     links: getEcosystemLinks(env)
   };
 }

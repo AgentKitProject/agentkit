@@ -34,12 +34,13 @@ export default async function Page() {
       redirect(url);
     }
   }
-  const { links, marketEnabled } = getPublicConfig();
+  const { links, marketEnabled, allowedProviders } = getPublicConfig();
   return (
     <AutoApp
       user={{ id: user.id, email: user.email }}
       marketUrl={links.marketUrl}
       marketEnabled={marketEnabled}
+      allowedProviders={allowedProviders}
     />
   );
 }

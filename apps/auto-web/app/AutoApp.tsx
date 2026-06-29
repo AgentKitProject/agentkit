@@ -25,11 +25,15 @@ type Toast = { msg: string; err: boolean } | null;
 export function AutoApp({
   user,
   marketUrl,
-  marketEnabled
+  marketEnabled,
+  allowedProviders
 }: {
   user: { id: string; email: string };
   marketUrl?: string;
   marketEnabled?: boolean;
+  /** Provider-lock: the AI provider types this deployment permits, or null when
+   *  unrestricted. The settings UI hides disallowed BYO options. */
+  allowedProviders?: string[] | null;
 }) {
   const [kits, setKits] = useState<MyKitEntry[]>([]);
   const [toast, setToast] = useState<Toast>(null);
@@ -90,7 +94,13 @@ export function AutoApp({
           {toast.msg}
         </div>
       )}
-      <AutoSection kits={kits} notify={notify} marketUrl={marketUrl} marketEnabled={marketEnabled} />
+      <AutoSection
+        kits={kits}
+        notify={notify}
+        marketUrl={marketUrl}
+        marketEnabled={marketEnabled}
+        allowedProviders={allowedProviders}
+      />
     </AppShell>
   );
 }

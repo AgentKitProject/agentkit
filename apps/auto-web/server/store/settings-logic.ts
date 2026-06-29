@@ -6,6 +6,7 @@
 // here so every backend behaves identically.
 import crypto from "node:crypto";
 import { decryptSecret, encryptSecret } from "@/server/store/shared";
+import { getAllowedProviders } from "@/lib/self-host";
 import {
   type PublicProvider,
   type SaveProviderInput,
@@ -14,7 +15,28 @@ import {
   toPublicProvider
 } from "@/server/store/settings-types";
 
+/**
+ * Provider-lock gate: throw if the provider's type is not permitted by the
+ * deployment's ALLOWED_PROVIDERS policy. Unrestricted (null) → always allowed.
+ * Shared by every adapter's saveProvider so the lock is enforced uniformly. The
+ * settings UI also hides disallowed options (via PublicConfig.allowedProviders),
+ * but this server gate is the authority — a forged request still cannot save a
+ * disallowed provider.
+ */
+function assertProviderAllowed(providerType: StoredProvider["providerType"]): void {
+  const allowed = getAllowedProviders();
+  if (allowed === null) return; // unrestricted
+  if (!allowed.includes(providerType)) {
+    throw new Error(
+      `Provider "${providerType}" is not allowed on this deployment. Allowed: ${
+        allowed.length > 0 ? allowed.join(", ") : "(none)"
+      }.`
+    );
+  }
+}
+
 export function applySaveProvider(s: UserSettings, input: SaveProviderInput): { settings: UserSettings; record: StoredProvider } {
+  assertProviderAllowed(input.providerType);
   const now = new Date().toISOString();
   const id = input.id?.trim() || crypto.randomUUID();
   const existing = s.providers.find((p) => p.id === id);

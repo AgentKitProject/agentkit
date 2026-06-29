@@ -234,13 +234,22 @@ export function AutoSection({
   kits,
   notify,
   marketUrl,
-  marketEnabled
+  marketEnabled,
+  allowedProviders
 }: {
   kits: MyKitEntry[];
   notify: Notify;
   marketUrl?: string;
   marketEnabled?: boolean;
+  /** Provider-lock: the AI provider types this deployment permits, or null when
+   *  unrestricted. When non-null and "anthropic" is excluded, the BYO Anthropic
+   *  key affordance is hidden (the server also rejects a disallowed save). */
+  allowedProviders?: string[] | null;
 }) {
+  // BYO uses the Anthropic key affordance; hide it when the deployment's
+  // provider-lock excludes anthropic. null (unrestricted) → shown.
+  const byoAnthropicAllowed =
+    allowedProviders == null || allowedProviders.includes("anthropic");
   const [approvals, setApprovals] = useState<Approval[]>([]);
   // Protected (paid + non-downloadable) Market kits the user has purchased. Only
   // populated when Market is enabled; empty on a free open-core self-host (the
@@ -984,35 +993,46 @@ export function AutoSection({
           <Select value={byoMode} onChange={(e) => void saveByoMode(e.target.value as "auto" | "managed" | "byo")}>
             <option value="auto">Automatic (use my key when set, else managed)</option>
             <option value="managed">Managed credits (platform key)</option>
-            <option value="byo" disabled={!byoHasKey}>
+            <option value="byo" disabled={!byoHasKey || !byoAnthropicAllowed}>
               My own key{byoHasKey ? "" : " (add a key first)"}
             </option>
           </Select>
         </Field>
-        <Field label={byoHasKey ? "Replace your Anthropic API key" : "Your Anthropic API key"}>
-          <Input
-            type="password"
-            autoComplete="off"
-            value={byoKeyInput}
-            onChange={(e) => setByoKeyInput(e.target.value)}
-            placeholder={byoHasKey ? "sk-ant-… (a key is on file)" : "sk-ant-…"}
-          />
-          {byoHasKey && (
-            <p className="form-copy" style={{ marginTop: 6 }}>
-              <Pill tone="brand">key on file</Pill> Your runs can use it. Leave blank to keep it.
-            </p>
-          )}
-        </Field>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button disabled={byoBusy} loading={byoBusy} onClick={() => void saveByoKey()}>
-            {byoHasKey ? "Replace key" : "Save key"}
-          </Button>
-          {byoHasKey && (
-            <Button variant="secondary" disabled={byoBusy} onClick={() => void clearByoKey()}>
-              Clear key
-            </Button>
-          )}
-        </div>
+        {/* Provider-lock: hide the BYO Anthropic key affordance when this
+            deployment's ALLOWED_PROVIDERS excludes anthropic (the server also
+            rejects a disallowed save). */}
+        {byoAnthropicAllowed ? (
+          <>
+            <Field label={byoHasKey ? "Replace your Anthropic API key" : "Your Anthropic API key"}>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={byoKeyInput}
+                onChange={(e) => setByoKeyInput(e.target.value)}
+                placeholder={byoHasKey ? "sk-ant-… (a key is on file)" : "sk-ant-…"}
+              />
+              {byoHasKey && (
+                <p className="form-copy" style={{ marginTop: 6 }}>
+                  <Pill tone="brand">key on file</Pill> Your runs can use it. Leave blank to keep it.
+                </p>
+              )}
+            </Field>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button disabled={byoBusy} loading={byoBusy} onClick={() => void saveByoKey()}>
+                {byoHasKey ? "Replace key" : "Save key"}
+              </Button>
+              {byoHasKey && (
+                <Button variant="secondary" disabled={byoBusy} onClick={() => void clearByoKey()}>
+                  Clear key
+                </Button>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="form-copy">
+            Bring-your-own-key is disabled by this deployment&apos;s provider policy. Runs use managed credits.
+          </p>
+        )}
 
         {/* ---- Start a run ---- */}
         <h3 style={{ marginTop: 24 }}>Start a run</h3>

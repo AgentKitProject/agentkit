@@ -163,6 +163,8 @@ describe("getPublicConfig snapshot", () => {
       selfHost: false,
       marketEnabled: true,
       managedBilling: true,
+      // Provider-lock: unrestricted by default (no ALLOWED_PROVIDERS set).
+      allowedProviders: null,
       links: {
         projectUrl: "https://agentkitproject.com",
         marketUrl: HOSTED_MARKET,

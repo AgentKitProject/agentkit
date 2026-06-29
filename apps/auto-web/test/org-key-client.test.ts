@@ -83,7 +83,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
   it("(a) returns undefined when Market is disabled", async () => {
     process.env.DISABLE_MARKET = "true";
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (a2) Self-host with no AGENTKITMARKET_BASE_URL → isMarketEnabled() false
@@ -91,7 +91,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
     process.env.AUTH_PROVIDER = "oidc";
     delete process.env.AGENTKITMARKET_BASE_URL;
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (b) MARKET_SERVICE_KEY unset
@@ -102,7 +102,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
     vi.stubGlobal("fetch", () => {
       throw new Error("fetch must not be called when service key is absent");
     });
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (b2) MARKET_SERVICE_KEY is an empty string
@@ -112,20 +112,20 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
     vi.stubGlobal("fetch", () => {
       throw new Error("fetch must not be called when service key is empty");
     });
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (c) Backend returns non-2xx
   it("(c) returns undefined on non-2xx response (e.g. 503)", async () => {
     vi.stubGlobal("fetch", async () => errorResponse(503));
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   it("(c2) returns undefined on non-2xx response (e.g. 401)", async () => {
     vi.stubGlobal("fetch", async () => errorResponse(401));
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (d) fetch rejects (network error / timeout / AbortError)
@@ -134,7 +134,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
       throw new TypeError("fetch failed");
     });
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   it("(d2) returns undefined when fetch throws an AbortError (timeout)", async () => {
@@ -143,7 +143,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
       throw err;
     });
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (e) Response body is not valid JSON (unparseable body)
@@ -157,7 +157,7 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
         }),
     );
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (e2) Response body is valid JSON but does not match the schema
@@ -167,14 +167,14 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
     );
     const resolveOrgApiKey = await loadSubject();
     // `found` field is missing → safeParse fails → undefined
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (f) Backend returns { found: false }
   it("(f) returns undefined when backend responds { found: false }", async () => {
     vi.stubGlobal("fetch", async () => okResponse({ found: false }));
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
   // (f2) { found: true } but apiKey is absent
@@ -183,16 +183,17 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
       okResponse({ found: true, providerType: "anthropic" }),
     );
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
-  // (f3) { found: true, apiKey } but providerType is not "anthropic"
-  it("(f3) returns undefined when providerType is not anthropic", async () => {
+  // (f3) { found: true, apiKey } but the org's providerType does NOT match the
+  // requested provider type (we asked for anthropic, the org key is openai).
+  it("(f3) returns undefined when providerType does not match the requested type", async () => {
     vi.stubGlobal("fetch", async () =>
       okResponse({ found: true, apiKey: ORG_API_KEY, providerType: "openai" }),
     );
     const resolveOrgApiKey = await loadSubject();
-    await expect(resolveOrgApiKey(USER_ID)).resolves.toBeUndefined();
+    await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 });
 
@@ -206,8 +207,18 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
       okResponse({ found: true, apiKey: ORG_API_KEY, providerType: "anthropic" }),
     );
     const resolveOrgApiKey = await loadSubject();
-    const result = await resolveOrgApiKey(USER_ID);
+    const result = await resolveOrgApiKey(USER_ID, "anthropic");
     expect(result).toEqual({ apiKey: ORG_API_KEY, providerType: "anthropic" });
+  });
+
+  it("returns a NON-anthropic provider key when its type matches the request", async () => {
+    const OPENAI_KEY = "sk-openai-ORGSHAREDKEY1234567890";
+    vi.stubGlobal("fetch", async () =>
+      okResponse({ found: true, apiKey: OPENAI_KEY, providerType: "openai" }),
+    );
+    const resolveOrgApiKey = await loadSubject();
+    const result = await resolveOrgApiKey(USER_ID, "openai");
+    expect(result).toEqual({ apiKey: OPENAI_KEY, providerType: "openai" });
   });
 
   it("includes baseUrl when the backend provides one", async () => {
@@ -221,7 +232,7 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
       }),
     );
     const resolveOrgApiKey = await loadSubject();
-    const result = await resolveOrgApiKey(USER_ID);
+    const result = await resolveOrgApiKey(USER_ID, "anthropic");
     expect(result).toEqual({ apiKey: ORG_API_KEY, providerType: "anthropic", baseUrl: BASE });
   });
 
@@ -233,7 +244,7 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
     });
 
     const resolveOrgApiKey = await loadSubject();
-    await resolveOrgApiKey(USER_ID);
+    await resolveOrgApiKey(USER_ID, "anthropic");
 
     expect(capturedRequest).toBeDefined();
     // URL must end with the contracts route path
@@ -243,8 +254,9 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
     // Must send the service key in the right header
     const headers = capturedRequest!.init.headers as Record<string, string>;
     expect(headers["x-agentkit-service-key"]).toBe(SERVICE_KEY);
-    // Body must include the userId
+    // Body must include the userId AND the requested providerType (per-provider resolve)
     const body = JSON.parse(capturedRequest!.init.body as string);
     expect(body.userId).toBe(USER_ID);
+    expect(body.providerType).toBe("anthropic");
   });
 });

@@ -13,7 +13,7 @@
  *     status, never the body (which could echo a prompt back).
  */
 
-import type { ToolDefinition } from "@agentkitforge/gateway-core";
+import type { AiProviderType, ToolDefinition } from "@agentkitforge/gateway-core";
 import type { ResolveKitContext, ResolvedKitContext } from "../entrypoints/worker.js";
 
 /** Shape returned by web-forge's `/api/internal/auto/resolve-context` endpoint. */
@@ -28,8 +28,14 @@ export interface ResolveContextResponse {
   model?: string;
   /** Per-run billing mode resolved by web-forge. */
   inferenceMode: "managed" | "byo";
-  /** Present only when `inferenceMode === "byo"`: the user's own provider key. */
-  byoProvider?: { apiKey: string; baseUrl?: string };
+  /**
+   * Present only when `inferenceMode === "byo"`: the user's own provider config.
+   * Multi-provider: `providerType` selects which adapter the worker builds (one
+   * of anthropic/openai/openai-compatible/gemini/ollama). A legacy payload that
+   * omits it is treated as "anthropic" by the worker. `model` is an optional
+   * default model for providers that take it in their constructor.
+   */
+  byoProvider?: { providerType?: AiProviderType; apiKey: string; baseUrl?: string; model?: string };
   /**
    * True when this is a PROTECTED (paid / online-only) Market kit (M6). The worker
    * uses it to enable output redaction bound to `systemPrompt`. Absent/false on

@@ -71,8 +71,9 @@ import {
   type UpdateScheduleInput
 } from "@agentkitforge/auto-core";
 import {
-  AnthropicChatProvider,
+  buildChatProvider,
   createManagedAnthropicProvider,
+  type AiProviderType,
   type ChatProvider,
   type CreditLedgerRepository,
   type ToolDefinition
@@ -514,9 +515,12 @@ export interface AutoBilling {
  * and never exposed; BYO is coerced to managed here, not rejected, so the run
  * can still proceed under prepaid credits).
  *
- * Phase A restricts BYO Auto to Anthropic-type providers (the gateway
- * ChatProvider is Anthropic-shaped); a non-Anthropic BYO provider falls back to
- * managed rather than failing the run.
+ * Multi-provider: BYO Auto uses the user's SELECTED provider of ANY supported
+ * type (anthropic/openai/openai-compatible/gemini/ollama) from their
+ * UserSettingsStore. gateway-core's `buildChatProvider` maps the stored
+ * (providerType, apiKey, baseUrl, model) to the right adapter, so the run loop is
+ * provider-agnostic. When the user has no provider configured, behavior is
+ * unchanged (org key for the operator-default provider, else operator/platform).
  *
  * @param isCloudRun whether the active dispatcher runs on our hosted compute.
  */
@@ -553,34 +557,43 @@ export async function resolveAutoBilling(args: {
   // Effective inference-mode choice: a per-run override wins, else the user's
   // account preference. "managed" forces the platform credit path even when a BYO
   // key exists; "byo"/"auto" fall through to BYO-key resolution below.
-  const { byoProviderId, getInferenceModePreference } = await import("@/server/core/auto-byo");
+  const { getInferenceModePreference } = await import("@/server/core/auto-byo");
   const effectiveMode =
     args.inferenceModeOverride ?? (await getInferenceModePreference(args.userId));
   if (effectiveMode === "managed") {
     return managed();
   }
 
-  // Resolve the user's BYO Anthropic key (the well-known BYO provider record).
-  // Anthropic-type only in Phase A.
-  const stored = await (await getUserSettingsStore()).resolveProvider(args.userId, byoProviderId());
-  if (stored && stored.providerType === "anthropic" && stored.apiKey) {
+  // Resolve the user's SELECTED provider (any type) — their defaultProviderId, or
+  // the sole provider. Multi-provider: buildChatProvider maps the stored type to
+  // the right adapter, so a user's OpenAI/Gemini/Ollama/openai-compatible key runs
+  // the same as Anthropic.
+  const stored = await (await getUserSettingsStore()).resolveProvider(args.userId);
+  if (stored && stored.apiKey) {
     return byo(
-      new AnthropicChatProvider({
+      buildChatProvider({
+        providerType: stored.providerType,
         apiKey: stored.apiKey,
-        ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
+        ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {}),
+        ...(stored.defaultModel ? { model: stored.defaultModel } : {})
       })
     );
   }
 
-  // ORG SHARED KEY: when the user has no BYO key of their own, fall back to their
-  // team org's shared Anthropic key (resolved server-to-service via Market) BEFORE
-  // the operator/platform key. This only ever runs in the BYO/fallback path — a
-  // managed run returned above, so a protected/paid (managed-forced) run never
-  // reaches here. Fails open: undefined → operator/platform fallback below.
-  const org = await resolveOrgApiKey(args.userId);
+  // ORG SHARED KEY: when the user has no key of their own, fall back to their team
+  // org's shared key BEFORE the operator/platform key. The org holds one key per
+  // provider type, so we resolve it FOR THE EFFECTIVE PROVIDER TYPE: the user's
+  // selected provider's type when they have one configured (even without a key),
+  // else the operator-default provider type (anthropic). This only ever runs in
+  // the BYO/fallback path — a managed run returned above, so a protected/paid
+  // (managed-forced) run never reaches here. Fails open: undefined → operator
+  // fallback below.
+  const orgProviderType: AiProviderType = stored?.providerType ?? "anthropic";
+  const org = await resolveOrgApiKey(args.userId, orgProviderType);
   if (org) {
     return byo(
-      new AnthropicChatProvider({
+      buildChatProvider({
+        providerType: org.providerType,
         apiKey: org.apiKey,
         ...(org.baseUrl ? { baseUrl: org.baseUrl } : {})
       })
@@ -1324,9 +1337,11 @@ export interface WorkerContext {
    *  workspace files before they reach the buyer. Absent on local / free runs. */
   protected?: boolean;
   /** Raw BYO provider config (NOT a ChatProvider) when this run is BYO. The
-   *  worker constructs its own provider from this; the apiKey is sensitive and
-   *  must never be logged. */
-  byoProvider?: { apiKey: string; baseUrl?: string };
+   *  worker constructs its own provider from this via gateway-core's
+   *  buildChatProvider; the apiKey is sensitive and must never be logged.
+   *  Multi-provider: `providerType` selects the adapter the worker builds; `model`
+   *  is an optional default model for providers that take it in their constructor. */
+  byoProvider?: { providerType: AiProviderType; apiKey: string; baseUrl?: string; model?: string };
 }
 
 /**
@@ -1370,26 +1385,35 @@ export async function resolveWorkerContext(runId: string): Promise<WorkerContext
   // inference-mode preference ("managed" forces the platform credit path) is
   // honored identically to the in-process path.
   let inferenceMode: "managed" | "byo" = "managed";
-  let byoProvider: { apiKey: string; baseUrl?: string } | undefined;
+  let byoProvider: WorkerContext["byoProvider"];
   if (!(await isProtectedKit(run.kitRef, serviceOpts))) {
-    const { byoProviderId, getInferenceModePreference } = await import("@/server/core/auto-byo");
+    const { getInferenceModePreference } = await import("@/server/core/auto-byo");
     const effectiveMode = await getInferenceModePreference(run.userId);
     if (effectiveMode !== "managed") {
-      const stored = await (await getUserSettingsStore()).resolveProvider(run.userId, byoProviderId());
-      if (stored && stored.providerType === "anthropic" && stored.apiKey) {
+      // The user's SELECTED provider (any type). Multi-provider: thread the
+      // resolved providerType (+ baseUrl + model) so the worker builds the right
+      // adapter via buildChatProvider.
+      const stored = await (await getUserSettingsStore()).resolveProvider(run.userId);
+      if (stored && stored.apiKey) {
         inferenceMode = "byo";
         byoProvider = {
+          providerType: stored.providerType,
           apiKey: stored.apiKey,
-          ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
+          ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {}),
+          ...(stored.defaultModel ? { model: stored.defaultModel } : {})
         };
       } else {
-        // ORG SHARED KEY fallback (same precedence as resolveAutoBilling): no BYO key
-        // of the user's own → their team org's shared key, BEFORE the operator key.
-        // Fails open (undefined) so the worker still falls back to the operator key.
-        const org = await resolveOrgApiKey(run.userId);
+        // ORG SHARED KEY fallback (same precedence as resolveAutoBilling): no key
+        // of the user's own → their team org's shared key FOR THE EFFECTIVE
+        // PROVIDER TYPE (the user's selected provider's type, else anthropic),
+        // BEFORE the operator key. Fails open (undefined) so the worker still falls
+        // back to the operator key.
+        const orgProviderType: AiProviderType = stored?.providerType ?? "anthropic";
+        const org = await resolveOrgApiKey(run.userId, orgProviderType);
         if (org) {
           inferenceMode = "byo";
           byoProvider = {
+            providerType: org.providerType,
             apiKey: org.apiKey,
             ...(org.baseUrl ? { baseUrl: org.baseUrl } : {})
           };

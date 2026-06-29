@@ -16,6 +16,7 @@
 import { promises as fs } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
+import { getAllowedProviders } from "@/lib/self-host";
 
 function dataDir(): string {
   return process.env.AGENTKITFORGE_WEB_DATA_DIR || path.resolve(process.cwd(), ".agentkitforge-web-data");
@@ -144,6 +145,16 @@ export class DiskUserSettingsStore implements UserSettingsStoreInterface {
       apiKey?: string;
     }
   ): Promise<PublicProvider> {
+    // Provider-lock gate (self-host admin policy): reject a disallowed provider
+    // type. Unrestricted (no ALLOWED_PROVIDERS) → always allowed.
+    const allowed = getAllowedProviders();
+    if (allowed !== null && !allowed.includes(input.providerType)) {
+      throw new Error(
+        `Provider "${input.providerType}" is not allowed on this deployment. Allowed: ${
+          allowed.length > 0 ? allowed.join(", ") : "(none)"
+        }.`
+      );
+    }
     const s = await readSettings(userId);
     const now = new Date().toISOString();
     const id = input.id?.trim() || crypto.randomUUID();

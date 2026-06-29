@@ -21,6 +21,7 @@ import {
   serviceResolveOrgApiKeyRequestSchema,
   resolvedOrgApiKeySchema
 } from "@agentkitforge/contracts";
+import type { AiProviderType } from "@agentkitforge/gateway-core";
 import { getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
 
 /** The shared web-forge↔market-app service key (server-only). Same key used by
@@ -39,19 +40,24 @@ function serviceOrgApiKeyUrl(): string | undefined {
 }
 
 /**
- * Resolve the user's effective ORG shared Anthropic key SERVER-TO-SERVICE (no user
- * session), via MARKET_SERVICE_KEY + an explicitly-asserted userId. The Market
- * service maps the user → their single team org that holds a shared key and returns
- * the decrypted key (or { found: false }).
+ * Resolve the user's effective ORG shared key FOR A GIVEN PROVIDER TYPE
+ * SERVER-TO-SERVICE (no user session), via MARKET_SERVICE_KEY + an
+ * explicitly-asserted userId. An org holds ONE key per provider type, so the
+ * resolve is per-provider: `providerType` is the effective provider being
+ * resolved (the user's selected provider, or — when none — the operator default).
+ * The Market service maps the user → their single team org that holds a shared
+ * key FOR THAT PROVIDER and returns the decrypted key (or { found: false }).
  *
- * Returns the key only when present; otherwise undefined. FAILS OPEN — Market
- * disabled / unconfigured, no base URL, any network error, timeout, non-2xx, or an
- * unparseable response all yield undefined so the caller falls through to the
- * operator/platform key. A run must NEVER fail because Market is unreachable.
+ * Returns the key only when present AND it matches the requested `providerType`;
+ * otherwise undefined. FAILS OPEN — Market disabled / unconfigured, no base URL,
+ * any network error, timeout, non-2xx, or an unparseable response all yield
+ * undefined so the caller falls through to the operator/platform key. A run must
+ * NEVER fail because Market is unreachable.
  */
 export async function resolveOrgApiKey(
-  userId: string
-): Promise<{ apiKey: string; baseUrl?: string; providerType: "anthropic" } | undefined> {
+  userId: string,
+  providerType: AiProviderType
+): Promise<{ apiKey: string; baseUrl?: string; providerType: AiProviderType } | undefined> {
   // Local-first / Market-absent path: skip silently (never throw).
   if (!isMarketEnabled()) return undefined;
   const key = marketServiceKey();
@@ -59,7 +65,7 @@ export async function resolveOrgApiKey(
   const url = serviceOrgApiKeyUrl();
   if (!url) return undefined;
 
-  const body = serviceResolveOrgApiKeyRequestSchema.parse({ userId });
+  const body = serviceResolveOrgApiKeyRequestSchema.parse({ userId, providerType });
 
   let response: Response;
   try {
@@ -92,13 +98,20 @@ export async function resolveOrgApiKey(
   if (!parsed.success) return undefined;
 
   const resolved = parsed.data;
-  // Only the Anthropic provider is supported in Phase A (matches the BYO path).
-  if (!resolved.found || !resolved.apiKey || resolved.providerType !== "anthropic") {
+  // Multi-provider: accept the org key only when it is FOUND and its providerType
+  // MATCHES the provider we asked for (an org key for a different provider is not
+  // usable for this run — fall through to the operator key). The contract's
+  // providerType is the 5-value enum; narrow to the requested AiProviderType.
+  if (
+    !resolved.found ||
+    !resolved.apiKey ||
+    resolved.providerType !== providerType
+  ) {
     return undefined;
   }
   return {
     apiKey: resolved.apiKey,
-    providerType: "anthropic",
+    providerType,
     ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {})
   };
 }

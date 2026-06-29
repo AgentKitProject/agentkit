@@ -16,7 +16,7 @@
  */
 
 import {
-  AnthropicChatProvider,
+  buildChatProvider,
   createManagedAnthropicProvider,
   type ChatProvider,
   type CreditLedgerRepository,
@@ -189,6 +189,24 @@ function gatewayHttpConfig(env: Env): { baseUrl: string; serviceKey: string } | 
 }
 
 /**
+ * Boot hardening log (Q2): when the gateway is NOT configured (the free / BYO
+ * path), emit ONE info line at startup so operators can confirm the deployment
+ * does no managed metering or external billing. Guarded by a module-level flag so
+ * it never fires in the per-run hot path (a re-entrant call in the same process is
+ * silent). A configured gateway logs nothing here (metering is the expectation).
+ */
+let bootLogEmitted = false;
+function logBootMode(env: Env): void {
+  if (bootLogEmitted) return;
+  bootLogEmitted = true;
+  if (!gatewayHttpConfig(env)) {
+    console.info(
+      "[auto] BYO/free mode — no gateway configured; no managed metering or external billing",
+    );
+  }
+}
+
+/**
  * Selects the worker's credit ledger from the environment:
  *   - GATEWAY_INTERNAL_BASE_URL + GATEWAY_SERVICE_KEY set → the HTTP-backed
  *     ledger (`HttpLedgerClient`) that debits the gateway ledger over the
@@ -275,6 +293,10 @@ export async function loadAutoV2Rates(
  * the exit code.
  */
 export async function runTask(env: Env = process.env): Promise<void> {
+  // Boot hardening (Q2): announce the free/BYO mode once per process when no
+  // gateway is configured. Single info log, before any per-run work.
+  logBootMode(env);
+
   const runId = requireEnv(env, "RUN_ID");
   // The web-forge internal resolve endpoint + its service key. These names match
   // the ECS task-def env injected by the CDK stack and the web app's config.
@@ -308,13 +330,20 @@ export async function runTask(env: Env = process.env): Promise<void> {
 
   const inferenceMode: InferenceMode = payload.inferenceMode;
 
-  // BYO provider: only when the run is BYO and the resolver returned a key.
+  // BYO provider: only when the run is BYO and the resolver returned a key. The
+  // provider can be ANY supported type (anthropic/openai/openai-compatible/gemini/
+  // ollama) — buildChatProvider maps (providerType, apiKey, baseUrl, model) to the
+  // right adapter. A legacy payload that omits providerType defaults to anthropic.
   let byoChatProvider: ChatProvider | undefined;
   if (inferenceMode === "byo" && payload.byoProvider) {
-    byoChatProvider = new AnthropicChatProvider({
+    byoChatProvider = buildChatProvider({
+      providerType: payload.byoProvider.providerType ?? "anthropic",
       apiKey: payload.byoProvider.apiKey,
       ...(payload.byoProvider.baseUrl !== undefined
         ? { baseUrl: payload.byoProvider.baseUrl }
+        : {}),
+      ...(payload.byoProvider.model !== undefined
+        ? { model: payload.byoProvider.model }
         : {}),
     });
   }
