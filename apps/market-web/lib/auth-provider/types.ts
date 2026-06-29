@@ -44,6 +44,15 @@ export type AuthProvider = {
   /** Current user from the session cookie, or null. Never throws. */
   getCurrentUser(): Promise<CurrentUser | null>;
 
+  /**
+   * Middleware-safe current user: derives the session from `request.cookies`
+   * ONLY (edge runtime). Unlike `getCurrentUser()`, it must NOT use `next/headers`
+   * `cookies()` (which only works in server components / route handlers). Used by
+   * the instance-level require-login gate in `middleware.ts`. Never throws —
+   * returns null when there is no valid cookie session.
+   */
+  getMiddlewareUser(request: NextRequest): Promise<CurrentUser | null>;
+
   /** Current user, redirecting to sign-in when absent (for pages/server comps). */
   requireUser(): Promise<CurrentUser>;
 

@@ -100,6 +100,12 @@ web:
     # Operator's own Web Forge URL (NEXT_PUBLIC_FORGE_URL) for "open in Forge"
     # links; empty + selfHost=true → link hidden.
     forgeUrl: ""
+    # Make the WHOLE instance private (REQUIRE_LOGIN=true). DEFAULT false keeps the
+    # catalog PUBLIC (login only gates admin/submit) — same as the hosted
+    # marketplace. Set true for an internet-facing self-host that should require a
+    # login to browse at all: every non-exempt request is redirected to sign-in
+    # (pages) or 401'd (API). Exempt: /auth/*, /api/forge/* (own auth), /healthz.
+    requireLogin: false
     # ---- OIDC (self-host) non-secret config; used when authProvider=oidc ----
     oidc:
       # OIDC issuer URL (OIDC_ISSUER), e.g. https://idp.example.com/realms/main

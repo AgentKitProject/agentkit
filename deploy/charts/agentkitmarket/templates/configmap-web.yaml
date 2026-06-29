@@ -46,6 +46,10 @@ data:
   {{- if .Values.web.config.selfHost }}
   SELF_HOST: "true"
   {{- end }}
+  {{- if .Values.web.config.requireLogin }}
+  # Make the whole instance private — login required to browse (self-host).
+  REQUIRE_LOGIN: "true"
+  {{- end }}
   {{- with .Values.web.config.forgeUrl }}
   NEXT_PUBLIC_FORGE_URL: {{ . | quote }}
   {{- end }}

@@ -14,6 +14,7 @@ import {
   withAuth,
   type UserInfo
 } from "@workos-inc/authkit-nextjs";
+import { unsealData } from "iron-session";
 import { cookies } from "next/headers";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { logAuthDebug, logAuthError } from "@/lib/auth-debug";
@@ -62,6 +63,39 @@ async function getCurrentUser(): Promise<CurrentUser | null> {
     return user;
   } catch (error) {
     logAuthError("current-user-failure", error);
+    return null;
+  }
+}
+
+// The sealed WorkOS session cookie shape (a subset of authkit's `Session`).
+type SealedWorkOSSession = { user?: UserInfo["user"] | null };
+
+/**
+ * Middleware-safe: unseal the `wos-session` cookie straight from
+ * `request.cookies` with `WORKOS_COOKIE_PASSWORD` — the same AEAD seal authkit's
+ * own `getSessionFromCookie(request)` uses, but reachable from the edge runtime
+ * without `next/headers`. We deliberately do NOT re-verify the JWT signature
+ * here: the cookie is sealed with the server-only secret (it cannot be forged),
+ * and this only decides the require-login GATE. The route/page gates still do the
+ * full `withAuth()` verification. Never throws — null when absent/unsealable.
+ */
+async function getMiddlewareUser(request: NextRequest): Promise<CurrentUser | null> {
+  const password = process.env.WORKOS_COOKIE_PASSWORD;
+  if (!password || password.length < 32) {
+    return null;
+  }
+  const cookieName = process.env.WORKOS_COOKIE_NAME || DEFAULT_WORKOS_SESSION_COOKIE;
+  const sealed = request.cookies.get(cookieName)?.value;
+  if (!sealed) {
+    return null;
+  }
+  try {
+    const session = await unsealData<SealedWorkOSSession>(sealed, { password });
+    if (!session?.user) {
+      return null;
+    }
+    return mapWorkOSUser({ user: session.user } as UserInfo);
+  } catch {
     return null;
   }
 }
@@ -264,6 +298,7 @@ async function runMiddleware(
 export const workosProvider: AuthProvider = {
   id: "workos",
   getCurrentUser,
+  getMiddlewareUser,
   requireUser,
   requireUserForApi,
   handleSignIn,

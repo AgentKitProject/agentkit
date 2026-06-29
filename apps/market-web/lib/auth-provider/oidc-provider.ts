@@ -25,7 +25,7 @@ import {
   OIDC_PKCE_COOKIE,
   OIDC_STATE_COOKIE
 } from "./oidc-config.ts";
-import { getOidcSession } from "./oidc-session.ts";
+import { getOidcSession, unsealOidcSessionCookie } from "./oidc-session.ts";
 import { UnauthorizedError, type AuthProvider, type CurrentUser } from "./types.ts";
 
 // Refresh when the access token is within this window of expiry.
@@ -39,6 +39,15 @@ async function getCurrentUser(): Promise<CurrentUser | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Middleware-safe: unseal the iron-session cookie straight from `request.cookies`
+ * (no `next/headers`), returning the stored user or null. Never throws.
+ */
+async function getMiddlewareUser(request: NextRequest): Promise<CurrentUser | null> {
+  const session = await unsealOidcSessionCookie(request);
+  return session?.user ?? null;
 }
 
 async function requireUser(): Promise<CurrentUser> {
@@ -207,6 +216,7 @@ function hasOidcEnv(): boolean {
 export const oidcProvider: AuthProvider = {
   id: "oidc",
   getCurrentUser,
+  getMiddlewareUser,
   requireUser,
   requireUserForApi,
   handleSignIn,

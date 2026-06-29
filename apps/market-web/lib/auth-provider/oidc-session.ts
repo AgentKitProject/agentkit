@@ -4,8 +4,9 @@
 // silent refresh and (optional) RP-initiated logout. The cookie is AEAD-sealed
 // by iron-session using a 32+ char secret (SESSION_SECRET, falling back to the
 // existing WORKOS_COOKIE_PASSWORD so a single secret can serve both providers).
-import { getIronSession, type IronSession, type SessionOptions } from "iron-session";
+import { getIronSession, unsealData, type IronSession, type SessionOptions } from "iron-session";
 import { cookies } from "next/headers";
+import type { NextRequest } from "next/server";
 import { OidcConfigError } from "./oidc-config.ts";
 import type { CurrentUser } from "./types.ts";
 
@@ -49,4 +50,26 @@ export function sessionOptions(): SessionOptions {
 export async function getOidcSession(): Promise<IronSession<OidcSessionData>> {
   const cookieStore = await cookies();
   return getIronSession<OidcSessionData>(cookieStore, sessionOptions());
+}
+
+/**
+ * Middleware-safe read: unseal the OIDC session straight from `request.cookies`
+ * (the edge runtime has no `next/headers` cookie store). Returns the decoded
+ * session data, or null when the cookie is absent / cannot be unsealed (tampered,
+ * expired seal, or a missing/short secret). Never throws.
+ */
+export async function unsealOidcSessionCookie(
+  request: NextRequest
+): Promise<OidcSessionData | null> {
+  const cookieName = process.env.OIDC_SESSION_COOKIE || OIDC_SESSION_COOKIE;
+  const sealed = request.cookies.get(cookieName)?.value;
+  if (!sealed) {
+    return null;
+  }
+  try {
+    const data = await unsealData<OidcSessionData>(sealed, { password: getSessionSecret() });
+    return data && typeof data === "object" && Object.keys(data).length > 0 ? data : null;
+  } catch {
+    return null;
+  }
 }
