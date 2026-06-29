@@ -14,6 +14,7 @@ import { getUserSettingsStore } from "@/server/store/user-settings";
 import { runManagedChat } from "@/server/core/gateway";
 import { MANAGED_DEFAULT_MODEL, isManagedModel } from "@/server/core/managed-models";
 import { isManagedInferenceEnabled } from "@/lib/self-host";
+import { resolveOrgApiKey } from "@/server/core/org-key-client";
 import type { ChatRequest } from "@agentkitforge/gateway-core";
 
 const MANAGED_MAX_TOKENS = 4000;
@@ -52,6 +53,20 @@ function normalizeProviderConfig(parsed: ProviderConfig): ProviderConfig {
   };
 }
 
+// Fill an Anthropic provider's missing key (and optional base URL) from the
+// user's resolved ORG shared key. Only ever called for Anthropic providers; the
+// org key contract is Anthropic-only.
+function applyOrgKey(
+  provider: ProviderConfig,
+  orgKey: { apiKey: string; baseUrl?: string }
+): ProviderConfig {
+  return {
+    ...provider,
+    apiKey: orgKey.apiKey,
+    baseUrl: orgKey.baseUrl?.trim().replace(/\/+$/, "") || provider.baseUrl
+  };
+}
+
 // Resolve the provider config for a user: prefer their stored provider (default
 // or the requested id, key decrypted), else fall back to the server env config.
 async function resolveProviderConfig(userId: string, providerId?: string): Promise<ProviderConfig> {
@@ -81,7 +96,7 @@ async function resolveBilling(
 ): Promise<BillingResolution> {
   const stored = await (await getUserSettingsStore()).resolveProvider(userId, providerId);
   if (stored) {
-    const provider = normalizeProviderConfig({
+    let provider = normalizeProviderConfig({
       id: stored.id,
       name: stored.name,
       providerType: stored.providerType,
@@ -89,6 +104,14 @@ async function resolveBilling(
       apiKey: stored.apiKey,
       defaultModel: stored.defaultModel
     });
+    // The user has a provider but no usable key of their own. If it's an
+    // Anthropic provider, fall back to their team ORG's shared key (decrypted,
+    // server-to-service) before erroring. Org keys are Anthropic-only, so a
+    // non-Anthropic provider is left as-is (callProvider surfaces the missing key).
+    if (!provider.apiKey && provider.providerType === "anthropic") {
+      const orgKey = await resolveOrgApiKey(userId);
+      if (orgKey) provider = applyOrgKey(provider, orgKey);
+    }
     const model = resolveModel(provider, inputModel);
     if (!model) throw new Error(`${provider.name} model is required.`);
     return { mode: "byo", provider, model };
@@ -96,10 +119,31 @@ async function resolveBilling(
   // Env single-provider fallback (headless/dev) still counts as BYO.
   const raw = process.env.AGENTKITFORGE_AI_PROVIDER_CONFIG;
   if (raw) {
-    const provider = normalizeProviderConfig(JSON.parse(raw) as ProviderConfig);
+    let provider = normalizeProviderConfig(JSON.parse(raw) as ProviderConfig);
+    if (!provider.apiKey && provider.providerType === "anthropic") {
+      const orgKey = await resolveOrgApiKey(userId);
+      if (orgKey) provider = applyOrgKey(provider, orgKey);
+    }
     const model = resolveModel(provider, inputModel);
     if (!model) throw new Error(`${provider.name} model is required.`);
     return { mode: "byo", provider, model };
+  }
+  // No BYO provider configured at all. Before any platform/managed fallback, try
+  // the user's team ORG shared key — it stands in as an Anthropic BYO provider.
+  {
+    const orgKey = await resolveOrgApiKey(userId);
+    if (orgKey) {
+      const provider = normalizeProviderConfig({
+        name: "Org shared key",
+        providerType: "anthropic",
+        baseUrl: orgKey.baseUrl,
+        apiKey: orgKey.apiKey,
+        defaultModel: ""
+      });
+      const model = resolveModel(provider, inputModel);
+      if (!model) throw new Error(`${provider.name} model is required.`);
+      return { mode: "byo", provider, model };
+    }
   }
   // No BYO provider configured. On SELF-HOST there is no managed/platform-key
   // path — BYO is the ONLY path — so refuse with a clear message instead of
