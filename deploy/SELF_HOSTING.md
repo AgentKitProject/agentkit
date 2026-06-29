@@ -74,7 +74,7 @@ Key facts:
   IngressClass; the presets default `className: traefik`.
 - **Pull access to Docker Hub** for the bundled data services. The "no pull secret"
   note in §3 covers only the GHCR **app** images; the bundled data services pull
-  `postgres:16`, `minio/minio:latest`, and `redis:7` from **Docker Hub**. An
+  `postgres:16.14`, a pinned `minio/minio:RELEASE.*` tag, and `redis:7.4.9-alpine` from **Docker Hub**. An
   air-gapped or Docker-Hub-rate-limited cluster must mirror those images (and point the
   charts' `postgres.image` / `minio.image` / `redis.image` values at the mirror).
 
