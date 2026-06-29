@@ -86,6 +86,7 @@ import { kubeJobDispatcher } from "@/server/core/auto-kube-dispatcher";
 import { getCreditLedger } from "@/server/core/gateway";
 import { creditLedgerBackend, isSelfHost, isSelfHostManagedBilling } from "@/lib/self-host";
 import { getUserSettingsStore } from "@/server/store/user-settings";
+import { resolveOrgApiKey } from "@/server/core/org-key-client";
 import { getKitStore } from "@/server/store/index";
 import { withEphemeralTree } from "@/server/core/runner";
 import { MANAGED_DEFAULT_MODEL, isManagedModel } from "@/server/core/managed-models";
@@ -567,6 +568,21 @@ export async function resolveAutoBilling(args: {
       new AnthropicChatProvider({
         apiKey: stored.apiKey,
         ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
+      })
+    );
+  }
+
+  // ORG SHARED KEY: when the user has no BYO key of their own, fall back to their
+  // team org's shared Anthropic key (resolved server-to-service via Market) BEFORE
+  // the operator/platform key. This only ever runs in the BYO/fallback path — a
+  // managed run returned above, so a protected/paid (managed-forced) run never
+  // reaches here. Fails open: undefined → operator/platform fallback below.
+  const org = await resolveOrgApiKey(args.userId);
+  if (org) {
+    return byo(
+      new AnthropicChatProvider({
+        apiKey: org.apiKey,
+        ...(org.baseUrl ? { baseUrl: org.baseUrl } : {})
       })
     );
   }
@@ -1366,6 +1382,18 @@ export async function resolveWorkerContext(runId: string): Promise<WorkerContext
           apiKey: stored.apiKey,
           ...(stored.baseUrl ? { baseUrl: stored.baseUrl } : {})
         };
+      } else {
+        // ORG SHARED KEY fallback (same precedence as resolveAutoBilling): no BYO key
+        // of the user's own → their team org's shared key, BEFORE the operator key.
+        // Fails open (undefined) so the worker still falls back to the operator key.
+        const org = await resolveOrgApiKey(run.userId);
+        if (org) {
+          inferenceMode = "byo";
+          byoProvider = {
+            apiKey: org.apiKey,
+            ...(org.baseUrl ? { baseUrl: org.baseUrl } : {})
+          };
+        }
       }
     }
   }
