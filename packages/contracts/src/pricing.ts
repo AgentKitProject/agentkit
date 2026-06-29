@@ -339,6 +339,18 @@ export const serviceEntitledKitsResponseSchema = z.object({
 });
 export type ServiceEntitledKitsResponse = z.infer<typeof serviceEntitledKitsResponseSchema>;
 
+/**
+ * POST {marketServiceRoutes.resolveOrgApiKey()} body. Asserts the user's id (no
+ * session). The Market service maps the user → their single team org that holds a
+ * shared API key (server-side rule) and returns the decrypted key. Auto / Forge
+ * call this at inference time, AFTER a member's own key, BEFORE the operator key.
+ * Response = resolvedOrgApiKeySchema (orgs.ts): { found, orgId?, apiKey?, ... }.
+ */
+export const serviceResolveOrgApiKeyRequestSchema = z.object({
+  userId: z.string().min(1)
+});
+export type ServiceResolveOrgApiKeyRequest = z.infer<typeof serviceResolveOrgApiKeyRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Route builder (Seam S — web-forge ↔ market-app, service-key auth)
 // ---------------------------------------------------------------------------
@@ -350,7 +362,10 @@ export const marketServiceRoutes = {
     `/api/forge/service/kits/${encodeURIComponent(slug)}/licensed-package`,
   /** POST /api/forge/service/me/entitled-kits — service-key authed, asserts
    *  userId; returns the user's PROTECTED entitled kits (browser-safe). */
-  entitledKits: () => `/api/forge/service/me/entitled-kits`
+  entitledKits: () => `/api/forge/service/me/entitled-kits`,
+  /** POST /api/forge/service/me/org-api-key — service-key authed, asserts userId;
+   *  resolves the user's effective org shared API key (decrypted) or { found:false }. */
+  resolveOrgApiKey: () => `/api/forge/service/me/org-api-key`
 } as const;
 
 // ---------------------------------------------------------------------------
