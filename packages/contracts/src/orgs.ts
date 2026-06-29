@@ -266,7 +266,25 @@ export const marketBackendOrgRoutes = {
     `/admin/orgs/${encodeURIComponent(orgId)}/payout-status`,
   /** GET /admin/orgs/by-stripe-account/{id} — reverse lookup for the account.updated webhook. */
   adminOrgByStripeAccount: (stripeAccountId: string) =>
-    `/admin/orgs/by-stripe-account/${encodeURIComponent(stripeAccountId)}`
+    `/admin/orgs/by-stripe-account/${encodeURIComponent(stripeAccountId)}`,
+  /**
+   * POST (set) / DELETE (clear) an org's shared LLM API key.
+   * Body carries `actorUserId`; the backend gates to the org's owner/admin.
+   * The key is encrypted at rest; this route never returns the raw key.
+   */
+  adminOrgApiKey: (orgId: string) =>
+    `/admin/orgs/${encodeURIComponent(orgId)}/api-key`,
+  /** GET — masked status of an org's API key (hasKey + masked + meta; never the raw key). */
+  adminOrgApiKeyStatus: (orgId: string) =>
+    `/admin/orgs/${encodeURIComponent(orgId)}/api-key/status`,
+  /**
+   * GET — resolve the effective org API key for a USER (decrypted; Seam B only).
+   * Auto / Forge call this at inference time. The multi-org selection rule lives
+   * server-side: pick the user's single team org that has a key, else not-found.
+   * Returns the raw key over the admin-key-authenticated in-cluster channel only.
+   */
+  adminResolveUserOrgApiKey: (userId: string) =>
+    `/admin/users/${encodeURIComponent(userId)}/org-api-key/resolve`
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -285,3 +303,64 @@ export const setOrgStripeAccountRequestSchema = z.object({
   payoutOnboardedAt: z.string().optional()
 });
 export type SetOrgStripeAccountRequest = z.infer<typeof setOrgStripeAccountRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Org shared LLM API key (Auto + Forge BYO-at-org-level)
+// ---------------------------------------------------------------------------
+
+/**
+ * Provider an org key applies to. Anthropic only for now (Auto is Anthropic; the
+ * Forge platform/managed path is Anthropic). Extensible if Forge BYO providers
+ * diverge. A run only uses the org key when its provider matches.
+ */
+export const orgKeyProviderTypeSchema = z.enum(["anthropic"]);
+export type OrgKeyProviderType = z.infer<typeof orgKeyProviderTypeSchema>;
+
+/**
+ * Browser routes (market-app, AuthKit-cookie auth, gated to org owner/admin) for
+ * managing an org's shared API key. The web UI sets/clears it; the raw key is
+ * never read back (GET returns masked status only).
+ */
+export const orgApiKeyRoutes = {
+  /** GET (masked status) / PUT (set) / DELETE (clear) the org's shared API key. */
+  orgApiKey: (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/api-key`
+} as const;
+
+/**
+ * Body of PUT /api/orgs/{orgId}/api-key (browser) and POST the Seam-B
+ * adminOrgApiKey. `actorUserId` is injected server-side from the session on the
+ * Seam-B hop (the browser body carries only the key fields). Owner/admin gated.
+ */
+export const setOrgApiKeyRequestSchema = z.object({
+  apiKey: z.string().min(1),
+  providerType: orgKeyProviderTypeSchema.default("anthropic"),
+  baseUrl: z.string().url().optional(),
+  /** Set on the Seam-B hop from the authenticated session; absent on the browser body. */
+  actorUserId: z.string().min(1).optional()
+});
+export type SetOrgApiKeyRequest = z.infer<typeof setOrgApiKeyRequestSchema>;
+
+/** Masked status of an org's API key — safe to return to the browser. */
+export const orgApiKeyStatusSchema = z.object({
+  hasKey: z.boolean(),
+  /** e.g. "sk-ant-…Xy12" — last few chars only; absent when hasKey is false. */
+  maskedKey: z.string().optional(),
+  providerType: orgKeyProviderTypeSchema.optional(),
+  baseUrl: z.string().optional(),
+  updatedAt: z.string().optional(),
+  updatedByUserId: z.string().optional()
+});
+export type OrgApiKeyStatus = z.infer<typeof orgApiKeyStatusSchema>;
+
+/**
+ * Result of resolving a user's effective org key (Seam B, decrypted). Returned
+ * only over the admin-key in-cluster channel to Auto / Forge at inference time.
+ */
+export const resolvedOrgApiKeySchema = z.object({
+  found: z.boolean(),
+  orgId: z.string().optional(),
+  apiKey: z.string().optional(),
+  providerType: orgKeyProviderTypeSchema.optional(),
+  baseUrl: z.string().optional()
+});
+export type ResolvedOrgApiKey = z.infer<typeof resolvedOrgApiKeySchema>;
