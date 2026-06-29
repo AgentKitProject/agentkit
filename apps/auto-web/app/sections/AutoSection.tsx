@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, BRAND_ACCENTS, Button, Card, Field, Input, Pill, Select, Textarea, brandVars } from "@agentkitforge/ui";
 import { autoRoutes } from "@agentkitforge/contracts";
-import type { MyKitEntry, Notify } from "./shared";
+import type { CatalogEntry, MyKitEntry, Notify, PublicProvider } from "./shared";
 import { errMsg } from "./shared";
 import { AutoLogo } from "./AutoLogo";
 import { ClientTime } from "./ClientTime";
@@ -242,14 +242,19 @@ export function AutoSection({
   marketUrl?: string;
   marketEnabled?: boolean;
   /** Provider-lock: the AI provider types this deployment permits, or null when
-   *  unrestricted. When non-null and "anthropic" is excluded, the BYO Anthropic
-   *  key affordance is hidden (the server also rejects a disallowed save). */
+   *  unrestricted. The add/update form hides disallowed types; when EVERY type
+   *  is excluded the whole BYO provider manager is hidden (the server also
+   *  rejects a disallowed save regardless of what the UI shows). */
   allowedProviders?: string[] | null;
 }) {
-  // BYO uses the Anthropic key affordance; hide it when the deployment's
-  // provider-lock excludes anthropic. null (unrestricted) → shown.
-  const byoAnthropicAllowed =
-    allowedProviders == null || allowedProviders.includes("anthropic");
+  // Provider-lock: a type is allowed when unrestricted (null) or in the list.
+  const isAllowed = useCallback(
+    (type: string) => allowedProviders == null || allowedProviders.includes(type),
+    [allowedProviders]
+  );
+  // When the deployment restricts providers to an EMPTY set, BYO is fully
+  // disabled (runs use managed credits only) — hide the provider manager.
+  const byoEnabled = allowedProviders == null || allowedProviders.length > 0;
   const [approvals, setApprovals] = useState<Approval[]>([]);
   // Protected (paid + non-downloadable) Market kits the user has purchased. Only
   // populated when Market is enabled; empty on a free open-core self-host (the
@@ -269,11 +274,25 @@ export function AutoSection({
   const [apprNetHosts, setApprNetHosts] = useState(""); // newline/comma-separated host patterns
   const [apprHttpFetch, setApprHttpFetch] = useState(false);
 
-  // BYO key + inference-mode preference state (Phase 2).
-  const [byoHasKey, setByoHasKey] = useState(false);
+  // Inference-mode preference (Phase 2) — managed vs BYO routing.
   const [byoMode, setByoMode] = useState<"auto" | "managed" | "byo">("auto");
-  const [byoKeyInput, setByoKeyInput] = useState("");
-  const [byoBusy, setByoBusy] = useState(false);
+
+  // BYO provider manager: a user can configure a provider of ANY of the 5 types
+  // (the run-resolution path reads their default provider, any type). Mirrors the
+  // forge-web Settings AI-provider section; writes to the same UserSettingsStore.
+  const [providers, setProviders] = useState<PublicProvider[]>([]);
+  const [defaultProviderId, setDefaultProviderId] = useState<string | undefined>(undefined);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [provBusy, setProvBusy] = useState(false);
+  // Add/update form state.
+  const [provType, setProvType] = useState("anthropic");
+  const [provName, setProvName] = useState("");
+  const [provBaseUrl, setProvBaseUrl] = useState("");
+  const [provModel, setProvModel] = useState("");
+  const [provApiKey, setProvApiKey] = useState("");
+
+  // "My own key" is selectable once ANY configured provider has a key on file.
+  const byoHasKey = providers.some((p) => p.hasApiKey);
 
   // Auto v2 billing snapshot (balance + remaining free active-minutes). Null
   // until loaded; metered:false on a FREE self-host (then the credits affordance
@@ -352,13 +371,30 @@ export function AutoSection({
     }
   }, [notify]);
 
+  // The inference-mode preference (managed vs BYO routing) still lives on the
+  // legacy byo-key status endpoint; we only read the mode from it now (the
+  // provider key surface moved to the generalized provider manager below).
   const loadByo = useCallback(async () => {
     try {
-      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
-        autoRoutes.byoKey()
-      );
-      setByoHasKey(status.hasKey);
+      const status = await jsonFetch<{ inferenceMode: "auto" | "managed" | "byo" }>(autoRoutes.byoKey());
       setByoMode(status.inferenceMode);
+    } catch (e) {
+      notify(errMsg(e), true);
+    }
+  }, [notify]);
+
+  // The user's configured providers (any type), the default selection, and the
+  // catalog that drives the add/update form. Same shape forge-web Settings reads.
+  const loadProviders = useCallback(async () => {
+    try {
+      const res = await jsonFetch<{
+        providers?: PublicProvider[];
+        defaultProviderId?: string;
+        catalog?: CatalogEntry[];
+      }>("/api/auto/ai-providers");
+      setProviders(res.providers ?? []);
+      setDefaultProviderId(res.defaultProviderId);
+      setCatalog(res.catalog ?? []);
     } catch (e) {
       notify(errMsg(e), true);
     }
@@ -395,9 +431,23 @@ export function AutoSection({
     void loadSchedules();
     void loadWebhooks();
     void loadByo();
+    void loadProviders();
     void loadBilling();
     void loadEntitled();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadBilling, loadEntitled]);
+  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadProviders, loadBilling, loadEntitled]);
+
+  // The catalog filtered to the deployment's allowed provider types (disallowed
+  // are hidden from the form; the server enforces the lock regardless).
+  const visibleCatalog = catalog.filter((c) => isAllowed(c.providerType));
+  const selectedCat = visibleCatalog.find((c) => c.providerType === provType);
+
+  // Keep the selected provider type within the allowed/known set (e.g. once the
+  // catalog loads, or if the default "anthropic" is locked out by the operator).
+  useEffect(() => {
+    if (visibleCatalog.length > 0 && !visibleCatalog.some((c) => c.providerType === provType)) {
+      setProvType(visibleCatalog[0].providerType);
+    }
+  }, [visibleCatalog, provType]);
 
   // Deep-link: `?kit=market:<slug>` (optionally `&kitId=<marketKitId>`) from the
   // Market "Run on Auto" action. Pre-select that protected kit in the approval +
@@ -559,47 +609,66 @@ export function AutoSection({
     }
   };
 
-  // ---- BYO key + inference-mode preference (Phase 2) ----
-  const saveByoKey = async () => {
-    const key = byoKeyInput.trim();
-    if (!key) return notify("Enter your Anthropic API key.", true);
-    setByoBusy(true);
+  // ---- BYO provider manager + inference-mode preference (Phase 2) ----
+  // A small helper that runs a provider mutation, then reloads the list.
+  const providerMutation = async (
+    body: Record<string, unknown>,
+    okMessage: string
+  ): Promise<void> => {
+    setProvBusy(true);
     try {
-      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
-        autoRoutes.byoKey(),
-        {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ apiKey: key })
-        }
-      );
-      setByoHasKey(status.hasKey);
-      setByoMode(status.inferenceMode);
-      setByoKeyInput("");
-      notify("Anthropic key saved (encrypted at rest).");
+      await jsonFetch("/api/auto/ai-providers", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      notify(okMessage);
+      await loadProviders();
     } catch (e) {
       notify(errMsg(e), true);
     } finally {
-      setByoBusy(false);
+      setProvBusy(false);
     }
   };
 
-  const clearByoKey = async () => {
-    setByoBusy(true);
-    try {
-      const status = await jsonFetch<{ hasKey: boolean; inferenceMode: "auto" | "managed" | "byo" }>(
-        autoRoutes.byoKey(),
-        { method: "DELETE" }
-      );
-      setByoHasKey(status.hasKey);
-      setByoMode(status.inferenceMode);
-      notify("Anthropic key cleared. Runs use managed credits.");
-    } catch (e) {
-      notify(errMsg(e), true);
-    } finally {
-      setByoBusy(false);
+  // Add OR update a provider of any allowed type (apiKey + optional baseUrl +
+  // model). The server encrypts the key at rest, never echoes it back, and
+  // enforces the provider-lock. Omitting the key on an update keeps the existing
+  // one (so a key-less edit of name/model/baseUrl doesn't wipe the key).
+  const saveProvider = async () => {
+    if (!isAllowed(provType)) return notify("That provider type is not allowed here.", true);
+    const key = provApiKey.trim();
+    // anthropic/openai/gemini/openai-compatible require a key on first add; ollama
+    // does not. We only block when the catalog says a key is required AND none is
+    // configured yet for a NEW provider.
+    if ((selectedCat?.apiKeyRequired ?? true) && !key && !byoHasKey) {
+      return notify("Enter an API key for this provider.", true);
     }
+    await providerMutation(
+      {
+        action: "save",
+        provider: {
+          name: provName.trim() || provType,
+          providerType: provType,
+          baseUrl: provBaseUrl.trim(),
+          defaultModel: provModel.trim() || selectedCat?.defaultModel || "",
+          supportsStructuredJson: selectedCat?.supportsStructuredJson ?? false,
+          ...(key ? { apiKey: key } : {})
+        }
+      },
+      "Provider saved (key encrypted at rest)."
+    );
+    setProvApiKey("");
+    setProvName("");
+    setProvModel("");
+    setProvBaseUrl("");
   };
+
+  const removeProvider = (id: string) =>
+    providerMutation({ action: "remove", providerId: id }, "Provider removed.");
+
+  const setDefaultProvider = (id: string) =>
+    providerMutation({ action: "setDefault", providerId: id }, "Default provider set.");
 
   const saveByoMode = async (mode: "auto" | "managed" | "byo") => {
     setByoMode(mode);
@@ -948,8 +1017,9 @@ export function AutoSection({
         <h3 style={{ marginTop: 24 }}>Inference &amp; billing</h3>
         <p className="form-copy">
           Choose how your runs pay for inference. <strong>Managed credits</strong> use the platform key
-          (debited from your prepaid balance). <strong>Bring your own key</strong> runs on your own
-          Anthropic key — no inference debit. Your key is encrypted at rest and never shown again.
+          (debited from your prepaid balance). <strong>Bring your own provider</strong> runs on a provider
+          you configure below (Anthropic, OpenAI, Gemini, Ollama, or any OpenAI-compatible endpoint) — no
+          inference debit. Keys are encrypted at rest and never shown again.
         </p>
         {/* Auto v2 run fee: surfaced when this deployment meters runs (hosted).
             Applies to BYO too — a BYO run pays nothing for inference but still
@@ -991,46 +1061,110 @@ export function AutoSection({
         )}
         <Field label="Inference mode">
           <Select value={byoMode} onChange={(e) => void saveByoMode(e.target.value as "auto" | "managed" | "byo")}>
-            <option value="auto">Automatic (use my key when set, else managed)</option>
+            <option value="auto">Automatic (use my provider when set, else managed)</option>
             <option value="managed">Managed credits (platform key)</option>
-            <option value="byo" disabled={!byoHasKey || !byoAnthropicAllowed}>
-              My own key{byoHasKey ? "" : " (add a key first)"}
+            <option value="byo" disabled={!byoHasKey || !byoEnabled}>
+              My own provider{byoHasKey ? "" : " (add a provider first)"}
             </option>
           </Select>
         </Field>
-        {/* Provider-lock: hide the BYO Anthropic key affordance when this
-            deployment's ALLOWED_PROVIDERS excludes anthropic (the server also
-            rejects a disallowed save). */}
-        {byoAnthropicAllowed ? (
+
+        {/* ---- BYO provider manager ----
+            A provider of ANY of the 5 types can be added; the run-resolution path
+            reads the user's DEFAULT provider (any type) from the same store. The
+            form hides types disallowed by ALLOWED_PROVIDERS; the server enforces
+            the lock regardless. When EVERY type is locked out the whole manager is
+            hidden (runs use managed credits). */}
+        {byoEnabled ? (
           <>
-            <Field label={byoHasKey ? "Replace your Anthropic API key" : "Your Anthropic API key"}>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={byoKeyInput}
-                onChange={(e) => setByoKeyInput(e.target.value)}
-                placeholder={byoHasKey ? "sk-ant-… (a key is on file)" : "sk-ant-…"}
-              />
-              {byoHasKey && (
-                <p className="form-copy" style={{ marginTop: 6 }}>
-                  <Pill tone="brand">key on file</Pill> Your runs can use it. Leave blank to keep it.
-                </p>
+            <h4 style={{ margin: "12px 0 4px" }}>Your AI providers</h4>
+            {providers.length === 0 ? (
+              <p className="form-copy" style={{ marginTop: 0 }}>No providers configured yet.</p>
+            ) : (
+              <div className="results-panel" style={{ marginBottom: 12 }}>
+                {providers.map((p) => (
+                  <div key={p.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <div style={{ fontSize: "0.85em" }}>
+                        <strong>{p.name}</strong>{" "}
+                        {p.id === defaultProviderId && <Badge tone="success">default</Badge>}
+                        <div style={{ color: "var(--color-text-secondary)" }}>
+                          {p.providerType} · {p.defaultModel || "no model"}
+                          {p.baseUrl ? ` · ${p.baseUrl}` : ""} ·{" "}
+                          {p.hasApiKey ? "key set (••••)" : "no key"}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {p.id !== defaultProviderId && (
+                          <Button variant="secondary" size="sm" disabled={provBusy} onClick={() => void setDefaultProvider(p.id)}>
+                            Make default
+                          </Button>
+                        )}
+                        <Button variant="secondary" size="sm" disabled={provBusy} onClick={() => void removeProvider(p.id)}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <h4 style={{ margin: "8px 0 4px" }}>Add / update a provider</h4>
+            <Field label="Provider type">
+              <Select value={provType} onChange={(e) => setProvType(e.target.value)}>
+                {visibleCatalog.length === 0 && isAllowed("anthropic") && (
+                  <option value="anthropic">anthropic</option>
+                )}
+                {visibleCatalog.map((c) => (
+                  <option key={c.providerType} value={c.providerType}>
+                    {c.providerType}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Display name (optional)">
+              <Input value={provName} onChange={(e) => setProvName(e.target.value)} placeholder={provType} />
+            </Field>
+            <Field label="Default model (optional)">
+              {selectedCat && selectedCat.models.length > 0 ? (
+                <Select value={provModel} onChange={(e) => setProvModel(e.target.value)}>
+                  <option value="">
+                    {selectedCat.defaultModel ? `default (${selectedCat.defaultModel})` : "select…"}
+                  </option>
+                  {selectedCat.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input value={provModel} onChange={(e) => setProvModel(e.target.value)} />
               )}
             </Field>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button disabled={byoBusy} loading={byoBusy} onClick={() => void saveByoKey()}>
-                {byoHasKey ? "Replace key" : "Save key"}
-              </Button>
-              {byoHasKey && (
-                <Button variant="secondary" disabled={byoBusy} onClick={() => void clearByoKey()}>
-                  Clear key
-                </Button>
-              )}
-            </div>
+            {selectedCat?.baseUrlRequired && (
+              <Field label="Base URL (required for OpenAI-compatible / Ollama endpoints)">
+                <Input value={provBaseUrl} onChange={(e) => setProvBaseUrl(e.target.value)} placeholder="https://…" />
+              </Field>
+            )}
+            {(selectedCat?.apiKeyRequired ?? true) && (
+              <Field label="API key (stored server-side encrypted, never echoed back)">
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={provApiKey}
+                  onChange={(e) => setProvApiKey(e.target.value)}
+                  placeholder={byoHasKey ? "leave blank to keep an existing key" : ""}
+                />
+              </Field>
+            )}
+            <Button disabled={provBusy} loading={provBusy} onClick={() => void saveProvider()}>
+              {provBusy ? "Saving…" : "Save provider"}
+            </Button>
           </>
         ) : (
           <p className="form-copy">
-            Bring-your-own-key is disabled by this deployment&apos;s provider policy. Runs use managed credits.
+            Bring-your-own-provider is disabled by this deployment&apos;s provider policy. Runs use managed credits.
           </p>
         )}
 
