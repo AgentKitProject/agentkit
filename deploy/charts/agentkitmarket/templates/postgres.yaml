@@ -38,6 +38,10 @@ metadata:
     {{- include "agentkitmarket.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
+  # Single-replica stateful service on an RWO PVC: Recreate so a rolling update
+  # never deadlocks waiting to mount a volume the old pod still holds.
+  strategy:
+    type: Recreate
   replicas: 1
   selector:
     matchLabels:

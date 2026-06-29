@@ -2,7 +2,7 @@ apiVersion: v2
 name: agentkitauto
 description: Self-hosted AgentKitAuto WebApp (Next.js standalone server, KITSTORE_BACKEND=selfhost, bundled Postgres + MinIO, in-cluster Kubernetes Job-per-run worker)
 type: application
-version: 0.2.1
+version: 0.2.2
 appVersion: "0.2.0"
 keywords:
   - agentkit
