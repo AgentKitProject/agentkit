@@ -263,7 +263,7 @@ secrets:
 # ---------------------------------------------------------------------------
 postgres:
   enabled: true
-  image: postgres:16
+  image: postgres:16.14-alpine
   database: agentkitmarket
   user: agentkitmarket
   # Leave empty to let the chart generate + persist a strong password
@@ -279,7 +279,7 @@ postgres:
 # ---------------------------------------------------------------------------
 minio:
   enabled: true
-  image: minio/minio:latest
+  image: minio/minio:RELEASE.2025-09-07T16-13-09Z
   bucket: agentkit-packages
   rootUser: minioadmin
   # Leave empty to let the chart generate + persist a strong password
@@ -303,7 +303,7 @@ minio:
 # ---------------------------------------------------------------------------
 redis:
   enabled: true
-  image: redis:7
+  image: redis:7.4.9-alpine
   storage:
     size: 1Gi
     # storageClassName: ""
