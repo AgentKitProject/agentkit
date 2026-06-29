@@ -1,5 +1,10 @@
 # Self-Hosting AgentKitMarket on Kubernetes (k3s)
 
+> **Running the full stack?** This doc covers **Market only**. For deploying
+> Market **+ Web Forge + Auto** together on one cluster (in-cluster wiring,
+> per-chart BYO-secret tables, versioned image pinning), see the full-stack
+> guide at [`deploy/SELF_HOSTING.md`](../../../deploy/SELF_HOSTING.md).
+
 Run the **entire** Market product — web UI, API, background worker, and data
 services — on your own cluster from one Helm chart. No AWS, no WorkOS, no
 external secret manager required. Authentication uses **generic OpenID Connect**
@@ -49,9 +54,12 @@ This guide targets a single-node **k3s** cluster, but works on any Kubernetes.
 | web | `ghcr.io/AgentKitProject/agentkitmarket-app` | public GHCR package |
 
 Both are multi-arch (`linux/amd64` + `linux/arm64`), so they run on x86 servers
-and ARM (Raspberry Pi / Apple-silicon) nodes alike. The `values-k3s.yaml` preset
-defaults both to `:latest`; pin to a release tag for reproducible deploys (see
-the `TODO` notes in the preset).
+and ARM (Raspberry Pi / Apple-silicon) nodes alike. The chart defaults both to
+`:latest` (which tracks `main`); **pin to a versioned self-host release tag for
+reproducible deploys** — e.g. set `image.tag` and `web.image.tag` to `v0.1.0`
+(`ghcr.io/agentkitproject/agentkitmarket-core:v0.1.0` /
+`agentkitmarket-app:v0.1.0`). See "Build images locally" below for how those
+versioned tags are produced.
 
 ## Quickstart (one command)
 
@@ -151,11 +159,28 @@ generated and **persisted** on first install, then preserved across
 To keep secrets fully out of the chart, set `secrets.existingSecret` (backend)
 and/or `web.secrets.existingSecret` (web) to Secrets you manage with Sealed
 Secrets, External Secrets, SOPS, etc. The chart then `envFrom`s those instead of
-rendering its own. The backend Secret must provide `ADMIN_API_KEY`,
+rendering its own. **When you set an `existingSecret`, the chart generates
+nothing for it — your Secret must contain every key listed below.**
+
+The **backend** Secret (`secrets.existingSecret`) must provide `ADMIN_API_KEY`,
 `DATABASE_URL`, `S3_ENDPOINT`, `PACKAGE_BUCKET_NAME`, `S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`, `REDIS_URL`, and — when using the bundled data services —
 `POSTGRES_PASSWORD` and `MINIO_ROOT_PASSWORD` (with
 `minio.rootUser` == `S3_ACCESS_KEY_ID`).
+
+The **web** Secret (`web.secrets.existingSecret`) must provide
+`AGENTKITMARKET_ADMIN_KEY` (matching the backend `ADMIN_API_KEY`),
+`OIDC_CLIENT_SECRET`, `SESSION_SECRET`, and optionally `PROFILE_SERVICE_KEY`.
+
+> Note: on **this (Market) chart** the bundled Postgres / MinIO read their
+> passwords from the *backend* Secret, so the **web** existingSecret does **not**
+> carry pg/minio keys. The **forge-web** and **auto** charts differ — there the
+> bundled Postgres / MinIO read their passwords from the **web** existingSecret,
+> so a BYO web secret for those charts must include `POSTGRES_PASSWORD` and
+> `MINIO_ROOT_PASSWORD` (and, for Auto, `AUTO_WORKER_SERVICE_KEY` +
+> `ANTHROPIC_API_KEY`) or the bundled Postgres crash-loops on an empty password.
+> See [`deploy/SELF_HOSTING.md`](../../../deploy/SELF_HOSTING.md) §5 for the full
+> per-chart key tables.
 
 ## External data services (production / HA)
 
@@ -242,5 +267,10 @@ docker build -t agentkitmarket-core:local .
 
 `npm run build` runs a `copy-sql` step copying
 `src/adapters/selfhost/schema.sql` into `dist/` so the server finds it at
-runtime. CI (`.github/workflows/image.yml`) builds multi-arch
-(`linux/amd64,linux/arm64`) and pushes to GHCR on `v*` tags.
+runtime. The per-commit CI workflows (`.github/workflows/image-*.yml`) build
+multi-arch (`linux/amd64,linux/arm64`) and push `sha-<sha>` + `latest` to GHCR on
+every push to `main` (and on manual dispatch). Versioned self-host release tags
+(`vX.Y.Z`) are **not** produced automatically — they are cut by the manual
+`release-selfhost` workflow (Actions → *release-selfhost* → Run workflow), which
+retags an already-built image to the version. Pin your deploy to a `vX.Y.Z` tag,
+not `:latest`.
