@@ -9,7 +9,9 @@ import {
   isManagedInferenceEnabled,
   isCreditsUiEnabled,
   getEcosystemLinks,
-  getPublicConfig
+  getPublicConfig,
+  getAllowedProviders,
+  isProviderAllowed
 } from "@/lib/self-host";
 
 const HOSTED_MARKET = "https://market.agentkitproject.com";
@@ -125,7 +127,8 @@ describe("getPublicConfig snapshot", () => {
         forgeUrl: "https://forge.agentkitproject.com",
         profileUrl: "https://profile.agentkitproject.com",
         autoUrl: "https://auto.agentkitproject.com"
-      }
+      },
+      allowedProviders: null
     });
   });
 
@@ -135,5 +138,40 @@ describe("getPublicConfig snapshot", () => {
     expect(cfg.marketEnabled).toBe(false);
     expect(cfg.creditsEnabled).toBe(false);
     expect(cfg.links).toEqual({});
+    expect(cfg.allowedProviders).toBeNull();
+  });
+
+  it("snapshot carries the provider-lock subset when ALLOWED_PROVIDERS is set", () => {
+    const cfg = getPublicConfig({ ALLOWED_PROVIDERS: "anthropic, openai" });
+    expect(cfg.allowedProviders).toEqual(["anthropic", "openai"]);
+  });
+});
+
+describe("provider-lock (ALLOWED_PROVIDERS)", () => {
+  it("unset or empty ⇒ null (unrestricted)", () => {
+    expect(getAllowedProviders({})).toBeNull();
+    expect(getAllowedProviders({ ALLOWED_PROVIDERS: "" })).toBeNull();
+    expect(getAllowedProviders({ ALLOWED_PROVIDERS: "   " })).toBeNull();
+  });
+
+  it("parses + validates the subset of the 5 provider types", () => {
+    expect(getAllowedProviders({ ALLOWED_PROVIDERS: "anthropic,openai" })).toEqual([
+      "anthropic",
+      "openai"
+    ]);
+    // case-insensitive, trims whitespace, drops unknowns, de-duplicates
+    expect(
+      getAllowedProviders({ ALLOWED_PROVIDERS: " Anthropic , bogus, OPENAI , anthropic " })
+    ).toEqual(["anthropic", "openai"]);
+  });
+
+  it("all-unknown tokens ⇒ null (treated as unrestricted, not all-blocked)", () => {
+    expect(getAllowedProviders({ ALLOWED_PROVIDERS: "bogus,nope" })).toBeNull();
+  });
+
+  it("isProviderAllowed honors the policy", () => {
+    expect(isProviderAllowed("gemini", {})).toBe(true); // unrestricted
+    expect(isProviderAllowed("anthropic", { ALLOWED_PROVIDERS: "anthropic" })).toBe(true);
+    expect(isProviderAllowed("openai", { ALLOWED_PROVIDERS: "anthropic" })).toBe(false);
   });
 });

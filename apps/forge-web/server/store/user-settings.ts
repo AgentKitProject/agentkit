@@ -16,6 +16,7 @@
 import { promises as fs } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
+import { assertProviderAllowed } from "@/server/store/provider-lock";
 
 function dataDir(): string {
   return process.env.AGENTKITFORGE_WEB_DATA_DIR || path.resolve(process.cwd(), ".agentkitforge-web-data");
@@ -144,6 +145,7 @@ export class DiskUserSettingsStore implements UserSettingsStoreInterface {
       apiKey?: string;
     }
   ): Promise<PublicProvider> {
+    assertProviderAllowed(input.providerType);
     const s = await readSettings(userId);
     const now = new Date().toISOString();
     const id = input.id?.trim() || crypto.randomUUID();

@@ -25,6 +25,54 @@ type Env = Record<string, string | undefined>;
 
 const HOSTED_MARKET_BASE_URL = "https://market.agentkitproject.com";
 
+/**
+ * The 5 AI provider types Web Forge supports. Mirrors core's `AiProviderType`
+ * (and the contracts `OrgKeyProviderType`) — kept inline so this pure config
+ * module stays dependency-free and serializable for the client `PublicConfig`.
+ */
+export type AiProviderType = "anthropic" | "openai" | "gemini" | "ollama" | "openai-compatible";
+
+const ALL_PROVIDER_TYPES: readonly AiProviderType[] = [
+  "anthropic",
+  "openai",
+  "gemini",
+  "ollama",
+  "openai-compatible"
+];
+
+function isAiProviderType(value: string): value is AiProviderType {
+  return (ALL_PROVIDER_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Self-host admin PROVIDER-LOCK policy. Reads `ALLOWED_PROVIDERS` (comma-separated
+ * list of provider types). Unset/empty ⇒ `null` (unrestricted — all providers
+ * allowed). Otherwise returns the validated subset of the 5 `AiProviderType`
+ * values (unknown tokens are dropped). An operator who restricts to a subset
+ * blocks users from configuring any other provider type (enforced in the
+ * settings store) and hides them from the AI-provider settings UI.
+ *
+ * EXACT semantics intentionally match auto-web's identical policy.
+ */
+export function getAllowedProviders(env: Env = process.env): AiProviderType[] | null {
+  const raw = trimmed(env.ALLOWED_PROVIDERS);
+  if (!raw) return null;
+  const parsed = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0)
+    .filter(isAiProviderType);
+  // De-duplicate while preserving order.
+  const allowed = Array.from(new Set(parsed));
+  return allowed.length > 0 ? allowed : null;
+}
+
+/** True when `providerType` is permitted by the provider-lock policy. */
+export function isProviderAllowed(providerType: string, env: Env = process.env): boolean {
+  const allowed = getAllowedProviders(env);
+  return allowed === null || (allowed as string[]).includes(providerType);
+}
+
 function truthy(value: string | undefined): boolean {
   const v = (value ?? "").trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes";
@@ -136,6 +184,12 @@ export interface PublicConfig {
   marketEnabled: boolean;
   creditsEnabled: boolean;
   links: EcosystemLinks;
+  /**
+   * Provider-lock policy: the subset of AI provider types the operator permits,
+   * or `null` when unrestricted (all allowed). The settings UI hides any provider
+   * type not in this list.
+   */
+  allowedProviders: AiProviderType[] | null;
 }
 
 export function getPublicConfig(env: Env = process.env): PublicConfig {
@@ -143,6 +197,7 @@ export function getPublicConfig(env: Env = process.env): PublicConfig {
     selfHost: isSelfHost(env),
     marketEnabled: isMarketEnabled(env),
     creditsEnabled: isCreditsUiEnabled(env),
-    links: getEcosystemLinks(env)
+    links: getEcosystemLinks(env),
+    allowedProviders: getAllowedProviders(env)
   };
 }

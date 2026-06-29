@@ -53,9 +53,9 @@ function normalizeProviderConfig(parsed: ProviderConfig): ProviderConfig {
   };
 }
 
-// Fill an Anthropic provider's missing key (and optional base URL) from the
-// user's resolved ORG shared key. Only ever called for Anthropic providers; the
-// org key contract is Anthropic-only.
+// Fill a provider's missing key (and optional base URL) from the user's resolved
+// ORG shared key FOR THAT PROVIDER. The org key is multi-provider, so this works
+// for any of the 5 provider types.
 function applyOrgKey(
   provider: ProviderConfig,
   orgKey: { apiKey: string; baseUrl?: string }
@@ -104,12 +104,13 @@ async function resolveBilling(
       apiKey: stored.apiKey,
       defaultModel: stored.defaultModel
     });
-    // The user has a provider but no usable key of their own. If it's an
-    // Anthropic provider, fall back to their team ORG's shared key (decrypted,
-    // server-to-service) before erroring. Org keys are Anthropic-only, so a
-    // non-Anthropic provider is left as-is (callProvider surfaces the missing key).
-    if (!provider.apiKey && provider.providerType === "anthropic") {
-      const orgKey = await resolveOrgApiKey(userId);
+    // The user has a provider but no usable key of their own. Fall back to their
+    // team ORG's shared key FOR THIS PROVIDER (decrypted, server-to-service)
+    // before erroring. The org key is multi-provider, so this applies to any of
+    // the 5 provider types; a provider with no org key for its type is left as-is
+    // (callProvider surfaces the missing key).
+    if (!provider.apiKey) {
+      const orgKey = await resolveOrgApiKey(userId, provider.providerType);
       if (orgKey) provider = applyOrgKey(provider, orgKey);
     }
     const model = resolveModel(provider, inputModel);
@@ -120,8 +121,8 @@ async function resolveBilling(
   const raw = process.env.AGENTKITFORGE_AI_PROVIDER_CONFIG;
   if (raw) {
     let provider = normalizeProviderConfig(JSON.parse(raw) as ProviderConfig);
-    if (!provider.apiKey && provider.providerType === "anthropic") {
-      const orgKey = await resolveOrgApiKey(userId);
+    if (!provider.apiKey) {
+      const orgKey = await resolveOrgApiKey(userId, provider.providerType);
       if (orgKey) provider = applyOrgKey(provider, orgKey);
     }
     const model = resolveModel(provider, inputModel);
@@ -129,13 +130,15 @@ async function resolveBilling(
     return { mode: "byo", provider, model };
   }
   // No BYO provider configured at all. Before any platform/managed fallback, try
-  // the user's team ORG shared key — it stands in as an Anthropic BYO provider.
+  // the user's team ORG shared key. With no selected provider we probe the org's
+  // Anthropic key (the platform/managed default provider) and stand it in as an
+  // Anthropic BYO provider; the returned key carries its own provider type.
   {
-    const orgKey = await resolveOrgApiKey(userId);
+    const orgKey = await resolveOrgApiKey(userId, "anthropic");
     if (orgKey) {
       const provider = normalizeProviderConfig({
         name: "Org shared key",
-        providerType: "anthropic",
+        providerType: orgKey.providerType,
         baseUrl: orgKey.baseUrl,
         apiKey: orgKey.apiKey,
         defaultModel: ""

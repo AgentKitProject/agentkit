@@ -18,7 +18,8 @@ const HOSTED_DEFAULT: PublicConfig = {
     forgeUrl: "https://forge.agentkitproject.com",
     profileUrl: "https://profile.agentkitproject.com",
     autoUrl: "https://auto.agentkitproject.com"
-  }
+  },
+  allowedProviders: null
 };
 
 const ConfigContext = createContext<PublicConfig>(HOSTED_DEFAULT);

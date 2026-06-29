@@ -6,6 +6,7 @@
 // here so every backend behaves identically.
 import crypto from "node:crypto";
 import { decryptSecret, encryptSecret } from "@/server/store/shared";
+import { assertProviderAllowed } from "@/server/store/provider-lock";
 import {
   type PublicProvider,
   type SaveProviderInput,
@@ -15,6 +16,7 @@ import {
 } from "@/server/store/settings-types";
 
 export function applySaveProvider(s: UserSettings, input: SaveProviderInput): { settings: UserSettings; record: StoredProvider } {
+  assertProviderAllowed(input.providerType);
   const now = new Date().toISOString();
   const id = input.id?.trim() || crypto.randomUUID();
   const existing = s.providers.find((p) => p.id === id);

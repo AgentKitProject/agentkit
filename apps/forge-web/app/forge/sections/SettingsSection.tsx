@@ -8,11 +8,19 @@ import { CreditsPanel } from "./CreditsPanel";
 import { useConfig } from "../config-context";
 
 export function SettingsSection({ forge, notify }: { forge: Forge; notify: Notify }) {
-  const { creditsEnabled } = useConfig();
+  const { creditsEnabled, allowedProviders } = useConfig();
   const [providers, setProviders] = useState<PublicProvider[]>([]);
   const [defaultId, setDefaultId] = useState<string | undefined>(undefined);
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Provider-lock: when the operator restricts ALLOWED_PROVIDERS, hide disallowed
+  // provider types from the add/update form (the server enforces it regardless).
+  const isAllowed = useCallback(
+    (type: string) => allowedProviders === null || allowedProviders.includes(type as never),
+    [allowedProviders]
+  );
+  const visibleCatalog = catalog.filter((c) => isAllowed(c.providerType));
 
   const [providerType, setProviderType] = useState("openai");
   const [name, setName] = useState("");
@@ -31,7 +39,15 @@ export function SettingsSection({ forge, notify }: { forge: Forge; notify: Notif
     void load().catch((e) => notify(errMsg(e), true));
   }, [load, notify]);
 
-  const cat = catalog.find((c) => c.providerType === providerType);
+  // Keep the selected provider type within the allowed set (e.g. after the
+  // catalog loads, or if the default "openai" is locked out by the operator).
+  useEffect(() => {
+    if (visibleCatalog.length > 0 && !visibleCatalog.some((c) => c.providerType === providerType)) {
+      setProviderType(visibleCatalog[0].providerType);
+    }
+  }, [visibleCatalog, providerType]);
+
+  const cat = visibleCatalog.find((c) => c.providerType === providerType);
 
   const add = async () => {
     setBusy(true);
@@ -109,8 +125,8 @@ export function SettingsSection({ forge, notify }: { forge: Forge; notify: Notif
         <h2>Add / update a provider</h2>
         <Field label="Provider type">
           <Select value={providerType} onChange={(e) => setProviderType(e.target.value)}>
-            {catalog.length === 0 && <option value="openai">openai</option>}
-            {catalog.map((c) => (
+            {visibleCatalog.length === 0 && isAllowed("openai") && <option value="openai">openai</option>}
+            {visibleCatalog.map((c) => (
               <option key={c.providerType} value={c.providerType}>{c.providerType}</option>
             ))}
           </Select>

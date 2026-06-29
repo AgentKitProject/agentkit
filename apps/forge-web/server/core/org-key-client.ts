@@ -3,18 +3,20 @@
 //
 // When a user has NO usable BYO provider key of their own, the AI-draft path may
 // fall back to their TEAM ORG's shared key before the env/platform fallback. The
-// Market service maps userId → the single team org that holds a shared key and
-// returns the decrypted key. This is OPTIONAL and MUST degrade gracefully: a
-// disabled/unreachable Market never blocks a draft — it just yields `undefined`
-// and the caller falls through to its existing fallback.
+// Market service maps userId → the single team org that holds a shared key FOR
+// THAT PROVIDER and returns the decrypted key. This is OPTIONAL and MUST degrade
+// gracefully: a disabled/unreachable Market never blocks a draft — it just yields
+// `undefined` and the caller falls through to its existing fallback.
 //
-// Provider type is "anthropic" only (orgKeyProviderTypeSchema), so the caller must
-// only apply this when the effective BYO provider is Anthropic.
+// The org key is now MULTI-PROVIDER (one key per provider type), so the resolve
+// is per-provider: the caller passes the effective provider's type and the
+// returned key applies to THAT provider.
 import {
   marketServiceRoutes,
   marketServiceAuthHeader,
   serviceResolveOrgApiKeyRequestSchema,
-  resolvedOrgApiKeySchema
+  resolvedOrgApiKeySchema,
+  type OrgKeyProviderType
 } from "@agentkitforge/contracts";
 import { getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
 
@@ -24,7 +26,7 @@ const ORG_KEY_TIMEOUT_MS = 4000;
 export interface ResolvedOrgKey {
   apiKey: string;
   baseUrl?: string;
-  providerType: "anthropic";
+  providerType: OrgKeyProviderType;
 }
 
 /** The shared web-forge↔market-app service key (server-only). Same key the
@@ -42,13 +44,16 @@ function serviceResolveOrgApiKeyUrl(): string | undefined {
 }
 
 /**
- * Resolve the user's effective ORG shared API key (decrypted) SERVER-TO-SERVICE,
- * or `undefined` when none applies. NEVER throws and NEVER blocks: any of
- * Market-disabled / no service key / no base URL / network error / non-2xx / parse
- * failure / found:false yields `undefined`, so the caller simply skips the org
- * fallback. Debug-logs errors WITHOUT any key material.
+ * Resolve the user's effective ORG shared API key (decrypted) SERVER-TO-SERVICE
+ * FOR THE GIVEN PROVIDER, or `undefined` when none applies. NEVER throws and
+ * NEVER blocks: any of Market-disabled / no service key / no base URL / network
+ * error / non-2xx / parse failure / found:false yields `undefined`, so the caller
+ * simply skips the org fallback. Debug-logs errors WITHOUT any key material.
  */
-export async function resolveOrgApiKey(userId: string): Promise<ResolvedOrgKey | undefined> {
+export async function resolveOrgApiKey(
+  userId: string,
+  providerType: OrgKeyProviderType
+): Promise<ResolvedOrgKey | undefined> {
   // Self-host with Market disabled → no org keys (fail closed, never phone home).
   if (!isMarketEnabled()) return undefined;
   const key = marketServiceKey();
@@ -56,7 +61,7 @@ export async function resolveOrgApiKey(userId: string): Promise<ResolvedOrgKey |
   const url = serviceResolveOrgApiKeyUrl();
   if (!url) return undefined;
 
-  const body = serviceResolveOrgApiKeyRequestSchema.safeParse({ userId });
+  const body = serviceResolveOrgApiKeyRequestSchema.safeParse({ userId, providerType });
   if (!body.success) return undefined;
 
   const controller = new AbortController();
@@ -81,7 +86,7 @@ export async function resolveOrgApiKey(userId: string): Promise<ResolvedOrgKey |
     if (!resolved.found || !resolved.apiKey || resolved.apiKey.length === 0) return undefined;
     return {
       apiKey: resolved.apiKey,
-      providerType: "anthropic",
+      providerType: resolved.providerType ?? providerType,
       ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {})
     };
   } catch {
