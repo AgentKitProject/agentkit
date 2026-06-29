@@ -141,3 +141,31 @@ export {
   AnthropicProviderError,
   createManagedAnthropicProvider,
 } from "./adapters/anthropic/index.js";
+
+// OpenAI (+ openai-compatible) ChatProvider adapter
+export {
+  OpenAIChatProvider,
+  OpenAICompatibleChatProvider,
+  OpenAIProviderError,
+  createManagedOpenAIProvider,
+} from "./adapters/openai/index.js";
+
+// Ollama ChatProvider adapter
+export {
+  OllamaChatProvider,
+  OllamaProviderError,
+  createManagedOllamaProvider,
+} from "./adapters/ollama/index.js";
+
+// Gemini ChatProvider adapter
+export {
+  GeminiChatProvider,
+  GeminiProviderError,
+  createManagedGeminiProvider,
+} from "./adapters/gemini/index.js";
+
+// Multi-provider factory
+export {
+  buildChatProvider,
+  type BuildChatProviderOptions,
+} from "./adapters/build-chat-provider.js";
