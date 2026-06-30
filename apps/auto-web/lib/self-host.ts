@@ -126,6 +126,23 @@ export function isMarketEnabled(env: Env = process.env): boolean {
   return getMarketBaseUrl(env) !== undefined;
 }
 
+/**
+ * Resolve the AgentKitProfile API base URL for this instance, or `undefined` when
+ * Profile is not configured (`PROFILE_API_BASE_URL` unset). Mirrors
+ * `getMarketBaseUrl` but with NO hosted default and NO self-host signal coupling:
+ * AgentKitProfile is the org system of record (P2), so the org-key / run-budget
+ * resolvers call it directly. On self-host, orgs now REQUIRE Profile — if unset,
+ * those resolvers simply fail open (no org key / budget), never phoning home.
+ */
+export function getProfileBaseUrl(env: Env = process.env): string | undefined {
+  return trimmed(env.PROFILE_API_BASE_URL);
+}
+
+/** True when AgentKitProfile integration is usable (a base URL is resolvable). */
+export function isProfileEnabled(env: Env = process.env): boolean {
+  return getProfileBaseUrl(env) !== undefined;
+}
+
 /** The storage backend (KITSTORE_BACKEND). "selfhost" → Postgres; everything
  *  else (aws/local/unset) → the DynamoDB-backed AWS adapter. Mirrors
  *  server/core/auto.ts `autoBackend()` and auto-core's worker selector. */

@@ -45,6 +45,13 @@ export * from "./core/services/constants.js";
 export { routeRequest } from "./core/routes/index.js";
 export type { CoreRequest, CoreResponse, RouterDeps, CommercialRouter } from "./core/routes/types.js";
 
+// Profile-backed OrgLookupClient (P2): kit-coupling membership/org lookups served
+// by AgentKitProfile (the org system of record). Composition roots inject this so
+// authz/owner-org paths fail-closed against Profile.
+export type { OrgLookupClient } from "./core/ports.js";
+export { createProfileOrgLookupClient } from "./adapters/profile/org-lookup-client.js";
+export type { ProfileOrgLookupClientConfig } from "./adapters/profile/org-lookup-client.js";
+
 // Route-table primitives so the commercial package can register its route
 // templates with the entrypoint matcher (matchRoute(method, path, extraRoutes)).
 export { ROUTES, matchRoute } from "./entrypoints/route-table.js";

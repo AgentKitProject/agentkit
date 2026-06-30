@@ -39,6 +39,7 @@ export default async function Page() {
     <AutoApp
       user={{ id: user.id, email: user.email }}
       marketUrl={links.marketUrl}
+      profileUrl={links.profileUrl}
       marketEnabled={marketEnabled}
       allowedProviders={allowedProviders}
     />

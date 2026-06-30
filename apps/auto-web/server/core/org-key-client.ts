@@ -1,8 +1,8 @@
-// Org-shared API key resolution (Seam S — web-forge ↔ market-app, service-key auth).
+// Org-shared API key resolution (Seam — web-forge ↔ AgentKitProfile, service-key auth).
 //
-// A team org can hold a SINGLE shared Anthropic API key. At inference time, when a
-// member has no BYO key of their own, Auto falls back to the org's shared key BEFORE
-// the operator/platform key. The precedence is strictly:
+// A team org can hold a SINGLE shared API key PER provider. At inference time, when
+// a member has no BYO key of their own, Auto falls back to the org's shared key
+// BEFORE the operator/platform key. The precedence is strictly:
 //
 //   managed (wins as today) → the user's OWN BYO key → the user's ORG key (here) →
 //   operator/platform key.
@@ -10,73 +10,66 @@
 // The org key NEVER applies in the managed path: managed billing returns first, so a
 // protected/paid run (which forces managed) never reaches this resolver.
 //
-// This mirrors the SERVICE-MODE pattern in protected-kits.ts exactly: it talks to the
-// Market service endpoint via the shared MARKET_SERVICE_KEY (x-agentkit-service-key)
-// and an explicitly-asserted userId — no user session. It FAILS OPEN (returns
-// undefined) on every absence/error so a run NEVER fails because Market is
-// unreachable, disabled, or unconfigured.
+// P2: AgentKitProfile is the system of record for org entities (memberships, shared
+// provider keys, run budgets). This resolver now calls PROFILE directly via the
+// shared PROFILE_SERVICE_KEY (x-profile-service-key) and an ASSERTED userId in the
+// route — no user session. It FAILS OPEN (returns undefined) on every absence/error
+// so a run NEVER fails because Profile is unreachable, disabled, or unconfigured.
 import {
-  marketServiceRoutes,
-  marketServiceAuthHeader,
-  serviceResolveOrgApiKeyRequestSchema,
+  profileOrgRoutes,
   resolvedOrgApiKeySchema
 } from "@agentkitforge/contracts";
 import type { AiProviderType } from "@agentkitforge/gateway-core";
-import { getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
+import { getProfileBaseUrl, isProfileEnabled } from "@/lib/self-host";
 
-/** The shared web-forge↔market-app service key (server-only). Same key used by
- *  protected-kits.ts; the worker NEVER holds it and NEVER calls Market directly. */
-function marketServiceKey(): string | undefined {
-  return process.env.MARKET_SERVICE_KEY;
+/** The shared web↔Profile service key (server-only). Sent as x-profile-service-key. */
+function profileServiceKey(): string | undefined {
+  return process.env.PROFILE_SERVICE_KEY;
 }
 
-/** Build the Market service org-api-key URL. Honors the self-host gate: when Market
- *  is disabled (self-host with no own Market) there is no base URL → undefined. */
-function serviceOrgApiKeyUrl(): string | undefined {
-  if (!isMarketEnabled()) return undefined;
-  const base = getMarketBaseUrl();
+/** Build the Profile service org-api-key resolve URL for a user + provider. Honors
+ *  the Profile gate: when Profile is not configured there is no base URL → undefined. */
+function resolveOrgApiKeyUrl(userId: string, providerType: AiProviderType): string | undefined {
+  if (!isProfileEnabled()) return undefined;
+  const base = getProfileBaseUrl();
   if (!base) return undefined;
-  return `${base.replace(/\/+$/, "")}${marketServiceRoutes.resolveOrgApiKey()}`;
+  return `${base.replace(/\/+$/, "")}${profileOrgRoutes.resolveUserOrgApiKey(userId, providerType)}`;
 }
 
 /**
  * Resolve the user's effective ORG shared key FOR A GIVEN PROVIDER TYPE
- * SERVER-TO-SERVICE (no user session), via MARKET_SERVICE_KEY + an
- * explicitly-asserted userId. An org holds ONE key per provider type, so the
- * resolve is per-provider: `providerType` is the effective provider being
- * resolved (the user's selected provider, or — when none — the operator default).
- * The Market service maps the user → their single team org that holds a shared
- * key FOR THAT PROVIDER and returns the decrypted key (or { found: false }).
+ * SERVER-TO-SERVICE (no user session), via PROFILE_SERVICE_KEY + an asserted
+ * userId in the route. An org holds ONE key per provider type, so the resolve is
+ * per-provider: `providerType` is the effective provider being resolved (the
+ * user's selected provider, or — when none — the operator default). Profile maps
+ * the user → their single team org that holds a shared key FOR THAT PROVIDER and
+ * returns the decrypted key (or { found: false }).
  *
  * Returns the key only when present AND it matches the requested `providerType`;
- * otherwise undefined. FAILS OPEN — Market disabled / unconfigured, no base URL,
+ * otherwise undefined. FAILS OPEN — Profile disabled / unconfigured, no base URL,
  * any network error, timeout, non-2xx, or an unparseable response all yield
  * undefined so the caller falls through to the operator/platform key. A run must
- * NEVER fail because Market is unreachable.
+ * NEVER fail because Profile is unreachable.
  */
 export async function resolveOrgApiKey(
   userId: string,
   providerType: AiProviderType
 ): Promise<{ apiKey: string; baseUrl?: string; providerType: AiProviderType } | undefined> {
-  // Local-first / Market-absent path: skip silently (never throw).
-  if (!isMarketEnabled()) return undefined;
-  const key = marketServiceKey();
+  // Local-first / Profile-absent path: skip silently (never throw).
+  if (!isProfileEnabled()) return undefined;
+  const key = profileServiceKey();
   if (!key || key.length === 0) return undefined;
-  const url = serviceOrgApiKeyUrl();
+  const url = resolveOrgApiKeyUrl(userId, providerType);
   if (!url) return undefined;
-
-  const body = serviceResolveOrgApiKeyRequestSchema.parse({ userId, providerType });
 
   let response: Response;
   try {
     response = await fetch(url, {
-      method: "POST",
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
         Accept: "application/json",
-        [marketServiceAuthHeader]: key
+        "x-profile-service-key": key
       },
-      body: JSON.stringify(body),
       cache: "no-store",
       // Short timeout: org-key resolution must never stall a run. On timeout the
       // AbortError is caught below → undefined → operator/platform fallback.

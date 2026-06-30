@@ -38,6 +38,26 @@
     "adminTransferKit": "/admin/kits/{kitId}/transfer",
     "adminSetKitVisibility": "/admin/kits/{kitId}/visibility"
   },
+  "profileOrgs": {
+    "createOrg": "/orgs",
+    "getOrg": "/orgs/{orgId}",
+    "deleteOrg": "/orgs/{orgId}",
+    "getOrgBySlug": "/orgs/by-slug/{slug}",
+    "orgMembers": "/orgs/{orgId}/members",
+    "orgMember": "/orgs/{orgId}/members/{userId}",
+    "getMembership": "/orgs/{orgId}/members/{userId}",
+    "createEmailInvite": "/orgs/{orgId}/invites/email",
+    "acceptInvite": "/orgs/{orgId}/invites/{userId}/accept",
+    "listUserInvites": "/users/{userId}/invites",
+    "claimInvites": "/users/{userId}/invites/claim",
+    "listUserOrgs": "/users/{userId}/orgs",
+    "ensurePersonalOrg": "/users/{userId}/personal-org",
+    "orgApiKey": "/orgs/{orgId}/api-key",
+    "orgApiKeyStatus": "/orgs/{orgId}/api-key/status",
+    "resolveUserOrgApiKey": "/users/{userId}/org-api-key/resolve",
+    "orgRunBudget": "/orgs/{orgId}/run-budget",
+    "resolveUserOrgRunBudget": "/users/{userId}/org-run-budget/resolve"
+  },
   "marketBackendPricing": {
     "adminSetKitPricing": "/admin/kits/{kitId}/pricing",
     "adminListUserEntitlements": "/admin/users/{userId}/entitlements",

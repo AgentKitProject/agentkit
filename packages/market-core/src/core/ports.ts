@@ -167,6 +167,33 @@ export interface OrgRepository {
 }
 
 /**
+ * Read-only org/membership lookups the KIT-COUPLING handlers (transfer,
+ * visibility, list-org-kits gate, submission owner-org resolution, publish/remove
+ * authz) depend on. AgentKitProfile is the system of record for org entities, so
+ * these lookups are served by Profile (over its service-key seam) — NOT the local
+ * `OrgRepository`. The kit MUTATIONS (`setKitOwnerOrg`/`setKitVisibility`/
+ * `listKitsForOrg`) stay on `OrgRepository` because they touch the `kits` table.
+ *
+ * FAIL-CLOSED CONTRACT: every method must REJECT (throw) when Profile is
+ * unreachable/misconfigured. The router's top-level try/catch turns a rejection
+ * into a 500, so a membership-gated mutation never proceeds when authz can't be
+ * confirmed. (This is the opposite of the runtime org-key / run-budget RESOLVE
+ * seam, which fails OPEN.)
+ *
+ * NOTE: the PUBLIC CATALOG read path (`listKits`/`getKitBySlug`) must NEVER call
+ * this — catalog visibility is a plain `kits.visibility` column filter and must
+ * render with Profile down.
+ */
+export interface OrgLookupClient {
+  getMembership(orgId: string, userId: string): Promise<OrgMembership | undefined>;
+  listOrgsForUser(userId: string): Promise<Organization[]>;
+  getOrg(orgId: string): Promise<Organization | undefined>;
+  getOrgBySlug(slug: string): Promise<Organization | undefined>;
+  /** Idempotently ensure (and return) the user's personal org. */
+  ensurePersonalOrg(userId: string, displayName?: string): Promise<Organization>;
+}
+
+/**
  * Provider an org key applies to — the 5-value `AiProviderType` union (mirrors
  * `@agentkitforge/contracts` `orgKeyProviderTypeSchema` / `@agentkitforge/core`
  * `AiProviderType`). Kept as a local union to avoid a cross-package import here.

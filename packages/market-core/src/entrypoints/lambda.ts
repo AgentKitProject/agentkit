@@ -25,6 +25,7 @@ import type {
   EntitlementRepository,
   FavoritesRepository,
   ObjectStore,
+  OrgLookupClient,
   OrgRepository,
   PackageUploadService,
   SubmissionValidationUpdate,
@@ -43,6 +44,7 @@ import {
   createDynamoOrgRepository,
   createS3ObjectStore,
 } from '../adapters/aws/index.js';
+import { createProfileOrgLookupClient } from '../adapters/profile/org-lookup-client.js';
 
 // Re-exported for parity with the original handler module surface (consumed by
 // infra tests and the contracts-provider test).
@@ -52,6 +54,8 @@ interface HandlerOptions {
   repository: CatalogRepository;
   adminRepository?: AdminRepository;
   orgRepository?: OrgRepository;
+  /** Profile-backed kit-coupling membership/org lookups (P2). */
+  orgLookupClient?: OrgLookupClient;
   entitlementRepository?: EntitlementRepository;
   favoritesRepository?: FavoritesRepository;
   auditRepository?: AuditRepository;
@@ -115,6 +119,10 @@ export function createHandler(options: HandlerOptions) {
     // route actually invokes a method.
     const adminRepository = options.adminRepository ?? createLazyDynamoAdminRepository();
     const orgRepository = options.orgRepository ?? createLazyDynamoOrgRepository();
+    // P2: AgentKitProfile is the org system of record. When PROFILE_API_BASE_URL +
+    // PROFILE_SERVICE_KEY are set, kit-coupling membership/org lookups resolve from
+    // Profile (fail-closed); else fall back to the DynamoDB OrgRepository (pre-P2).
+    const orgLookupClient = options.orgLookupClient ?? buildProfileOrgLookupClient();
     const favoritesRepository = options.favoritesRepository ?? createLazyDynamoFavoritesRepository();
     const auditRepository = options.auditRepository ?? createLazyDynamoAuditRepository();
     const packageUploadService = options.packageUploadService ?? createLazyAwsPackageUploadService();
@@ -129,6 +137,7 @@ export function createHandler(options: HandlerOptions) {
       repository: options.repository,
       adminRepository,
       orgRepository,
+      orgLookupClient,
       entitlementRepository: options.entitlementRepository,
       favoritesRepository,
       auditRepository,
@@ -186,6 +195,20 @@ function toCoreRequest(event: APIGatewayProxyEvent, extraRoutes: RoutePattern[] 
     body: event.body,
     isBase64Encoded: event.isBase64Encoded,
   };
+}
+
+/**
+ * Builds the Profile-backed OrgLookupClient from env (PROFILE_API_BASE_URL +
+ * PROFILE_SERVICE_KEY). Returns undefined when either is unset (the router then
+ * falls back to the DynamoDB OrgRepository for kit-coupling lookups — pre-P2).
+ */
+function buildProfileOrgLookupClient(): OrgLookupClient | undefined {
+  const baseUrl = process.env.PROFILE_API_BASE_URL?.trim();
+  const serviceKey = process.env.PROFILE_SERVICE_KEY?.trim();
+  if (!baseUrl || !serviceKey) {
+    return undefined;
+  }
+  return createProfileOrgLookupClient({ baseUrl, serviceKey });
 }
 
 function adminConfigFromEnv() {

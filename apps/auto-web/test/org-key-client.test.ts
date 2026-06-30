@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Constants shared across all cases
 // ---------------------------------------------------------------------------
 
-const MARKET_BASE = "https://market.example.test";
+const PROFILE_BASE = "https://profile.example.test";
 const SERVICE_KEY = "test-svc-key-abc123";
 const USER_ID = "user-org-test-1";
 const ORG_API_KEY = "sk-ant-api03-ORGSHAREDKEY1234567890";
@@ -54,13 +54,13 @@ const ORIGINAL_ENV = { ...process.env };
 
 beforeEach(() => {
   vi.resetModules();
-  // Default: hosted instance, Market enabled, service key set.
+  // Default: Profile configured (org system of record), service key set.
   // Individual cases override as needed.
   delete process.env.DISABLE_MARKET;
   delete process.env.SELF_HOST;
   delete process.env.AUTH_PROVIDER;
-  process.env.AGENTKITMARKET_BASE_URL = MARKET_BASE;
-  process.env.MARKET_SERVICE_KEY = SERVICE_KEY;
+  process.env.PROFILE_API_BASE_URL = PROFILE_BASE;
+  process.env.PROFILE_SERVICE_KEY = SERVICE_KEY;
 });
 
 afterEach(() => {
@@ -79,24 +79,24 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
-  // (a) Market disabled (DISABLE_MARKET=true → isMarketEnabled() is false)
-  it("(a) returns undefined when Market is disabled", async () => {
-    process.env.DISABLE_MARKET = "true";
+  // (a) Profile not configured (PROFILE_API_BASE_URL unset → isProfileEnabled() false)
+  it("(a) returns undefined when Profile is not configured", async () => {
+    delete process.env.PROFILE_API_BASE_URL;
     const resolveOrgApiKey = await loadSubject();
     await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
-  // (a2) Self-host with no AGENTKITMARKET_BASE_URL → isMarketEnabled() false
-  it("(a2) returns undefined when self-host with no Market base URL", async () => {
+  // (a2) Self-host with no PROFILE_API_BASE_URL → isProfileEnabled() false (no phone-home)
+  it("(a2) returns undefined when self-host with no Profile base URL", async () => {
     process.env.AUTH_PROVIDER = "oidc";
-    delete process.env.AGENTKITMARKET_BASE_URL;
+    delete process.env.PROFILE_API_BASE_URL;
     const resolveOrgApiKey = await loadSubject();
     await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
-  // (b) MARKET_SERVICE_KEY unset
-  it("(b) returns undefined when MARKET_SERVICE_KEY is unset", async () => {
-    delete process.env.MARKET_SERVICE_KEY;
+  // (b) PROFILE_SERVICE_KEY unset
+  it("(b) returns undefined when PROFILE_SERVICE_KEY is unset", async () => {
+    delete process.env.PROFILE_SERVICE_KEY;
     const resolveOrgApiKey = await loadSubject();
     // fetch should never be called; stub it to explode if it is
     vi.stubGlobal("fetch", () => {
@@ -105,9 +105,9 @@ describe("resolveOrgApiKey — fail-open in every absence/error case", () => {
     await expect(resolveOrgApiKey(USER_ID, "anthropic")).resolves.toBeUndefined();
   });
 
-  // (b2) MARKET_SERVICE_KEY is an empty string
-  it("(b2) returns undefined when MARKET_SERVICE_KEY is empty string", async () => {
-    process.env.MARKET_SERVICE_KEY = "";
+  // (b2) PROFILE_SERVICE_KEY is an empty string
+  it("(b2) returns undefined when PROFILE_SERVICE_KEY is empty string", async () => {
+    process.env.PROFILE_SERVICE_KEY = "";
     const resolveOrgApiKey = await loadSubject();
     vi.stubGlobal("fetch", () => {
       throw new Error("fetch must not be called when service key is empty");
@@ -236,7 +236,7 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
     expect(result).toEqual({ apiKey: ORG_API_KEY, providerType: "anthropic", baseUrl: BASE });
   });
 
-  it("sends the correct service-key header and POST body", async () => {
+  it("sends a GET to the Profile resolve route with the service-key header and per-provider query", async () => {
     let capturedRequest: { url: string; init: RequestInit } | undefined;
     vi.stubGlobal("fetch", async (url: RequestInfo | URL, init?: RequestInit) => {
       capturedRequest = { url: url.toString(), init: init ?? {} };
@@ -247,16 +247,16 @@ describe("resolveOrgApiKey — returns key on valid response", () => {
     await resolveOrgApiKey(USER_ID, "anthropic");
 
     expect(capturedRequest).toBeDefined();
-    // URL must end with the contracts route path
-    expect(capturedRequest!.url).toContain("/api/forge/service/me/org-api-key");
-    // Must be a POST
-    expect(capturedRequest!.init.method).toBe("POST");
-    // Must send the service key in the right header
+    // URL must hit Profile's per-user org-api-key resolve route with the userId and
+    // the requested providerType as a query param (per-provider resolve).
+    expect(capturedRequest!.url).toContain(PROFILE_BASE);
+    expect(capturedRequest!.url).toContain(`/users/${USER_ID}/org-api-key/resolve`);
+    expect(capturedRequest!.url).toContain("providerType=anthropic");
+    // Must be a GET (no body)
+    expect(capturedRequest!.init.method).toBe("GET");
+    expect(capturedRequest!.init.body).toBeUndefined();
+    // Must send the service key in the Profile header
     const headers = capturedRequest!.init.headers as Record<string, string>;
-    expect(headers["x-agentkit-service-key"]).toBe(SERVICE_KEY);
-    // Body must include the userId AND the requested providerType (per-provider resolve)
-    const body = JSON.parse(capturedRequest!.init.body as string);
-    expect(body.userId).toBe(USER_ID);
-    expect(body.providerType).toBe("anthropic");
+    expect(headers["x-profile-service-key"]).toBe(SERVICE_KEY);
   });
 });

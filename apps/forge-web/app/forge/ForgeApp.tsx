@@ -195,13 +195,14 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     navItems.splice(runIdx >= 0 ? runIdx + 1 : navItems.length, 0, autoNavItem);
   }
 
-  // Organization: link out to the Market orgs page. Shown only when Market is
-  // enabled and a Market URL is configured (self-host without a Market hides it).
-  if (config.marketEnabled && config.links.marketUrl) {
+  // Organization: link out to the AgentKitProfile orgs page (Profile is now the
+  // system of record for org management). Shown only when a Profile URL is
+  // configured (self-host without a Profile hides it).
+  if (config.links.profileUrl) {
     navItems.push({
       label: "Organization",
       icon: <BuildingIcon size={18} />,
-      href: `${config.links.marketUrl}/orgs`,
+      href: `${config.links.profileUrl}/account/orgs`,
       external: true
     });
   }

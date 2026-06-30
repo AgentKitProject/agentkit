@@ -113,6 +113,23 @@ export function isMarketEnabled(env: Env = process.env): boolean {
 }
 
 /**
+ * Resolve the AgentKitProfile API base URL for this instance, or `undefined` when
+ * Profile is not configured (`PROFILE_API_BASE_URL` unset). Mirrors
+ * `getMarketBaseUrl` but with NO hosted default and NO self-host signal coupling:
+ * AgentKitProfile is the org system of record (P2), so the org-key resolver calls
+ * it directly. On self-host, orgs now REQUIRE Profile — if unset, the resolver
+ * simply fails open (no org key), never phoning home.
+ */
+export function getProfileBaseUrl(env: Env = process.env): string | undefined {
+  return trimmed(env.PROFILE_API_BASE_URL);
+}
+
+/** True when AgentKitProfile integration is usable (a base URL is resolvable). */
+export function isProfileEnabled(env: Env = process.env): boolean {
+  return getProfileBaseUrl(env) !== undefined;
+}
+
+/**
  * True when MANAGED (platform-key + prepaid-credit) inference is available.
  * Self-host is BYO-key ONLY — the managed/gateway/credits path is off there.
  * Hosted keeps managed inference (gated additionally by ANTHROPIC_API_KEY in the

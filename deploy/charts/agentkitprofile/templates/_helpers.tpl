@@ -113,3 +113,20 @@ Auto-generated + persisted when left empty (and no existingSecret is set).
 {{- $prev | default (include "agentkitprofile._seededSecret" (list . "profile-service-key")) -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Effective PROFILE_KEY_ENCRYPTION_SECRET (explicit | persisted | seeded-fallback).
+AES-256-GCM at-rest key for org shared LLM provider keys (mirrors Market's
+MARKET_KEY_ENCRYPTION_SECRET). Auto-generated + persisted when left empty (and no
+existingSecret is set). If left unset entirely the app degrades to PLAINTEXT
+at-rest storage with a one-time warning — but the chart always mints one so the
+default self-host posture is encrypted.
+*/}}
+{{- define "agentkitprofile.effectiveKeyEncryptionSecret" -}}
+{{- if .Values.web.secrets.keyEncryptionSecret -}}
+{{- .Values.web.secrets.keyEncryptionSecret -}}
+{{- else -}}
+{{- $prev := include "agentkitprofile._liveSecretValue" (list . (include "agentkitprofile.webSecretName" .) "PROFILE_KEY_ENCRYPTION_SECRET") -}}
+{{- $prev | default (include "agentkitprofile._seededSecret" (list . "profile-key-encryption-secret")) -}}
+{{- end -}}
+{{- end }}

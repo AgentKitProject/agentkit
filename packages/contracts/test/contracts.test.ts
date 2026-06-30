@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import {
   forgeMarketRoutes,
   forgeOrgRoutes,
+  profileOrgRoutes,
+  ensurePersonalOrgRequestSchema,
   forgeUploadBackendRequestSchema,
   marketBackendOrgRoutes,
   marketBackendPricingRoutes,
@@ -179,6 +181,60 @@ describe("contracts", () => {
       marketBackendOrgRoutes.adminSetKitVisibility("kit1"),
       routes.marketBackendOrgs.adminSetKitVisibility.replace("{kitId}", "kit1")
     );
+  });
+
+  it("profileOrgRoutes produce expected paths (Profile org seam)", () => {
+    const routes = fixture("routes.json");
+    const p = routes.profileOrgs;
+    assert.equal(profileOrgRoutes.createOrg(), p.createOrg);
+    assert.equal(profileOrgRoutes.getOrg("org1"), p.getOrg.replace("{orgId}", "org1"));
+    assert.equal(profileOrgRoutes.deleteOrg("org1"), p.deleteOrg.replace("{orgId}", "org1"));
+    assert.equal(profileOrgRoutes.getOrgBySlug("acme"), p.getOrgBySlug.replace("{slug}", "acme"));
+    assert.equal(profileOrgRoutes.orgMembers("org1"), p.orgMembers.replace("{orgId}", "org1"));
+    assert.equal(
+      profileOrgRoutes.orgMember("org1", "u1"),
+      p.orgMember.replace("{orgId}", "org1").replace("{userId}", "u1")
+    );
+    assert.equal(
+      profileOrgRoutes.getMembership("org1", "u1"),
+      p.getMembership.replace("{orgId}", "org1").replace("{userId}", "u1")
+    );
+    assert.equal(
+      profileOrgRoutes.createEmailInvite("org1"),
+      p.createEmailInvite.replace("{orgId}", "org1")
+    );
+    assert.equal(
+      profileOrgRoutes.acceptInvite("org1", "u1"),
+      p.acceptInvite.replace("{orgId}", "org1").replace("{userId}", "u1")
+    );
+    assert.equal(profileOrgRoutes.listUserInvites("u1"), p.listUserInvites.replace("{userId}", "u1"));
+    assert.equal(profileOrgRoutes.claimInvites("u1"), p.claimInvites.replace("{userId}", "u1"));
+    assert.equal(profileOrgRoutes.listUserOrgs("u1"), p.listUserOrgs.replace("{userId}", "u1"));
+    assert.equal(
+      profileOrgRoutes.ensurePersonalOrg("u1"),
+      p.ensurePersonalOrg.replace("{userId}", "u1")
+    );
+    assert.equal(profileOrgRoutes.orgApiKey("org1"), p.orgApiKey.replace("{orgId}", "org1"));
+    assert.equal(
+      profileOrgRoutes.orgApiKeyStatus("org1"),
+      p.orgApiKeyStatus.replace("{orgId}", "org1")
+    );
+    // resolve carries the providerType query param (response shape unchanged: resolvedOrgApiKeySchema).
+    assert.equal(
+      profileOrgRoutes.resolveUserOrgApiKey("u1", "openai"),
+      `${p.resolveUserOrgApiKey.replace("{userId}", "u1")}?providerType=openai`
+    );
+    assert.equal(profileOrgRoutes.orgRunBudget("org1"), p.orgRunBudget.replace("{orgId}", "org1"));
+    assert.equal(
+      profileOrgRoutes.resolveUserOrgRunBudget("u1"),
+      p.resolveUserOrgRunBudget.replace("{userId}", "u1")
+    );
+  });
+
+  it("ensurePersonalOrgRequestSchema validates displayName", () => {
+    ensurePersonalOrgRequestSchema.parse({ displayName: "Ada Lovelace" });
+    assert.throws(() => ensurePersonalOrgRequestSchema.parse({ displayName: "" }));
+    assert.throws(() => ensurePersonalOrgRequestSchema.parse({}));
   });
 
   it("email-invite request schemas validate email + role", () => {

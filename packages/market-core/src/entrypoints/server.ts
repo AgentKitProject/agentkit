@@ -33,6 +33,8 @@ import {
 import { createMinioObjectStore } from '../adapters/selfhost/objectstore.js';
 import { createRedisQueue } from '../adapters/selfhost/queue.js';
 import { createSelfHostPackageUploadService } from '../adapters/selfhost/package-upload-service.js';
+import { createProfileOrgLookupClient } from '../adapters/profile/org-lookup-client.js';
+import type { OrgLookupClient } from '../core/ports.js';
 import { matchRoute, type RoutePattern } from './route-table.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -120,11 +122,17 @@ export async function startServer(): Promise<StartServerResult> {
   const commercial = commercialLoaded?.router;
   const extraRoutes = commercialLoaded?.routes ?? [];
 
+  // P2: AgentKitProfile is the org system of record. When configured, the
+  // kit-coupling membership/org lookups resolve from Profile (fail-closed); the
+  // local OrgRepository is still used for org CRUD + kit-table mutations.
+  const orgLookupClient = buildProfileOrgLookupClient();
+
   const server = createServer((req, res) => {
     void handleRequest(req, res, {
       repository,
       adminRepository,
       orgRepository,
+      orgLookupClient,
       favoritesRepository,
       auditRepository,
       // The MinIO ObjectStore doubles as the Tier-2 licensed-package reader.
@@ -159,6 +167,8 @@ interface ServerDeps {
   repository: ReturnType<typeof createPostgresCatalogRepository>;
   adminRepository: ReturnType<typeof createPostgresAdminRepository>;
   orgRepository: ReturnType<typeof createPostgresOrgRepository>;
+  /** Profile-backed kit-coupling membership/org lookups (P2). Undefined when unconfigured. */
+  orgLookupClient?: OrgLookupClient;
   favoritesRepository: ReturnType<typeof createPostgresFavoritesRepository>;
   auditRepository: ReturnType<typeof createPostgresAuditRepository>;
   objectStore: ReturnType<typeof createMinioObjectStore>;
@@ -194,6 +204,23 @@ async function loadCommercial(pool: PgPool): Promise<LoadedCommercial | undefine
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Builds the Profile-backed OrgLookupClient from env (PROFILE_API_BASE_URL +
+ * PROFILE_SERVICE_KEY). Returns undefined when either is unset — in which case
+ * the router falls back to the local OrgRepository for kit-coupling lookups
+ * (pre-P2 behavior). On self-host, orgs now REQUIRE Profile: when Profile is
+ * unset the org CRUD UI still works against the local repo, but a deployment that
+ * intends Profile-as-source must set both vars.
+ */
+function buildProfileOrgLookupClient(): OrgLookupClient | undefined {
+  const baseUrl = process.env.PROFILE_API_BASE_URL?.trim();
+  const serviceKey = process.env.PROFILE_SERVICE_KEY?.trim();
+  if (!baseUrl || !serviceKey) {
+    return undefined;
+  }
+  return createProfileOrgLookupClient({ baseUrl, serviceKey });
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse, deps: ServerDeps): Promise<void> {

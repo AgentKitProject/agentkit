@@ -1,13 +1,20 @@
 /**
  * Browser org helpers — authenticate via AuthKit cookie session (WorkOS browser
  * sessions) instead of the Forge device-auth bearer token.  These back the
- * `/api/orgs/*` and `/api/kits/[slug]/{transfer,visibility}` routes used by
- * the web UI.  The `/api/forge/*` org routes remain unchanged for CLI consumers.
+ * `/api/orgs/*` and `/api/kits/[slug]/{transfer,visibility}` routes used by the
+ * web UI.  The `/api/forge/*` org routes remain unchanged for CLI consumers.
+ *
+ * P2: AgentKitProfile is the system of record for org ENTITIES (orgs, members,
+ * invites, shared provider keys, run budgets), so those proxy to AgentKitProfile's
+ * `profileOrgRoutes` (service-key + asserted actor userId). KIT operations
+ * (transfer / visibility) are kit-table mutations owned by market-core, so they
+ * still proxy to the market backend via `fetchAdminBackend`.
  */
 
 import { NextResponse } from "next/server";
 import {
   marketBackendOrgRoutes,
+  profileOrgRoutes,
   createOrgRequestSchema,
   addOrgMemberRequestSchema,
   createEmailInviteRequestSchema,
@@ -19,6 +26,7 @@ import {
   setOrgRunBudgetRequestSchema
 } from "@agentkitforge/contracts";
 import { fetchAdminBackend } from "@/lib/admin-api";
+import { fetchProfileOrg, ProfileOrgConfigError } from "@/lib/profile/profile-org-client";
 import { requireUserForApi, UnauthorizedError, ForbiddenError } from "@/lib/auth";
 import { resolveWorkOsUserIdByEmail, ForgeAccountError } from "@/lib/forge-account";
 
@@ -38,34 +46,57 @@ async function proxyToBackend(
   }
 
   const backendResponse = await fetchAdminBackend(backendPath, init);
+  return mapProxyResponse(backendResponse, backendPath);
+}
 
-  if (backendResponse.status === 204) {
+/**
+ * Proxy an org request to AgentKitProfile (the org system of record).
+ *   - actorUserId set  → trusted-context (Profile reads the actor from
+ *     `x-agentkit-user-id` and enforces owner/admin role gates).
+ *   - actorUserId unset → service-context (target ids asserted in the path).
+ */
+async function proxyToProfile(
+  profilePath: string,
+  method: string,
+  options: { actorUserId?: string; body?: unknown } = {}
+): Promise<Response> {
+  const profileResponse = await fetchProfileOrg(profilePath, {
+    method,
+    actorUserId: options.actorUserId,
+    body: options.body
+  });
+  return mapProxyResponse(profileResponse, profilePath);
+}
+
+/** Maps an upstream (backend or Profile) response into the browser-facing JSON shape. */
+async function mapProxyResponse(upstream: Response, sourcePath: string): Promise<Response> {
+  if (upstream.status === 204) {
     return NextResponse.json({}, { status: 204 });
   }
 
-  const text = await backendResponse.text();
+  const text = await upstream.text();
   let payload: unknown;
 
   try {
-    payload = JSON.parse(text);
+    payload = text.length > 0 ? JSON.parse(text) : {};
   } catch {
-    console.error("[agentkitmarket] browser-orgs backend non-json", {
-      backendPath,
-      status: backendResponse.status,
+    console.error("[agentkitmarket] browser-orgs upstream non-json", {
+      sourcePath,
+      status: upstream.status,
       snippet: text.slice(0, 200)
     });
     return browserOrgError("AgentKitMarket could not complete the request.", 500);
   }
 
-  if (!backendResponse.ok) {
+  if (!upstream.ok) {
     const message =
       isRecord(payload) && typeof payload.message === "string"
         ? payload.message
         : "AgentKitMarket could not complete the request.";
-    return browserOrgError(message, backendResponse.status);
+    return browserOrgError(message, upstream.status);
   }
 
-  return NextResponse.json(payload, { status: backendResponse.status });
+  return NextResponse.json(payload, { status: upstream.status });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,6 +114,9 @@ function handleBrowserOrgException(error: unknown): Response {
   if (error instanceof ForbiddenError) {
     return browserOrgError(error.message, 403);
   }
+  if (error instanceof ProfileOrgConfigError) {
+    return browserOrgError("AgentKitMarket server configuration is incomplete.", 503);
+  }
   const message = error instanceof Error ? error.message : "Request failed.";
   if (message.includes("Missing ") || message.includes("not configured")) {
     return browserOrgError("AgentKitMarket server configuration is incomplete.", 503);
@@ -91,13 +125,14 @@ function handleBrowserOrgException(error: unknown): Response {
 }
 
 // ---------------------------------------------------------------------------
-// Orgs — list / create
+// Orgs — list / create  (AgentKitProfile)
 // ---------------------------------------------------------------------------
 
 export async function browserListMyOrgs() {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminListUserOrgs(user.id), "GET");
+    // SERVICE-context: target userId asserted in the path.
+    return proxyToProfile(profileOrgRoutes.listUserOrgs(user.id), "GET");
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -113,21 +148,25 @@ export async function browserCreateOrg(request: Request) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, ownerUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminCreateOrg(), "POST", backendBody);
+    // TRUSTED-context: Profile reads ownerUserId from x-agentkit-user-id (the body
+    // carries only the org fields).
+    return proxyToProfile(profileOrgRoutes.createOrg(), "POST", {
+      actorUserId: user.id,
+      body: parsed.data
+    });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Org members — list / add
+// Org members — list / add  (AgentKitProfile)
 // ---------------------------------------------------------------------------
 
 export async function browserListOrgMembers(_request: Request, orgId: string) {
   try {
-    await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgMembers(orgId), "GET");
+    const user = await requireUserForApi();
+    return proxyToProfile(profileOrgRoutes.orgMembers(orgId), "GET", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -167,11 +206,11 @@ export async function browserAddOrgMember(request: Request, orgId: string) {
           return browserOrgError(parsedInvite.error.issues[0]?.message ?? "Invalid request.", 400);
         }
 
-        const backendInvite = { ...parsedInvite.data, actorUserId: user.id };
-        const response = await proxyToBackend(
-          marketBackendOrgRoutes.adminCreateEmailInvite(orgId),
+        // TRUSTED-context: actor from header (owner/admin gated by Profile).
+        const response = await proxyToProfile(
+          profileOrgRoutes.createEmailInvite(orgId),
           "POST",
-          backendInvite
+          { actorUserId: user.id, body: parsedInvite.data }
         );
 
         // On success, surface a clear "pending" payload so the UI can show the right copy.
@@ -188,8 +227,10 @@ export async function browserAddOrgMember(request: Request, orgId: string) {
         return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
       }
 
-      const backendBody = { ...parsed.data, actorUserId: user.id };
-      return proxyToBackend(marketBackendOrgRoutes.adminOrgMembers(orgId), "POST", backendBody);
+      return proxyToProfile(profileOrgRoutes.orgMembers(orgId), "POST", {
+        actorUserId: user.id,
+        body: parsed.data
+      });
     }
 
     // Legacy path: { userId, role } — kept for any existing API consumers.
@@ -199,21 +240,24 @@ export async function browserAddOrgMember(request: Request, orgId: string) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, actorUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgMembers(orgId), "POST", backendBody);
+    return proxyToProfile(profileOrgRoutes.orgMembers(orgId), "POST", {
+      actorUserId: user.id,
+      body: parsed.data
+    });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Org member — remove
+// Org member — remove  (AgentKitProfile)
 // ---------------------------------------------------------------------------
 
 export async function browserRemoveOrgMember(_request: Request, orgId: string, userId: string) {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgMember(orgId, userId), "DELETE", {
+    // TRUSTED-context: actor (owner/admin) from header; path userId is the member removed.
+    return proxyToProfile(profileOrgRoutes.orgMember(orgId, userId), "DELETE", {
       actorUserId: user.id
     });
   } catch (error) {
@@ -222,28 +266,27 @@ export async function browserRemoveOrgMember(_request: Request, orgId: string, u
 }
 
 // ---------------------------------------------------------------------------
-// Org — delete
+// Org — delete  (AgentKitProfile)
 // ---------------------------------------------------------------------------
 
 export async function browserDeleteOrg(_request: Request, orgId: string) {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminDeleteOrg(orgId), "DELETE", {
-      actorUserId: user.id
-    });
+    return proxyToProfile(profileOrgRoutes.deleteOrg(orgId), "DELETE", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Invites — list / accept
+// Invites — list / accept  (AgentKitProfile)
 // ---------------------------------------------------------------------------
 
 export async function browserListMyOrgInvites() {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminListUserInvites(user.id), "GET");
+    // SERVICE-context: target userId asserted in the path.
+    return proxyToProfile(profileOrgRoutes.listUserInvites(user.id), "GET");
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -259,14 +302,19 @@ export async function browserAcceptOrgInvite(request: Request, orgId: string) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    return proxyToBackend(marketBackendOrgRoutes.adminAcceptInvite(orgId, user.id), "POST", {});
+    // SERVICE-context: the accepting userId is asserted in the path.
+    return proxyToProfile(profileOrgRoutes.acceptInvite(orgId, user.id), "POST", { body: {} });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Kit operations — transfer / visibility
+// Kit operations — transfer / visibility  (market backend; kit-table mutations)
+//
+// These are kit mutations owned by market-core (NOT Profile org entities), so they
+// keep proxying to the market backend. market-core enforces authz via its
+// Profile-backed OrgLookupClient (fail-closed) server-side.
 // ---------------------------------------------------------------------------
 
 export async function browserTransferKit(request: Request, kitId: string) {
@@ -304,15 +352,15 @@ export async function browserSetKitVisibility(request: Request, kitId: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Org shared API key — masked status / set / clear (owner/admin gated by the
-// backend via actorUserId). The raw key is NEVER returned to the browser; the
-// status route surfaces only the masked status from the backend.
+// Org shared API key — masked status / set / clear  (AgentKitProfile)
+// Owner/admin gated by Profile via the trusted-context actor. The raw key is
+// NEVER returned to the browser; the status route surfaces only the masked status.
 // ---------------------------------------------------------------------------
 
 export async function browserGetOrgApiKeyStatus(_request: Request, orgId: string) {
   try {
-    await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKeyStatus(orgId), "GET");
+    const user = await requireUserForApi();
+    return proxyToProfile(profileOrgRoutes.orgApiKeyStatus(orgId), "GET", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -324,7 +372,7 @@ export async function browserSetOrgApiKey(request: Request, orgId: string) {
     const body = (await request.json()) as unknown;
 
     // Validate the incoming browser body WITHOUT actorUserId (the browser never
-    // sends it); inject the session user's id on the Seam-B hop. The body carries
+    // sends it); Profile reads the actor from x-agentkit-user-id. The body carries
     // `providerType` (which provider's key) + apiKey + optional baseUrl.
     const parsed = setOrgApiKeyRequestSchema.omit({ actorUserId: true }).safeParse(body);
 
@@ -332,8 +380,10 @@ export async function browserSetOrgApiKey(request: Request, orgId: string) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, actorUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgApiKey(orgId), "POST", backendBody);
+    return proxyToProfile(profileOrgRoutes.orgApiKey(orgId), "POST", {
+      actorUserId: user.id,
+      body: parsed.data
+    });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -344,35 +394,32 @@ export async function browserClearOrgApiKey(request: Request, orgId: string) {
     const user = await requireUserForApi();
 
     // The provider to clear comes from the request `?providerType=` query param;
-    // it is required and forwarded to the backend as a query param.
+    // it is required and forwarded to Profile as a query param.
     const providerType = new URL(request.url).searchParams.get("providerType");
     const parsedProvider = orgKeyProviderTypeSchema.safeParse(providerType);
     if (!parsedProvider.success) {
       return browserOrgError("A valid providerType query param is required.", 400);
     }
 
-    const backendPath = `${marketBackendOrgRoutes.adminOrgApiKey(orgId)}?providerType=${encodeURIComponent(
+    const profilePath = `${profileOrgRoutes.orgApiKey(orgId)}?providerType=${encodeURIComponent(
       parsedProvider.data
     )}`;
-    return proxyToBackend(backendPath, "DELETE", {
-      actorUserId: user.id
-    });
+    return proxyToProfile(profilePath, "DELETE", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Org default run budget — read / set / clear (owner/admin gated by the backend
-// via actorUserId). The org default OVERRIDES each member's own default budget.
+// Org default run budget — read / set / clear  (AgentKitProfile)
+// Owner/admin gated by Profile via the trusted-context actor. The org default
+// OVERRIDES each member's own default budget.
 // ---------------------------------------------------------------------------
 
 export async function browserGetOrgRunBudget(_request: Request, orgId: string) {
   try {
     const user = await requireUserForApi();
-    // The backend GET requires actorUserId (owner/admin gated) as a query param.
-    const backendPath = `${marketBackendOrgRoutes.adminOrgRunBudget(orgId)}?actorUserId=${encodeURIComponent(user.id)}`;
-    return proxyToBackend(backendPath, "GET");
+    return proxyToProfile(profileOrgRoutes.orgRunBudget(orgId), "GET", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -384,14 +431,16 @@ export async function browserSetOrgRunBudget(request: Request, orgId: string) {
     const body = (await request.json()) as unknown;
 
     // Validate the browser body WITHOUT actorUserId (the browser never sends it);
-    // inject the session user's id on the Seam-B hop.
+    // Profile reads the actor from x-agentkit-user-id.
     const parsed = setOrgRunBudgetRequestSchema.omit({ actorUserId: true }).safeParse(body);
     if (!parsed.success) {
       return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
     }
 
-    const backendBody = { ...parsed.data, actorUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgRunBudget(orgId), "POST", backendBody);
+    return proxyToProfile(profileOrgRoutes.orgRunBudget(orgId), "POST", {
+      actorUserId: user.id,
+      body: parsed.data
+    });
   } catch (error) {
     return handleBrowserOrgException(error);
   }
@@ -400,9 +449,7 @@ export async function browserSetOrgRunBudget(request: Request, orgId: string) {
 export async function browserClearOrgRunBudget(_request: Request, orgId: string) {
   try {
     const user = await requireUserForApi();
-    return proxyToBackend(marketBackendOrgRoutes.adminOrgRunBudget(orgId), "DELETE", {
-      actorUserId: user.id
-    });
+    return proxyToProfile(profileOrgRoutes.orgRunBudget(orgId), "DELETE", { actorUserId: user.id });
   } catch (error) {
     return handleBrowserOrgException(error);
   }

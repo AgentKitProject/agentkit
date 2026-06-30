@@ -15,6 +15,7 @@ import type {
   EntitlementRepository,
   FavoritesRepository,
   ObjectStore,
+  OrgLookupClient,
   OrgRepository,
   PackageUploadService,
 } from '../ports.js';
@@ -70,6 +71,14 @@ export interface RouterDeps {
   repository: CatalogRepository;
   adminRepository?: AdminRepository;
   orgRepository?: OrgRepository;
+  /**
+   * Read-only org/membership lookups for the kit-coupling handlers, served by
+   * AgentKitProfile (system of record for orgs). When present, the kit-coupling
+   * authz/owner-org paths use THIS (fail-closed) instead of `orgRepository`. The
+   * org CRUD routes + kit mutations still use `orgRepository`. Absent ⇒ those
+   * paths fall back to `orgRepository` (pre-P2 behavior).
+   */
+  orgLookupClient?: OrgLookupClient;
   /** Tier-2 buyer entitlements (paid kits). Provided by the commercial composition root. */
   entitlementRepository?: EntitlementRepository;
   /** Cloud-synced kit-reference favorites. */

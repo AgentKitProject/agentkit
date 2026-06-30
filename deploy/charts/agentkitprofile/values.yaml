@@ -66,8 +66,9 @@ web:
   secrets:
     # Use an externally-managed Secret instead of the chart-managed one. When set,
     # the inline values below are ignored and envFrom references this Secret. The
-    # referenced Secret must provide DATABASE_URL, PROFILE_SERVICE_KEY, and the
-    # WorkOS keys (WORKOS_API_KEY/WORKOS_COOKIE_PASSWORD).
+    # referenced Secret must provide DATABASE_URL, PROFILE_SERVICE_KEY,
+    # PROFILE_KEY_ENCRYPTION_SECRET, and the WorkOS keys
+    # (WORKOS_API_KEY/WORKOS_COOKIE_PASSWORD).
     existingSecret: ""
     # Postgres connection string (DATABASE_URL). REQUIRED at runtime — there is no
     # bundled database. e.g. postgresql://user:pass@host:5432/agentkitprofile
@@ -76,6 +77,12 @@ web:
     # (PROFILE_SERVICE_KEY). Auto-generated + persisted when left empty (and no
     # existingSecret is set).
     profileServiceKey: ""
+    # AES-256-GCM at-rest key for org shared LLM provider keys
+    # (PROFILE_KEY_ENCRYPTION_SECRET; mirrors Market's MARKET_KEY_ENCRYPTION_SECRET).
+    # Accepts 64 hex chars, a 32-byte base64 string, or any string (hashed to 32
+    # bytes). Auto-generated + persisted when left empty (and no existingSecret is
+    # set). If unset at runtime the app stores keys in PLAINTEXT with a warning.
+    keyEncryptionSecret: ""
     # WorkOS AuthKit (required for sign-in / account management).
     workosApiKey: ""
     # Must be >= 32 chars. Generate with: openssl rand -base64 32

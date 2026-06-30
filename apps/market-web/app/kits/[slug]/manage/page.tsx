@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PageShell } from "@/components/PageShell";
-import { KitOrgControls } from "@/components/OrgsClient";
+import { KitOrgControls } from "@/components/KitOrgControls";
 import type { Organization } from "@agentkitforge/contracts";
 import Link from "next/link";
 import { Button } from "@agentkitforge/ui";

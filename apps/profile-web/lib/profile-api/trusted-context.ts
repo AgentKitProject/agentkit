@@ -28,6 +28,37 @@ export function requireTrustedContext(request: Request): TrustedContext {
   };
 }
 
+/** Service-context shape — only the validated service key, no actor identity. */
+export type ServiceContext = {
+  /** Always true once `requireServiceContext` returns (the key matched). */
+  service: true;
+};
+
+/**
+ * SERVICE-mode auth for org routes that act on an ASSERTED TARGET userId taken
+ * from the route/body (NOT a header subject). Unlike `requireTrustedContext`,
+ * this does NOT require `x-agentkit-user-id` and does NOT force header userId ==
+ * subject — the caller (Auto/Market) presents the shared service key and asserts
+ * which user to resolve / look up. Use this for:
+ *   - service resolve hot-paths (`/users/{userId}/org-api-key/resolve`,
+ *     `/users/{userId}/org-run-budget/resolve`),
+ *   - membership lookups (`GET /orgs/{orgId}/members/{userId}`),
+ *   - `ensurePersonalOrg` (`POST /users/{userId}/personal-org`).
+ *
+ * It validates ONLY the service key; per-action authorization (owner/admin role
+ * gates, the asserted-userId being the subject) is enforced by the handler.
+ */
+export function requireServiceContext(request: Request): ServiceContext {
+  const providedKey = request.headers.get("x-profile-service-key");
+  const expectedKey = getServiceKey();
+
+  if (!providedKey || providedKey !== expectedKey) {
+    throw new ApiError(401, "Unauthorized");
+  }
+
+  return { service: true };
+}
+
 /**
  * Reads `PROFILE_SERVICE_KEY` from env, tolerating either a raw string or a JSON
  * blob (mirrors the tolerance in `lib/profile/service.ts`, which is the outbound

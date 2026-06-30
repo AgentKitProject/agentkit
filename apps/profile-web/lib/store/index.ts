@@ -1,12 +1,16 @@
 import "server-only";
 import { Pool } from "pg";
 import { PostgresProfileStore } from "@/lib/store/postgres-store";
+import { PostgresOrgStore } from "@/lib/store/postgres-org-store";
 import type { ProfileStore } from "@/lib/store/store";
+import type { OrgStore } from "@/lib/store/org-store";
 
 export type { Profile, ProfileStore, PublicProfile, FullProfileResponse, Role } from "@/lib/store/store";
 export { HandleTakenError, toPublicProfile, toFullProfileResponse } from "@/lib/store/store";
+export type { OrgStore } from "@/lib/store/org-store";
 
 let cachedStore: ProfileStore | undefined;
+let cachedOrgStore: OrgStore | undefined;
 let cachedPool: Pool | undefined;
 
 /**
@@ -29,6 +33,26 @@ export function getProfileStore(): ProfileStore {
 
   cachedStore = new PostgresProfileStore(getPool());
   return cachedStore;
+}
+
+/**
+ * Returns the process-wide OrgStore (shares the ProfileStore's pool). Postgres
+ * is the only implemented backend; `PROFILE_STORE` gates it the same way.
+ */
+export function getOrgStore(): OrgStore {
+  if (cachedOrgStore) {
+    return cachedOrgStore;
+  }
+
+  const backend = (process.env.PROFILE_STORE ?? "postgres").trim().toLowerCase();
+  if (backend !== "postgres" && backend !== "") {
+    throw new Error(
+      `Unsupported PROFILE_STORE "${backend}". Only "postgres" is implemented (this deployment is Postgres-only).`,
+    );
+  }
+
+  cachedOrgStore = new PostgresOrgStore(getPool());
+  return cachedOrgStore;
 }
 
 function getPool(): Pool {

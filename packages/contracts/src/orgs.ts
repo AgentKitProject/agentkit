@@ -144,6 +144,18 @@ export const acceptOrgInviteRequestSchema = z.object({
 });
 export type AcceptOrgInviteRequest = z.infer<typeof acceptOrgInviteRequestSchema>;
 
+/**
+ * Body of POST /users/{userId}/personal-org (Profile seam, service-key auth).
+ * Idempotently ensures the user's personal org, using `displayName` for the org
+ * name (and slug derivation) when the personal org is first created. The target
+ * userId is the path parameter — never read from the body — so this is safe to
+ * call with an asserted service-context userId.
+ */
+export const ensurePersonalOrgRequestSchema = z.object({
+  displayName: z.string().min(1).max(80)
+});
+export type EnsurePersonalOrgRequest = z.infer<typeof ensurePersonalOrgRequestSchema>;
+
 export const transferKitRequestSchema = z.object({
   kitId: z.string().min(1),
   targetOrgId: z.string().min(1)
@@ -316,6 +328,91 @@ export const marketBackendOrgRoutes = {
    */
   adminResolveUserOrgRunBudget: (userId: string) =>
     `/admin/users/${encodeURIComponent(userId)}/org-run-budget/resolve`
+} as const;
+
+// ---------------------------------------------------------------------------
+// Route builders (Profile seam — consumers ↔ AgentKitProfile, rooted at Profile)
+//
+// AgentKitProfile is becoming the system of record for org entities (orgs,
+// memberships, invites, shared provider keys, run budgets). These are the routes
+// AgentKitProfile SERVES. Two inbound auth modes back them (see the Profile-web
+// trusted-context):
+//   - per-user trusted-context (browser-originated CRUD): x-profile-service-key
+//     + x-agentkit-user-id, where the header userId IS the actor;
+//   - service-context (Auto/Market resolve hot-paths + membership lookups):
+//     x-profile-service-key + an ASSERTED TARGET userId taken from the route/body
+//     (the header userId is NOT forced to equal the subject).
+// The resolve/status response shapes are the EXISTING ones (resolvedOrgApiKey*,
+// resolvedOrgRunBudget*, orgApiKeyStatus*, orgRunBudgetStatus*) so P2 consumers
+// parse unchanged.
+// ---------------------------------------------------------------------------
+
+export const profileOrgRoutes = {
+  // --- org CRUD ---
+  /** POST /orgs — create a team org (body: createOrgRequestSchema + ownerUserId). */
+  createOrg: () => "/orgs",
+  /** GET /orgs/{orgId} — fetch a single org. */
+  getOrg: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}`,
+  /** DELETE /orgs/{orgId} — delete a team org (owner/admin gated; body: actorUserId). */
+  deleteOrg: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}`,
+  /** GET /orgs/by-slug/{slug} — public org shape by slug (unauth-safe). */
+  getOrgBySlug: (slug: string) => `/orgs/by-slug/${encodeURIComponent(slug)}`,
+
+  // --- members ---
+  /** GET (list) / POST (add) /orgs/{orgId}/members. */
+  orgMembers: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}/members`,
+  /** DELETE /orgs/{orgId}/members/{userId} — remove a member (owner/admin gated). */
+  orgMember: (orgId: string, userId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
+  /** GET /orgs/{orgId}/members/{userId} — hot membership check → {role,status}|404. */
+  getMembership: (orgId: string, userId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
+
+  // --- invites ---
+  /** POST /orgs/{orgId}/invites/email — invite an as-yet-unregistered email. */
+  createEmailInvite: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/invites/email`,
+  /** POST /orgs/{orgId}/invites/{userId}/accept — accept a pending invite. */
+  acceptInvite: (orgId: string, userId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/invites/${encodeURIComponent(userId)}/accept`,
+  /** GET /users/{userId}/invites — pending invites for a user. */
+  listUserInvites: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/invites`,
+  /** POST /users/{userId}/invites/claim — claim pending email invites on first login. */
+  claimInvites: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/invites/claim`,
+
+  // --- user → orgs + personal org ---
+  /** GET /users/{userId}/orgs — orgs the user belongs to. */
+  listUserOrgs: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/orgs`,
+  /** POST /users/{userId}/personal-org — idempotently ensure the user's personal org. */
+  ensurePersonalOrg: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/personal-org`,
+
+  // --- org shared provider key (encrypted at rest) ---
+  /** POST (set) / DELETE (clear `?providerType=`) /orgs/{orgId}/api-key (owner/admin). */
+  orgApiKey: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}/api-key`,
+  /** GET /orgs/{orgId}/api-key/status — masked status of all providers (owner/admin). */
+  orgApiKeyStatus: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/api-key/status`,
+  /**
+   * GET /users/{userId}/org-api-key/resolve?providerType=... — service-context
+   * runtime resolve (decrypted). Returns resolvedOrgApiKeySchema. Fail-open
+   * (`{ found:false }`) on no/ambiguous match.
+   */
+  resolveUserOrgApiKey: (userId: string, providerType: string) =>
+    `/users/${encodeURIComponent(userId)}/org-api-key/resolve?providerType=${encodeURIComponent(providerType)}`,
+
+  // --- org default run budget ---
+  /** GET (read) / POST (set) / DELETE (clear) /orgs/{orgId}/run-budget (owner/admin). */
+  orgRunBudget: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}/run-budget`,
+  /**
+   * GET /users/{userId}/org-run-budget/resolve — service-context runtime resolve.
+   * Returns resolvedOrgRunBudgetSchema. Fail-open (`{ found:false }`).
+   */
+  resolveUserOrgRunBudget: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/org-run-budget/resolve`
 } as const;
 
 // ---------------------------------------------------------------------------

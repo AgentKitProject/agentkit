@@ -30,7 +30,7 @@ const SECTION_ICONS: Record<AutoSectionId, ReactNode> = {
   settings: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13.5a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00-1.2-2.9H3a2 2 0 110-4h.1a1.7 1.7 0 001.2-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3 1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9 1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" /></svg>),
 };
 
-// Building/org icon for the external "Organization" link (settings live in Market).
+// Building/org icon for the external "Organization" link (settings live in Profile).
 const ORG_ICON: ReactNode = (
   <svg viewBox="0 0 24 24" width={18} height={18} {...stroke}>
     <path d="M3 21h18M5 21V5a1 1 0 011-1h7a1 1 0 011 1v16M14 21V9h4a1 1 0 011 1v11" />
@@ -46,11 +46,13 @@ type Toast = { msg: string; err: boolean } | null;
 export function AutoApp({
   user,
   marketUrl,
+  profileUrl,
   marketEnabled,
   allowedProviders
 }: {
   user: { id: string; email: string };
   marketUrl?: string;
+  profileUrl?: string;
   marketEnabled?: boolean;
   /** Provider-lock: the AI provider types this deployment permits, or null when
    *  unrestricted. The settings UI hides disallowed BYO options. */
@@ -98,13 +100,14 @@ export function AutoApp({
     active: section === s.id,
     onClick: () => setSection(s.id)
   }));
-  // Discoverability link out to Market, where org settings live. Only when a
-  // Market URL is configured (omitted on a Market-less self-host).
-  if (marketUrl) {
+  // Discoverability link out to AgentKitProfile, where org settings now live
+  // (Profile is the system of record for org management). Only when a Profile
+  // URL is configured (omitted on a Profile-less self-host).
+  if (profileUrl) {
     navItems.push({
       label: "Organization",
       icon: ORG_ICON,
-      href: `${marketUrl}/orgs`,
+      href: `${profileUrl}/account/orgs`,
       external: true
     });
   }

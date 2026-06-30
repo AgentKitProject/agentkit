@@ -31,6 +31,7 @@ import type {
   CatalogRepository,
   FavoritesRepository,
   OrgKeyProviderType,
+  OrgLookupClient,
   OrgProviderKeyRecord,
   OrgRunBudgetRecord,
   OrgRepository,
@@ -144,9 +145,13 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       const adminRepository = deps.adminRepository as AdminRepository;
       const packageUploadService = deps.packageUploadService as PackageUploadService;
+      // Org/membership lookups for the kit-coupling paths come from Profile when
+      // an OrgLookupClient is injected (P2 — AgentKitProfile is the org system of
+      // record; fail-closed), else fall back to the local OrgRepository (pre-P2).
+      const orgLookup = deps.orgLookupClient ?? deps.orgRepository;
 
       if (request.method === 'POST' && request.resource === '/admin/submissions/upload-url') {
-        return createSubmissionUploadUrl(request, adminRepository, packageUploadService, allowedOrigins, deps.orgRepository);
+        return createSubmissionUploadUrl(request, adminRepository, packageUploadService, allowedOrigins, orgLookup);
       }
 
       if (request.method === 'POST' && request.resource === '/admin/submissions/{submissionId}/validate') {
@@ -185,7 +190,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'POST' && request.resource === '/admin/submissions/{submissionId}/publish') {
         const submissionId = request.pathParameters?.submissionId ?? '';
-        return withAudit(deps, request, () => publishAdminSubmission(request, adminRepository, allowedOrigins, deps.orgRepository),
+        return withAudit(deps, request, () => publishAdminSubmission(request, adminRepository, allowedOrigins, orgLookup),
           (body) => {
             const kitId = (body as { item?: { kitId?: string } })?.item?.kitId;
             return { action: 'submission.published', targetType: 'submission', targetId: submissionId, actorType: 'admin', metadata: { kitId: kitId ?? null } };
@@ -220,7 +225,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'POST' && request.resource === '/users/kits/{kitId}/remove') {
         const kitId = request.pathParameters?.kitId ?? '';
-        return withAudit(deps, request, () => removeOwnKit(request, adminRepository, allowedOrigins, deps.orgRepository),
+        return withAudit(deps, request, () => removeOwnKit(request, adminRepository, allowedOrigins, orgLookup),
           () => ({ action: 'kit.removed', targetType: 'kit', targetId: kitId }));
       }
 
@@ -257,7 +262,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
       }
 
       if (request.method === 'GET' && request.resource === '/admin/orgs/{orgId}/kits') {
-        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => listOrgKitsHandler(request, repo, allowedOrigins));
+        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => listOrgKitsHandler(request, repo, orgLookup as OrgLookupClient, allowedOrigins));
       }
 
       if (request.resource === '/admin/orgs/{orgId}/members') {
@@ -312,7 +317,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'POST' && request.resource === '/admin/kits/{kitId}/transfer') {
         const kitId = request.pathParameters?.kitId ?? '';
-        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => transferKitHandler(request, adminRepository, repo, allowedOrigins)),
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => transferKitHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins)),
           () => {
             const b = auditBody();
             const targetOrgId = typeof b?.targetOrgId === 'string' ? (b.targetOrgId as string) : null;
@@ -322,7 +327,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'POST' && request.resource === '/admin/kits/{kitId}/visibility') {
         const kitId = request.pathParameters?.kitId ?? '';
-        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setKitVisibilityHandler(request, adminRepository, repo, allowedOrigins)),
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setKitVisibilityHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins)),
           () => {
             const b = auditBody();
             const visibility = typeof b?.visibility === 'string' ? (b.visibility as string) : null;
@@ -465,7 +470,7 @@ async function createSubmissionUploadUrl(
   adminRepository: AdminRepository,
   packageUploadService: PackageUploadService,
   allowedOrigins: string[],
-  orgRepository: OrgRepository | undefined,
+  orgLookup: OrgLookupClient | undefined,
 ): Promise<CoreResponse> {
   const body = parseJsonBody(request);
   const validationError = validateUploadUrlRequest(body);
@@ -526,8 +531,8 @@ async function createSubmissionUploadUrl(
   // Resolve the owning org. New kits default to the submitter's personal org
   // (auto-created on first submit). An explicit ownerOrgId is honored only when
   // the submitter is an active member of that org; otherwise it is dropped.
-  if (orgRepository && input.submittedByUserId) {
-    const resolvedOrgId = await resolveSubmissionOwnerOrg(orgRepository, input);
+  if (orgLookup && input.submittedByUserId) {
+    const resolvedOrgId = await resolveSubmissionOwnerOrg(orgLookup, input);
     input.ownerOrgId = resolvedOrgId;
   }
 
@@ -787,7 +792,7 @@ async function publishAdminSubmission(
   request: CoreRequest,
   adminRepository: AdminRepository,
   allowedOrigins: string[],
-  orgRepository: OrgRepository | undefined,
+  orgLookup: OrgLookupClient | undefined,
 ): Promise<CoreResponse> {
   const submissionId = request.pathParameters?.submissionId;
   if (!submissionId) {
@@ -825,8 +830,8 @@ async function publishAdminSubmission(
       return json(request, allowedOrigins, 403, { message: 'Only the kit owner can publish a new version' });
     }
     let mayPublish = targetKit.ownerUserId === submitter;
-    if (!mayPublish && orgRepository) {
-      const membership = await resolveKitMembership(orgRepository, targetKit, submitter);
+    if (!mayPublish && orgLookup) {
+      const membership = await resolveKitMembership(orgLookup, targetKit, submitter);
       // owner/admin/member may publish; viewer is read-only.
       mayPublish = !!membership && membership.role !== 'viewer';
     }
@@ -851,8 +856,8 @@ async function publishAdminSubmission(
 
   // Auto-create the submitter's personal org and default the kit's owning org to
   // it on first publish (new_kit) when no ownerOrgId was carried on the submission.
-  if (!isVersionUpdate && orgRepository && submission.submittedByUserId && !submission.ownerOrgId) {
-    const personal = await orgRepository.ensurePersonalOrg(
+  if (!isVersionUpdate && orgLookup && submission.submittedByUserId && !submission.ownerOrgId) {
+    const personal = await orgLookup.ensurePersonalOrg(
       submission.submittedByUserId,
       submission.publisherId || submission.submittedByUserId,
     );
@@ -977,7 +982,7 @@ async function removeOwnKit(
   request: CoreRequest,
   adminRepository: AdminRepository,
   allowedOrigins: string[],
-  orgRepository: OrgRepository | undefined,
+  orgLookup: OrgLookupClient | undefined,
 ): Promise<CoreResponse> {
   const kitId = request.pathParameters?.kitId;
   if (!kitId) {
@@ -997,8 +1002,8 @@ async function removeOwnKit(
   // Org-aware: an active owner/admin of the kit's owning org may remove it.
   // Legacy kits (no ownerOrgId) fall back to the recorded ownerUserId.
   let mayRemove = existingKit.ownerUserId === actorUserId;
-  if (!mayRemove && orgRepository) {
-    const membership = await resolveKitMembership(orgRepository, existingKit, actorUserId);
+  if (!mayRemove && orgLookup) {
+    const membership = await resolveKitMembership(orgLookup, existingKit, actorUserId);
     mayRemove = !!membership && MANAGE_ROLES.has(membership.role);
   }
   if (!mayRemove) {
@@ -1124,12 +1129,12 @@ function withOrgRepo(
  * Returns the active membership if the actor may act, else undefined.
  */
 async function resolveKitMembership(
-  orgRepository: OrgRepository,
+  orgLookup: OrgLookupClient,
   kit: KitRecord,
   actorUserId: string,
 ): Promise<{ orgId: string; role: OrgRole } | undefined> {
   if (kit.ownerOrgId) {
-    const membership = await orgRepository.getMembership(kit.ownerOrgId, actorUserId);
+    const membership = await orgLookup.getMembership(kit.ownerOrgId, actorUserId);
     if (membership && membership.status === 'active') {
       return { orgId: kit.ownerOrgId, role: membership.role };
     }
@@ -1148,17 +1153,17 @@ async function resolveKitMembership(
  * explicit ownerOrgId only when the submitter is an active member there.
  */
 async function resolveSubmissionOwnerOrg(
-  orgRepository: OrgRepository,
+  orgLookup: OrgLookupClient,
   input: CreateSubmissionInput,
 ): Promise<string | undefined> {
   const userId = input.submittedByUserId;
   if (!userId) {
     return undefined;
   }
-  const personal = await orgRepository.ensurePersonalOrg(userId, input.publisherId || userId);
+  const personal = await orgLookup.ensurePersonalOrg(userId, input.publisherId || userId);
 
   if (input.ownerOrgId && input.ownerOrgId !== personal.orgId) {
-    const membership = await orgRepository.getMembership(input.ownerOrgId, userId);
+    const membership = await orgLookup.getMembership(input.ownerOrgId, userId);
     if (membership && membership.status === 'active') {
       return input.ownerOrgId;
     }
@@ -1211,6 +1216,7 @@ async function listUserOrgsHandler(
 async function listOrgKitsHandler(
   request: CoreRequest,
   orgRepository: OrgRepository,
+  orgLookup: OrgLookupClient,
   allowedOrigins: string[],
 ): Promise<CoreResponse> {
   const orgId = request.pathParameters?.orgId;
@@ -1224,14 +1230,16 @@ async function listOrgKitsHandler(
   if (!actorUserId) {
     return json(request, allowedOrigins, 400, { message: 'actorUserId query parameter is required' });
   }
-  const org = await orgRepository.getOrg(orgId);
+  // Membership gate from Profile (fail-closed: a rejection here surfaces as 500).
+  const org = await orgLookup.getOrg(orgId);
   if (!org) {
     return json(request, allowedOrigins, 404, { message: 'Organization not found' });
   }
-  const membership = await orgRepository.getMembership(orgId, actorUserId);
+  const membership = await orgLookup.getMembership(orgId, actorUserId);
   if (!membership || membership.status !== 'active') {
     return json(request, allowedOrigins, 403, { message: 'You must be an active member of this organization' });
   }
+  // Kit listing stays on the kits table (OrgRepository).
   const kits = await orgRepository.listKitsForOrg(orgId);
   return json(request, allowedOrigins, 200, { items: kits });
 }
@@ -1449,6 +1457,7 @@ async function transferKitHandler(
   request: CoreRequest,
   adminRepository: AdminRepository,
   orgRepository: OrgRepository,
+  orgLookup: OrgLookupClient,
   allowedOrigins: string[],
 ): Promise<CoreResponse> {
   const kitId = request.pathParameters?.kitId;
@@ -1470,23 +1479,24 @@ async function transferKitHandler(
     return json(request, allowedOrigins, 404, { message: 'Kit not found' });
   }
 
-  // Actor must manage the kit's current owning org (owner/admin).
-  const current = await resolveKitMembership(orgRepository, kit, actorUserId);
+  // Actor must manage the kit's current owning org (owner/admin). Membership/org
+  // lookups come from Profile (fail-closed: a rejection surfaces as 500).
+  const current = await resolveKitMembership(orgLookup, kit, actorUserId);
   if (!current || !MANAGE_ROLES.has(current.role)) {
     return json(request, allowedOrigins, 403, { message: 'Only an owner or admin of the kit can transfer it' });
   }
 
   // Actor must be an active member of the target org.
-  const target = await orgRepository.getOrg(parsed.data.targetOrgId);
+  const target = await orgLookup.getOrg(parsed.data.targetOrgId);
   if (!target) {
     return json(request, allowedOrigins, 404, { message: 'Target organization not found' });
   }
-  const targetMembership = await orgRepository.getMembership(parsed.data.targetOrgId, actorUserId);
+  const targetMembership = await orgLookup.getMembership(parsed.data.targetOrgId, actorUserId);
   if (!targetMembership || targetMembership.status !== 'active') {
     return json(request, allowedOrigins, 403, { message: 'You must be a member of the target organization' });
   }
 
-  // Sets ownerOrgId only; frozen publisher snapshots on published versions are untouched.
+  // Sets ownerOrgId only (kits table); frozen publisher snapshots on published versions are untouched.
   const updated = await orgRepository.setKitOwnerOrg(kitId, parsed.data.targetOrgId);
   return json(request, allowedOrigins, 200, {
     item: { kitId, ownerOrgId: updated?.ownerOrgId ?? parsed.data.targetOrgId, updatedAt: updated?.updatedAt ?? null },
@@ -1497,6 +1507,7 @@ async function setKitVisibilityHandler(
   request: CoreRequest,
   adminRepository: AdminRepository,
   orgRepository: OrgRepository,
+  orgLookup: OrgLookupClient,
   allowedOrigins: string[],
 ): Promise<CoreResponse> {
   const kitId = request.pathParameters?.kitId;
@@ -1517,11 +1528,13 @@ async function setKitVisibilityHandler(
   if (!kit) {
     return json(request, allowedOrigins, 404, { message: 'Kit not found' });
   }
-  const membership = await resolveKitMembership(orgRepository, kit, actorUserId);
+  // Membership lookup from Profile (fail-closed: a rejection surfaces as 500).
+  const membership = await resolveKitMembership(orgLookup, kit, actorUserId);
   if (!membership || !MANAGE_ROLES.has(membership.role)) {
     return json(request, allowedOrigins, 403, { message: 'Only an owner or admin of the kit can change visibility' });
   }
 
+  // Mutation stays on the kits table (OrgRepository).
   const updated = await orgRepository.setKitVisibility(kitId, parsed.data.visibility as KitVisibility);
   return json(request, allowedOrigins, 200, {
     item: { kitId, visibility: updated?.visibility ?? parsed.data.visibility, updatedAt: updated?.updatedAt ?? null },

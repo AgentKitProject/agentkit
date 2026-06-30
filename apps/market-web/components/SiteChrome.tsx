@@ -110,7 +110,6 @@ const ROUTE_TITLES: { prefix: string; title: string; label: string; icon: ReactN
   { prefix: "/submit", title: "Submit", label: "Submit", icon: ICONS.submit },
   { prefix: "/submissions", title: "My submissions", label: "My Submissions", icon: ICONS.submissions },
   { prefix: "/purchases", title: "Purchases", label: "Purchases", icon: ICONS.purchases },
-  { prefix: "/orgs", title: "Organizations", label: "Organizations", icon: ICONS.orgs },
   { prefix: "/admin", title: "Admin", label: "Admin", icon: ICONS.admin },
 ];
 
@@ -156,9 +155,21 @@ export function SiteChrome({
     active: isActive(pathname, r.prefix),
   }));
 
-  // Docs is the single allowed external link (hosted + self-host). Forge/Auto
-  // cross-links are intentionally NOT surfaced in the sidebar.
+  // Organizations now live in AgentKitProfile (the system of record for org
+  // management). Surface it as an EXTERNAL link to Profile's /orgs, gated on a
+  // Profile URL being configured (self-host without a Profile hides it).
   const nav: SidebarNavItem[] = [...localNav];
+  if (links.profileUrl) {
+    nav.push({
+      label: "Organizations",
+      href: `${links.profileUrl}/account/orgs`,
+      icon: ICONS.orgs,
+      external: true,
+    });
+  }
+
+  // Docs is an allowed external link (hosted + self-host). Forge/Auto
+  // cross-links are intentionally NOT surfaced in the sidebar.
   if (links.docsUrl) {
     nav.push({ label: "Docs", href: links.docsUrl, icon: ICONS.docs, external: true });
   }
