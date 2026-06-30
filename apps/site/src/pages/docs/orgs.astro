@@ -1,0 +1,104 @@
+---
+import DocsLayout from '../../layouts/DocsLayout.astro';
+import { profileUrl } from '../../data/products';
+---
+<DocsLayout
+  title="Organizations"
+  eyebrow="Products"
+  description="Teams, roles, member invites, shared keys, and budgets — managed in Profile, on hosted and self-host alike."
+>
+  <p>
+    An <strong>organization</strong> is a team that shares ownership and governance across
+    the ecosystem. Organizations are managed in <a href={profileUrl}>AgentKitProfile</a> —
+    Profile is the <strong>system of record for orgs</strong> on both hosted and
+    self-hosted installs. Market still owns kit ownership and visibility, but it
+    <strong>resolves org membership from Profile</strong>.
+  </p>
+
+  <h2>What an org gives you</h2>
+  <ul>
+    <li><strong>Shared membership</strong> — invite teammates and manage their roles.</li>
+    <li><strong>A shared Anthropic API key</strong> — one org key Auto and Forge can fall back to.</li>
+    <li><strong>Spend governance</strong> — a per-run budget override plus monthly usage limits.</li>
+    <li><strong>Private kit catalogs</strong> — kits owned by the org can be kept private (in Market).</li>
+  </ul>
+
+  <h2>Roles</h2>
+  <p>Every member of an org has one of three roles:</p>
+  <table>
+    <thead>
+      <tr><th>Role</th><th>Can do</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Owner</strong></td><td>Everything an admin can, plus manage owners and delete the org. The creator is the first owner.</td></tr>
+      <tr><td><strong>Admin</strong></td><td>Invite and remove members, change member roles, set the org API key, and set the per-run budget and monthly limits.</td></tr>
+      <tr><td><strong>Member</strong></td><td>Belongs to the org and can use its shared resources (e.g. the shared API key and org-owned kits) within the org's limits.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Inviting members</h2>
+  <p>
+    Owners and admins invite teammates <strong>by email</strong> from the org management UI.
+    An invite is <strong>claimed on login</strong>: when the invited person signs in with
+    that email for the first time, they are added to the org with the role you chose. This
+    works the same on hosted and self-host (where identities come from your OIDC IdP).
+  </p>
+
+  <h2>Org Anthropic API key</h2>
+  <p>
+    An org can hold a single shared Anthropic API key. Auto (and Web Forge) fall back to it
+    when a member has not supplied their own key. Key resolution follows a clear precedence:
+  </p>
+  <pre><code>member's own key  →  org shared key  →  operator key</code></pre>
+  <p>
+    A member's personal key always wins; the org key is the team fallback; and the operator
+    key (configured by whoever runs the install) is the last resort. The shared key is
+    stored encrypted at rest in Profile.
+  </p>
+
+  <h2>Per-run budget</h2>
+  <p>
+    An org can set a <strong>per-run budget override</strong> that bounds the cost of each
+    individual Auto run. This is a guardrail on a single run and is independent of the
+    monthly limits below — both apply.
+  </p>
+
+  <h2>Monthly limits</h2>
+  <p>
+    Owners and admins can set <strong>monthly usage limits</strong> for the org. Two pools
+    are available, each expressed in <strong>dollars</strong> and/or
+    <strong>active-minutes</strong>:
+  </p>
+  <ul>
+    <li><strong>Org-wide pool</strong> — a cap across all members combined.</li>
+    <li><strong>Per-member cap</strong> — a cap each individual member may use.</li>
+  </ul>
+  <p>
+    Leave any field <strong>blank for unlimited</strong>. Limits reset at the start of each
+    calendar month (<strong>UTC</strong>). A new Auto run is <strong>blocked before it
+    starts</strong> (a pre-run gate on the run's estimated cost) when any set cap has been
+    reached; the per-run budget continues to bound each run that does start.
+  </p>
+  <div class="docs-note">
+    <strong>Self-host &amp; fail-open.</strong> Monthly limits apply on self-hosted installs
+    too, as governance over each run's estimated cost. Enforcement <strong>fails
+    open</strong> — if Profile is unreachable, runs are never blocked.
+  </div>
+
+  <h2>Private kits</h2>
+  <p>
+    Kit ownership and visibility stay in <a href="/docs/market/">Market</a>. A kit owned by
+    an org can be marked <strong>private</strong> — excluded from the public catalog and
+    visible only within the owning org. Market resolves who is "within the org" by checking
+    membership in Profile.
+  </p>
+
+  <h2>Self-hosting</h2>
+  <p>
+    Organizations are part of the open-core stack and work on a self-hosted install. Profile
+    is the org system of record there too; deploy the <code>agentkitprofile</code> chart and
+    wire Market, Auto, and Web Forge to it. See
+    <a href="/docs/self-hosting/">Self-hosting on Kubernetes</a> and the full
+    <code>deploy/SELF_HOSTING.md</code> guide.
+  </p>
+</DocsLayout>

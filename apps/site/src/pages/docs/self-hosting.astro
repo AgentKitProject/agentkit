@@ -28,7 +28,7 @@ import { githubOrgUrl } from '../../data/products';
       <tr><td><code>agentkitmarket</code></td><td>Self-hosted Market: web UI + API server + background worker, with optional bundled Postgres / MinIO / Redis.</td></tr>
       <tr><td><code>agentkitforge-web</code></td><td>Self-hosted Web Forge (Next.js standalone, <code>KITSTORE_BACKEND=selfhost</code>) with bundled Postgres + MinIO.</td></tr>
       <tr><td><code>agentkitauto</code></td><td>Self-hosted AgentKitAuto with an in-cluster Kubernetes Job-per-run worker, bundled Postgres + MinIO.</td></tr>
-      <tr><td><code>agentkitprofile</code></td><td><strong>Optional</strong> — public profile pages (<code>/u/&lt;handle&gt;</code>). Not required: user identity and publisher display names already come from your OIDC IdP.</td></tr>
+      <tr><td><code>agentkitprofile</code></td><td>Account hub (display name, handle, security, connected apps) and the <strong>system of record for organizations</strong> (members, roles, invites, shared API key, budgets). Required only if you want orgs / public profile pages (<code>/u/&lt;handle&gt;</code>); for a single user, identity and publisher names already come from your OIDC IdP.</td></tr>
       <tr><td><code>agentkitgateway</code></td><td>Managed-inference gateway: in-cluster inference + credit ledger service.</td></tr>
     </tbody>
   </table>
@@ -43,7 +43,8 @@ import { githubOrgUrl } from '../../data/products';
     <li><strong>Users live in your IdP</strong> — there's no in-app signup or user table. The first OIDC sign-in provisions a session from the token claims; you onboard and offboard users in your IdP.</li>
     <li><strong>Admins</strong> are resolved by OIDC group (<code>ADMIN_OIDC_GROUP</code>) and/or an email allowlist (<code>ADMIN_EMAILS</code>).</li>
     <li><strong>Display names &amp; publisher attribution come from the IdP</strong>, so kit submission works <strong>without</strong> running the optional Profile service — leave <code>PROFILE_API_BASE_URL</code> unset.</li>
-    <li>By default the catalog is <strong>public</strong> (login only gates submit, admin review, and browser-initiated downloads). Set <code>REQUIRE_LOGIN=true</code> to make the whole instance private — every request then requires a signed-in IdP user.</li>
+    <li>On self-host, sign-in is <strong>required by default</strong>: when <code>AUTH_PROVIDER=oidc</code> (or <code>SELF_HOST=true</code>), Market defaults to <code>REQUIRE_LOGIN=true</code>, so there is no anonymous catalog. Set <code>REQUIRE_LOGIN=false</code> if you want a public self-hosted catalog (login then only gates submit, admin review, and browser-initiated downloads); the hosted public catalog is unchanged.</li>
+    <li>Set the cross-app links (<code>NEXT_PUBLIC_FORGE_URL</code>, <code>NEXT_PUBLIC_MARKET_URL</code>, <code>NEXT_PUBLIC_AUTO_URL</code>, <code>NEXT_PUBLIC_PROFILE_URL</code>) so the shared sidebar switcher surfaces the other apps — unset links are simply hidden, and the Docs tab is always available.</li>
   </ul>
 
   <h2>Bring your own key</h2>

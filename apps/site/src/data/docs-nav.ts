@@ -82,6 +82,11 @@ export const DOCS_SECTIONS: DocSection[] = [
         title: 'Profile',
         href: '/docs/profile/',
         summary: 'Shared account and identity across the ecosystem.'
+      },
+      {
+        title: 'Organizations',
+        href: '/docs/orgs/',
+        summary: 'Teams, roles, invites, shared keys, and budgets — managed in Profile.'
       }
     ]
   },

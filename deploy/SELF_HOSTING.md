@@ -52,9 +52,17 @@ Key facts:
 - Each app brings its **own** bundled Postgres + MinIO (single-replica, fine for a
   self-host node; point at external instances for HA). Market additionally brings a
   bundled Redis for its validation queue.
-- **Public Market catalog browsing needs no login.** OIDC only gates sign-in, admin
-  review, submit, and browser-initiated downloads. Forge-web and Auto require sign-in
-  for their authenticated surfaces.
+- **Self-host Market requires sign-in by default.** With OIDC / self-host mode the
+  catalog defaults to `REQUIRE_LOGIN=true` (no anonymous browsing). Set
+  `REQUIRE_LOGIN=false` for a public self-hosted catalog — login then only gates
+  sign-in, admin review, submit, and browser-initiated downloads. See §10a. Forge-web
+  and Auto always require sign-in for their authenticated surfaces.
+- **Organizations are managed in AgentKitProfile.** Profile is the system of record for
+  orgs (members, roles, email invites, org shared API key, per-run budget, monthly
+  limits) on self-host as well as hosted. Run the optional `agentkitprofile` chart and
+  wire the other apps to it (§6d, §7) if you want orgs; a single user needs nothing
+  extra. Org spend governance — including monthly limits — applies on self-host and
+  **fails open** (a Profile outage never blocks runs).
 - **Auto is BYO-LLM.** Each Auto run executes in a one-shot Kubernetes Job using the
   operator's own `ANTHROPIC_API_KEY` — no managed credits, gateway, or metering.
 
@@ -446,6 +454,73 @@ Postgres.
 > and `MINIO_ROOT_PASSWORD` (and, for Auto, `AUTO_WORKER_SERVICE_KEY` +
 > `ANTHROPIC_API_KEY`) — see §5.
 
+### 6d. AgentKitProfile (identity + organizations) — optional
+
+Profile is the **account hub** (display name, handle, security, connected apps) and the
+**system of record for organizations** (members, roles `owner`/`admin`/`member`, email
+invites claimed on login, an org-level Anthropic API key, a per-run budget override, and
+monthly usage limits). A single user or small team does **not** need it — identity and
+publisher display names already come from your OIDC IdP (§4). **Deploy Profile when you
+want organizations** (shared team keys, org budgets, private org catalogs) or the public
+`/u/<handle>` pages.
+
+Profile's database can be **bundled** (opt-in Postgres on a PVC) or external. For a
+turnkey self-host, enable the bundled Postgres; the chart runs an idempotent migrate Job
+(pre-install/upgrade hook) before the app rolls out. For the **bundled plaintext**
+Postgres, set `PROFILE_DB_SSL=disable` (no TLS).
+
+```yaml
+# profile-values.yaml  (keep out of git)
+image:
+  tag: "v0.7.7"
+web:
+  authProvider: oidc
+  config:
+    appUrl: https://profile.example.com
+    profileDbSsl: disable          # bundled plaintext Postgres → no TLS
+    oidc:
+      issuer: https://idp.example.com
+      clientId: agentkitprofile
+  secrets:
+    oidcClientSecret: "<profile client secret from your IdP>"
+    # PROFILE_SERVICE_KEY is generated + persisted by the chart, BUT it must be
+    # the SAME value the market / auto / forge-web charts carry (see §7). Set it
+    # explicitly here (and on the other charts) if you want to pin a shared value.
+    # profileServiceKey: "<shared value>"
+  ingress:
+    enabled: true
+    className: traefik
+    host: profile.example.com
+postgres:
+  enabled: true                    # bundled in-cluster Postgres on a PVC
+```
+
+```bash
+helm install agentkitprofile ./deploy/charts/agentkitprofile \
+  -f deploy/charts/agentkitprofile/values-k3s.yaml \
+  -f profile-values.yaml \
+  --namespace agentkit
+```
+
+The **OIDC client** for Profile uses the same redirect-URI convention as the other apps:
+**`<appUrl>/auth/callback`** (e.g. `https://profile.example.com/auth/callback`). Register
+one client (suggested id `agentkitprofile`) in your IdP — see §4.
+
+**Required secrets** (chart-managed by default; supply via `web.secrets` or an
+`existingSecret`):
+
+| Key | Notes |
+|---|---|
+| `OIDC_CLIENT_SECRET` | From your IdP (OIDC mode). |
+| `SESSION_SECRET` | iron-session cookie secret, ≥ 32 chars. Auto-generated if empty. |
+| `PROFILE_SERVICE_KEY` | Shared bearer the other apps present to the profile-api. **Must byte-match** the value on market / auto / forge-web (§7). Auto-generated + persisted if empty. |
+| `PROFILE_KEY_ENCRYPTION_SECRET` | AES-256-GCM at-rest key for org shared LLM keys. Auto-generated + persisted if empty; if unset at runtime, org keys are stored in plaintext with a warning. |
+| `POSTGRES_PASSWORD` | Bundled Postgres reads it (when `postgres.enabled=true`); `DATABASE_URL` is auto-composed from it. For an external DB, set `DATABASE_URL` instead. |
+
+> **External DB instead of bundled.** Leave `postgres.enabled=false` (the default) and
+> set `web.secrets.databaseUrl` (`DATABASE_URL`) to your managed Postgres connection
+> string; an explicit `DATABASE_URL` always wins over the bundled Postgres.
+
 ---
 
 ## 7. Wiring the apps together
@@ -462,16 +537,40 @@ forge-web and auto (done in the values files above) to enable kit import / favor
 licensed flows against your own Market. Leaving `marketBaseUrl` **empty** keeps Market
 **OFF** (no phone-home; the only correct default if you are not running Market).
 
-For cross-app navigation links in the UI, set the ecosystem-link overrides on
-forge-web and auto (unset links are hidden on self-host):
+### Wiring to Profile (organizations)
+
+If you run Profile (§6d), point the other apps at it so they can resolve org membership
+and surface the account/orgs UI. There are **two** URLs per app:
+
+- **`PROFILE_API_BASE_URL`** — the **in-cluster** Profile **Service** URL, used
+  server-side to resolve org membership, the org shared key, and budgets. With Profile
+  released as `agentkitprofile` in namespace `agentkit`, that is
+  `http://agentkitprofile-web.agentkit.svc.cluster.local:80`.
+- **`NEXT_PUBLIC_PROFILE_URL`** — the **browser** URL of Profile (e.g.
+  `https://profile.example.com`), used for cross-app navigation links.
+
+Set `PROFILE_API_BASE_URL` on market / auto / forge-web (server-side org resolution),
+and make sure all four apps (Profile included) carry the **same** `PROFILE_SERVICE_KEY`
+(§6d) so those server-to-server calls authenticate. Org resolution **fails open**: if
+Profile is unset or unreachable, org features no-op and runs are never blocked.
+
+### Cross-app switcher links
+
+The apps share one sidebar `AppShell` with a standard cross-app **switcher**
+(Forge / Market / Auto / Account), a collapsible sidebar, a Docs tab, and a standard
+account block. On self-host, the switcher surfaces a link **only** when the operator sets
+the corresponding URL — `NEXT_PUBLIC_FORGE_URL`, `NEXT_PUBLIC_MARKET_URL`,
+`NEXT_PUBLIC_AUTO_URL`, `NEXT_PUBLIC_PROFILE_URL`. Unset links are hidden; the **Docs tab
+is always available**. Set whichever apps you run:
 
 ```yaml
 web:
   config:
     ecosystemLinks:
       forgeUrl: https://forge.example.com
+      marketUrl: https://market.example.com
       autoUrl: https://auto.example.com
-      # projectUrl / profileUrl as applicable
+      profileUrl: https://profile.example.com
 ```
 
 (Market exposes the analogous `web.config.forgeUrl` for its "open in Forge" link.)
@@ -543,6 +642,31 @@ a **versioned** image tag (§3) so upgrades are deliberate. If you rotate an
 `OIDC_CLIENT_SECRET`, restart that app's pod so it reloads the new value (§4).
 
 ---
+
+## 10a. Require-login (private vs public catalog)
+
+On a self-host, **sign-in is required by default.** When the install runs in OIDC /
+self-host mode (`AUTH_PROVIDER=oidc` or `SELF_HOST=true`), Market defaults to
+`REQUIRE_LOGIN=true` — there is **no anonymous catalog**; every request needs a
+signed-in IdP user.
+
+- For a **public** self-hosted catalog (anonymous browsing, login only gating submit /
+  admin / browser-initiated download), set `REQUIRE_LOGIN=false`.
+- `REQUIRE_LOGIN=true` forces login on **anywhere** (including a hosted deploy that
+  would otherwise be public).
+- The **hosted** public catalog is unchanged.
+
+## 10b. Organization spend governance
+
+If you run Profile (§6d), org-level governance applies on self-host too:
+
+- The **per-run budget** override bounds the cost of each individual Auto run.
+- **Monthly limits** define an org-wide pool and a per-member cap, each in **dollars**
+  and/or **active-minutes**, reset at the start of each calendar month (**UTC**). Any
+  blank field is unlimited. A new Auto run is **blocked before it starts** (a pre-run
+  gate on estimated cost) when any set cap is reached; the per-run budget still bounds
+  each run that does start.
+- Enforcement **fails open**: if Profile is unreachable, runs are never blocked.
 
 ## 10. What is NOT in open-core self-host
 
