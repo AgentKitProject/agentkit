@@ -1,4 +1,5 @@
 {{- if and .Values.web.enabled .Values.migrate.enabled -}}
+{{- $secretName := include "agentkitprofile.webEffectiveSecretName" . -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -36,11 +37,27 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["node", "--experimental-strip-types", "apps/profile-web/scripts/migrate.mts"]
           env:
+            {{- /*
+            DATABASE_URL composed identically to the web Deployment: when bundled
+            Postgres is enabled and no explicit web.secrets.databaseUrl is supplied,
+            build it from POSTGRES_PASSWORD + the in-cluster Postgres host; otherwise
+            read the external DATABASE_URL straight from the (effective) secret. */}}
+            {{- if and .Values.postgres.enabled (not .Values.web.secrets.databaseUrl) }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: POSTGRES_PASSWORD
+                  optional: true
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "agentkitprofile.postgresHost" . }}:5432/{{ .Values.postgres.database }}"
+            {{- else }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "agentkitprofile.webEffectiveSecretName" . }}
+                  name: {{ $secretName }}
                   key: DATABASE_URL
+            {{- end }}
             {{- if .Values.web.config.profileDbSsl }}
             - name: PROFILE_DB_SSL
               value: {{ .Values.web.config.profileDbSsl | quote }}

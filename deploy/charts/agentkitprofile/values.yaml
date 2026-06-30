@@ -18,8 +18,11 @@ imagePullSecrets: []
 # ---------------------------------------------------------------------------
 # Web app (the Next.js UI + profile-api)
 #
-# Profile uses an EXTERNAL / managed Postgres — there is no bundled database.
-# Supply the connection string via web.secrets.databaseUrl (or an existingSecret).
+# By DEFAULT Profile uses an EXTERNAL / managed Postgres — supply the connection
+# string via web.secrets.databaseUrl (or an existingSecret). For a turnkey
+# self-host you can instead enable the OPTIONAL bundled Postgres below
+# (postgres.enabled=true): DATABASE_URL is then auto-composed from POSTGRES_PASSWORD
+# and the in-cluster Service, so the secret only needs the password.
 # ---------------------------------------------------------------------------
 web:
   enabled: true
@@ -83,13 +86,18 @@ web:
   secrets:
     # Use an externally-managed Secret instead of the chart-managed one. When set,
     # the inline values below are ignored and envFrom references this Secret. The
-    # referenced Secret must provide DATABASE_URL, PROFILE_SERVICE_KEY,
-    # PROFILE_KEY_ENCRYPTION_SECRET, and the keys the active auth provider expects
+    # referenced Secret must provide PROFILE_SERVICE_KEY,
+    # PROFILE_KEY_ENCRYPTION_SECRET, the keys the active auth provider expects
     # (workos: WORKOS_API_KEY/WORKOS_COOKIE_PASSWORD;
-    # oidc: OIDC_CLIENT_SECRET/SESSION_SECRET).
+    # oidc: OIDC_CLIENT_SECRET/SESSION_SECRET), and EITHER DATABASE_URL (external
+    # DB) OR — when postgres.enabled=true — POSTGRES_PASSWORD (the bundled Postgres
+    # + web/migrate tiers read it and auto-compose DATABASE_URL).
     existingSecret: ""
-    # Postgres connection string (DATABASE_URL). REQUIRED at runtime — there is no
-    # bundled database. e.g. postgresql://user:pass@host:5432/agentkitprofile
+    # Postgres connection string (DATABASE_URL). REQUIRED at runtime UNLESS the
+    # bundled Postgres is enabled (postgres.enabled=true), in which case it is
+    # auto-composed from POSTGRES_PASSWORD and left empty here. When set, this
+    # explicit external DATABASE_URL always wins (no bundled DB is used).
+    # e.g. postgresql://user:pass@host:5432/agentkitprofile
     databaseUrl: ""
     # Shared bearer the Market server presents to the profile-api
     # (PROFILE_SERVICE_KEY). Auto-generated + persisted when left empty (and no
@@ -142,6 +150,29 @@ migrate:
     limits:
       cpu: 250m
       memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# OPTIONAL bundled in-cluster Postgres (metadata + profiles).
+#
+# OPT-IN: default DISABLED to preserve the existing external-DB behavior. When
+# enabled and no explicit web.secrets.databaseUrl is supplied, the web tier +
+# migrate Job auto-compose DATABASE_URL from POSTGRES_PASSWORD and this Service —
+# so the secret only needs the password. With web.secrets.existingSecret set, the
+# operator supplies POSTGRES_PASSWORD in that secret and DATABASE_URL is still
+# auto-composed from it. Disable (or set web.secrets.databaseUrl) to use an
+# external Postgres instead.
+# ---------------------------------------------------------------------------
+postgres:
+  enabled: false
+  image: postgres:16.14
+  database: agentkitprofile
+  user: agentkitprofile
+  # GENERATED + preserved across upgrades when empty (never "changeme"). Set only
+  # to pin a specific password.
+  password: ""
+  storage:
+    size: 5Gi
+    storageClassName: local-path
 
 # ---------------------------------------------------------------------------
 # Database TLS

@@ -58,6 +58,16 @@ Effective web Secret name — the existing Secret if provided, else chart-manage
 {{- end }}
 
 {{/*
+In-cluster Postgres host (Service name) for the bundled Postgres. Used when
+bundled postgres is enabled and no explicit DATABASE_URL is supplied — the
+Deployment + migrate Job compose DATABASE_URL from this host and the secret's
+POSTGRES_PASSWORD via env interpolation, so the secret only needs the password.
+*/}}
+{{- define "agentkitprofile.postgresHost" -}}
+{{ include "agentkitprofile.fullname" . }}-postgres
+{{- end }}
+
+{{/*
 ---------------------------------------------------------------------------
 Secret generation / persistence helpers.
 
@@ -111,6 +121,22 @@ Auto-generated + persisted when left empty (and no existingSecret is set).
 {{- else -}}
 {{- $prev := include "agentkitprofile._liveSecretValue" (list . (include "agentkitprofile.webSecretName" .) "PROFILE_SERVICE_KEY") -}}
 {{- $prev | default (include "agentkitprofile._seededSecret" (list . "profile-service-key")) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Effective bundled-Postgres password (explicit | persisted | seeded-fallback).
+Used only when bundled postgres is enabled (postgres.enabled). The bundled
+Postgres + the web/migrate tiers all read POSTGRES_PASSWORD from the effective
+secret; DATABASE_URL is composed from it at runtime. Auto-generated + persisted
+when left empty (and no existingSecret is set).
+*/}}
+{{- define "agentkitprofile.effectivePostgresPassword" -}}
+{{- if .Values.postgres.password -}}
+{{- .Values.postgres.password -}}
+{{- else -}}
+{{- $prev := include "agentkitprofile._liveSecretValue" (list . (include "agentkitprofile.webSecretName" .) "POSTGRES_PASSWORD") -}}
+{{- $prev | default (include "agentkitprofile._seededSecret" (list . "postgres-password")) -}}
 {{- end -}}
 {{- end }}
 

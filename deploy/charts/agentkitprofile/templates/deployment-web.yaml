@@ -1,4 +1,5 @@
 {{- if .Values.web.enabled -}}
+{{- $secretName := include "agentkitprofile.webEffectiveSecretName" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,13 +43,29 @@ spec:
             - configMapRef:
                 name: {{ include "agentkitprofile.webConfigmapName" . }}
             - secretRef:
-                name: {{ include "agentkitprofile.webEffectiveSecretName" . }}
+                name: {{ $secretName }}
                 optional: true
-          {{- /* Optional extra env vars merged verbatim into the web container. Default empty. */}}
-          {{- with .Values.web.extraEnv }}
           env:
+            {{- /*
+            Auto-compose DATABASE_URL for the bundled Postgres from the secret's
+            POSTGRES_PASSWORD, so the secret only needs the password (not the full
+            connection string). Skipped when an explicit web.secrets.databaseUrl is
+            supplied (that external DATABASE_URL — present in the secret via envFrom —
+            wins) or when bundled postgres is disabled. */}}
+            {{- if and .Values.postgres.enabled (not .Values.web.secrets.databaseUrl) }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: POSTGRES_PASSWORD
+                  optional: true
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "agentkitprofile.postgresHost" . }}:5432/{{ .Values.postgres.database }}"
+            {{- end }}
+            {{- /* Optional extra env vars merged verbatim into the web container. Default empty. */}}
+            {{- with .Values.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
           {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
           {{- if .Values.database.caSecret }}
           volumeMounts:
