@@ -356,6 +356,12 @@ textarea {
   min-width: 0;
 }
 
+/* Single-column variant (e.g. the Run pane, which no longer shows a results
+   column — run history lives in the History tab). */
+.form-layout--single {
+  grid-template-columns: minmax(0, 720px);
+}
+
 .form-panel {
   display: grid;
   gap: 10px;

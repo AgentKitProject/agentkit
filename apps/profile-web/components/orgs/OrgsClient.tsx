@@ -200,7 +200,7 @@ export function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
 // Org list
 // ---------------------------------------------------------------------------
 
-export function OrgList() {
+export function OrgList({ canCreateOrg = true }: { canCreateOrg?: boolean }) {
   const [state, setState] = useState<Loadable<Organization[]>>({ status: "loading" });
   const [showCreate, setShowCreate] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -244,13 +244,19 @@ export function OrgList() {
   return (
     <div className="grid gap-4">
       {deleteError && <div className={DANGER}>{deleteError}</div>}
-      <div>
-        <Button variant="secondary" onClick={() => setShowCreate((v) => !v)}>
-          {showCreate ? "Cancel" : "New organization"}
-        </Button>
-      </div>
+      {canCreateOrg ? (
+        <>
+          <div>
+            <Button variant="secondary" onClick={() => setShowCreate((v) => !v)}>
+              {showCreate ? "Cancel" : "New organization"}
+            </Button>
+          </div>
 
-      {showCreate && <CreateOrgForm onCreated={handleCreated} />}
+          {showCreate && <CreateOrgForm onCreated={handleCreated} />}
+        </>
+      ) : (
+        <p className={MUTED}>Only an administrator can create organizations on this instance.</p>
+      )}
 
       {state.status === "loading" && <p className={MUTED}>Loading organizations…</p>}
       {state.status === "failed" && <div className={DANGER}>{state.message}</div>}

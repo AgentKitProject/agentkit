@@ -3,6 +3,8 @@ import { getOrgStore } from "@/lib/store";
 import { createOrg, listUserOrgs } from "@/lib/profile-api/org-handlers";
 import { parseJsonBody, renderError, renderResult } from "@/lib/profile-api/response";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getUserRole } from "@/lib/auth/roles";
+import { isSelfHost } from "@/lib/self-host";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,17 @@ export async function POST(request: Request) {
     const user = await getCurrentUser();
     if (!user?.id) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+    // Self-host only: restrict org creation to admins/owners. Hosted is unchanged
+    // (any signed-in user may create an org).
+    if (isSelfHost()) {
+      const role = getUserRole(user);
+      if (role !== "owner" && role !== "admin") {
+        return NextResponse.json(
+          { message: "Only an administrator can create organizations on this instance." },
+          { status: 403 },
+        );
+      }
     }
     const body = await parseJsonBody(request);
     const result = await createOrg(getOrgStore(), user.id, body);

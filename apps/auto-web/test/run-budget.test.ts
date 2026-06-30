@@ -56,24 +56,25 @@ describe("resolveRunBudgetCents — precedence org > user > fallback", () => {
     await expect(resolveRunBudgetCents(USER_ID)).resolves.toBe(150);
   });
 
-  it("falls back to the system default (50¢) when neither is set", async () => {
+  it("falls back to the unlimited system default (0) when neither is set", async () => {
     orgOverride = undefined;
     userPreferences = undefined;
     const { resolveRunBudgetCents, SYSTEM_DEFAULT_RUN_BUDGET_CENTS } = await loadSubject();
     await expect(resolveRunBudgetCents(USER_ID)).resolves.toBe(SYSTEM_DEFAULT_RUN_BUDGET_CENTS);
-    expect(SYSTEM_DEFAULT_RUN_BUDGET_CENTS).toBe(50);
+    // 0 = unlimited (run-create resolves it to the kit's approval ceiling).
+    expect(SYSTEM_DEFAULT_RUN_BUDGET_CENTS).toBe(0);
   });
 
-  it("ignores a non-positive / non-integer stored user default (→ fallback)", async () => {
+  it("ignores a non-positive / non-integer stored user default (→ unlimited fallback)", async () => {
     orgOverride = undefined;
     userPreferences = { defaultRunBudgetCents: 0 };
     const { resolveRunBudgetCents } = await loadSubject();
-    await expect(resolveRunBudgetCents(USER_ID)).resolves.toBe(50);
+    await expect(resolveRunBudgetCents(USER_ID)).resolves.toBe(0);
 
     vi.resetModules();
     userPreferences = { defaultRunBudgetCents: 12.5 };
     const again = await loadSubject();
-    await expect(again.resolveRunBudgetCents(USER_ID)).resolves.toBe(50);
+    await expect(again.resolveRunBudgetCents(USER_ID)).resolves.toBe(0);
   });
 
   it("getUserDefaultRunBudgetCents returns undefined when unset, the value when set", async () => {

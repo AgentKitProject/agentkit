@@ -15,8 +15,14 @@
 import { getUserSettingsStore } from "@/server/store/user-settings";
 import { resolveOrgRunBudget } from "@/server/core/run-budget-client";
 
-/** System fallback when neither an org override nor a user default is set. */
-export const SYSTEM_DEFAULT_RUN_BUDGET_CENTS = 50; // $0.50
+/**
+ * System fallback when neither an org override nor a user default is set.
+ * 0 = UNLIMITED — the run is not given a separate per-run cap; at run-create time
+ * `startRun` resolves 0 to the kit's approval ceiling (the per-kit safety cap the
+ * user already set), so "unlimited" means "use the full approved budget" rather
+ * than an arbitrary floor. Org/user-set budgets + org monthly limits still apply.
+ */
+export const SYSTEM_DEFAULT_RUN_BUDGET_CENTS = 0; // unlimited (→ approval ceiling)
 
 /** Key under UserSettings.preferences where the user's own default budget lives. */
 const USER_DEFAULT_BUDGET_PREF_KEY = "defaultRunBudgetCents";
@@ -34,11 +40,14 @@ export async function getUserDefaultRunBudgetCents(userId: string): Promise<numb
 
 /**
  * Set the user's OWN default per-run budget (US cents). Persisted in the shared
- * settings store preferences (alongside provider configs).
+ * settings store preferences (alongside provider configs). 0 CLEARS the default
+ * (back to unlimited) — `getUserDefaultRunBudgetCents` treats a non-positive
+ * stored value as unset, so resolution falls through to the unlimited system
+ * default (which run-create resolves to the approval ceiling).
  */
 export async function setUserDefaultRunBudgetCents(userId: string, budgetCents: number): Promise<void> {
-  if (!Number.isInteger(budgetCents) || budgetCents <= 0) {
-    throw new Error("budgetCents must be a positive integer (US cents).");
+  if (!Number.isInteger(budgetCents) || budgetCents < 0) {
+    throw new Error("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   const store = await getUserSettingsStore();
   await store.setPreferences(userId, { [USER_DEFAULT_BUDGET_PREF_KEY]: budgetCents });
@@ -46,8 +55,9 @@ export async function setUserDefaultRunBudgetCents(userId: string, budgetCents: 
 
 /**
  * Resolve the effective per-run budget (US cents) for a user at run-create time.
- * Precedence: org override → user default → system fallback (50¢). The org
- * resolver FAILS OPEN, so a Market outage degrades to the user default.
+ * Precedence: org override → user default → UNLIMITED (0 → the approval ceiling,
+ * resolved in startRun). The org resolver FAILS OPEN, so a Market outage degrades
+ * to the user default.
  */
 export async function resolveRunBudgetCents(userId: string): Promise<number> {
   const orgOverride = await resolveOrgRunBudget(userId);

@@ -64,15 +64,20 @@ export async function PUT(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as { budgetCents?: unknown };
   const budgetCents = typeof body.budgetCents === "number" ? body.budgetCents : NaN;
-  if (!Number.isInteger(budgetCents) || budgetCents <= 0) {
-    return badRequest("budgetCents must be a positive integer (US cents).");
+  // 0 = clear the user's default (back to unlimited); positive = set a cap.
+  if (!Number.isInteger(budgetCents) || budgetCents < 0) {
+    return badRequest("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
 
   await setUserDefaultRunBudgetCents(auth.userId, budgetCents);
 
   const effectiveCents = await resolveRunBudgetCents(auth.userId);
   return Response.json(
-    { userDefaultCents: budgetCents, effectiveCents, systemFallbackCents: SYSTEM_DEFAULT_RUN_BUDGET_CENTS },
+    {
+      userDefaultCents: budgetCents > 0 ? budgetCents : null,
+      effectiveCents,
+      systemFallbackCents: SYSTEM_DEFAULT_RUN_BUDGET_CENTS
+    },
     { status: 200 }
   );
 }

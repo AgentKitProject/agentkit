@@ -147,13 +147,18 @@ describe("ecosystem links", () => {
   it("SELF-HOST surfaces operator-configured links", () => {
     const env = {
       AUTH_PROVIDER: "oidc",
-      AGENTKITMARKET_BASE_URL: "https://market.acme.internal",
+      // marketUrl is the BROWSER url (NEXT_PUBLIC_MARKET_URL), not the in-cluster
+      // server-side AGENTKITMARKET_BASE_URL — the app-switcher links must be
+      // browser-reachable.
+      NEXT_PUBLIC_MARKET_URL: "https://market.acme.internal",
       NEXT_PUBLIC_PROFILE_URL: "https://id.acme.internal"
     };
     const links = getEcosystemLinks(env);
     expect(links.marketUrl).toBe("https://market.acme.internal");
     expect(links.profileUrl).toBe("https://id.acme.internal");
     expect(links.projectUrl).toBeUndefined();
+    // Docs always defaults (the single allowed external link even on self-host).
+    expect(links.docsUrl).toBe("https://docs.agentkitproject.com");
   });
 });
 
@@ -169,7 +174,8 @@ describe("getPublicConfig snapshot", () => {
         projectUrl: "https://agentkitproject.com",
         marketUrl: HOSTED_MARKET,
         forgeUrl: "https://forge.agentkitproject.com",
-        profileUrl: "https://profile.agentkitproject.com"
+        profileUrl: "https://profile.agentkitproject.com",
+        docsUrl: "https://docs.agentkitproject.com"
       }
     });
   });
@@ -179,6 +185,8 @@ describe("getPublicConfig snapshot", () => {
     expect(cfg.selfHost).toBe(true);
     expect(cfg.marketEnabled).toBe(false);
     expect(cfg.managedBilling).toBe(false);
-    expect(cfg.links).toEqual({});
+    // Only Docs remains (always-defaulted external link); all other cross-app
+    // links are dropped on self-host unless the operator configures them.
+    expect(cfg.links).toEqual({ docsUrl: "https://docs.agentkitproject.com" });
   });
 });

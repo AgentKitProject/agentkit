@@ -1179,9 +1179,11 @@ export async function startRun(input: {
   if (typeof input.prompt !== "string" || input.prompt.trim().length === 0) {
     throw new AutoValidationError("A run input prompt is required.");
   }
-  // Budget is REQUIRED per run (no default — CLAUDE.md / auto-core safety rule).
-  if (!Number.isInteger(input.budgetCents) || input.budgetCents <= 0) {
-    throw new AutoValidationError("budgetCents is required and must be a positive integer (US cents).");
+  // Budget is a non-negative integer (US cents). 0 = UNLIMITED — resolved below
+  // to the kit's approval ceiling, so a run always carries a positive effective
+  // cap (keeps the per-kit safety + the v2 hold/settle billing intact).
+  if (!Number.isInteger(input.budgetCents) || input.budgetCents < 0) {
+    throw new AutoValidationError("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   const model = isManagedModel(input.model) ? input.model! : MANAGED_DEFAULT_MODEL;
 
@@ -1200,6 +1202,10 @@ export async function startRun(input: {
       `Run budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );
   }
+  // 0 (unlimited) → the approval ceiling: "unlimited" means "use the full
+  // approved budget" rather than a separate per-run cap. A positive request is
+  // used as-is (already bounded by the ceiling check above).
+  const effectiveBudgetCents = input.budgetCents > 0 ? input.budgetCents : approval.maxBudgetCents;
 
   // ---- Pre-run prompt-extraction guard (M6 content protection) -----------
   // For a PROTECTED (paid / online-only) kit the system prompt is the seller's IP
@@ -1286,7 +1292,7 @@ export async function startRun(input: {
       prompt: input.prompt,
       ...(input.files && input.files.length > 0 ? { files: input.files } : {})
     },
-    budgetCents: input.budgetCents,
+    budgetCents: effectiveBudgetCents,
     model,
     createdAt: now(),
     inferenceMode: billing.inferenceMode,
@@ -1611,8 +1617,8 @@ export async function createSchedule(input: {
   if (typeof input.prompt !== "string" || input.prompt.trim().length === 0) {
     throw new AutoValidationError("A schedule task prompt is required.");
   }
-  if (!Number.isInteger(input.budgetCents) || input.budgetCents <= 0) {
-    throw new AutoValidationError("budgetCents is required and must be a positive integer (US cents).");
+  if (!Number.isInteger(input.budgetCents) || input.budgetCents < 0) {
+    throw new AutoValidationError("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   if (typeof input.approvalId !== "string" || input.approvalId.trim().length === 0) {
     throw new AutoValidationError("approvalId is required.");
@@ -1708,8 +1714,8 @@ export async function updateSchedule(
   const enabled = patch.enabled !== undefined ? patch.enabled : current.enabled;
 
   if (patch.cron !== undefined) assertValidCron(cron);
-  if (patch.budgetCents !== undefined && (!Number.isInteger(budgetCents) || budgetCents <= 0)) {
-    throw new AutoValidationError("budgetCents must be a positive integer (US cents).");
+  if (patch.budgetCents !== undefined && (!Number.isInteger(budgetCents) || budgetCents < 0)) {
+    throw new AutoValidationError("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
 
   // Re-check the approval gate when anything that touches consent/budget changed.
@@ -2006,8 +2012,8 @@ export async function createWebhook(input: {
   /** Phase D: opt-in result delivery copied onto every run this webhook fires. */
   deliveryConfig?: DeliveryConfig;
 }): Promise<CreatedWebhook> {
-  if (!Number.isInteger(input.budgetCents) || input.budgetCents <= 0) {
-    throw new AutoValidationError("budgetCents is required and must be a positive integer (US cents).");
+  if (!Number.isInteger(input.budgetCents) || input.budgetCents < 0) {
+    throw new AutoValidationError("budgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   if (typeof input.approvalId !== "string" || input.approvalId.trim().length === 0) {
     throw new AutoValidationError("approvalId is required.");

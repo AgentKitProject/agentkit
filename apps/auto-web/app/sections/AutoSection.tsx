@@ -437,10 +437,17 @@ export function AutoSection({
   }, []);
 
   const saveRunBudget = useCallback(async () => {
-    const cents = Math.round(parseFloat(runBudgetDraftUsd) * 100);
-    if (!Number.isInteger(cents) || cents <= 0) {
-      notify("Default run budget must be a positive amount.", true);
-      return;
+    // Blank = clear the default (back to unlimited) → send 0; otherwise a positive amount.
+    const trimmed = runBudgetDraftUsd.trim();
+    let cents: number;
+    if (trimmed === "") {
+      cents = 0;
+    } else {
+      cents = Math.round(parseFloat(trimmed) * 100);
+      if (!Number.isInteger(cents) || cents <= 0) {
+        notify("Default run budget must be a positive amount, or blank for unlimited.", true);
+        return;
+      }
     }
     setRunBudgetBusy(true);
     try {
@@ -959,8 +966,8 @@ export function AutoSection({
   const budgetNote = (
     <p className="form-copy" style={{ marginTop: 0 }}>
       Per-run budget:{" "}
-      <strong>{runBudget ? centsToUsd(runBudget.effectiveCents) : "set in Settings"}</strong>
-      {" "}(the per-run cap). Change it on the <strong>Settings</strong> tab; an org admin can override it.
+      <strong>{runBudget ? (runBudget.effectiveCents > 0 ? centsToUsd(runBudget.effectiveCents) : "Unlimited") : "set in Settings"}</strong>
+      {" "}(the per-run cap; Unlimited uses the kit&apos;s approval ceiling). Change it on the <strong>Settings</strong> tab; an org admin can override it.
     </p>
   );
 
@@ -1145,14 +1152,14 @@ export function AutoSection({
         <h4 style={{ margin: "12px 0 4px" }}>Default run budget</h4>
         <p className="form-copy" style={{ marginTop: 0 }}>
           The per-run cap (USD) for every AgentKitAuto run, schedule, and webhook you start — a run stops
-          once it spends this much. If your organization sets an org-level default, that OVERRIDES this for
-          all members.{" "}
+          once it spends this much. Leave blank for UNLIMITED (a run is then capped only by the kit&apos;s
+          approval ceiling). If your organization sets an org-level default, that OVERRIDES this for all
+          members.{" "}
           {runBudget && (
             <>
-              Effective now: <strong>{centsToUsd(runBudget.effectiveCents)}</strong>
-              {runBudget.userDefaultCents === null
-                ? ` (system default ${centsToUsd(runBudget.systemFallbackCents)} — set your own below)`
-                : ""}
+              Effective now:{" "}
+              <strong>{runBudget.effectiveCents > 0 ? centsToUsd(runBudget.effectiveCents) : "Unlimited"}</strong>
+              {runBudget.userDefaultCents === null ? " (unlimited by default — set your own below)" : ""}
               .
             </>
           )}
@@ -1164,7 +1171,7 @@ export function AutoSection({
               min="0.01"
               step="0.01"
               value={runBudgetDraftUsd}
-              placeholder={runBudget ? (runBudget.systemFallbackCents / 100).toFixed(2) : "0.50"}
+              placeholder="Unlimited"
               onChange={(e) => setRunBudgetDraftUsd(e.target.value)}
             />
             <Button
@@ -1288,7 +1295,7 @@ export function AutoSection({
       )}
 
       {section === "run" && (
-      <div className="form-layout">
+      <div className="form-layout form-layout--single">
       <div className="form-panel">
         {/* ---- Start a run ---- */}
         <h3 style={{ marginTop: 0 }}>Start a run</h3>
@@ -1381,25 +1388,6 @@ export function AutoSection({
         <Button disabled={runBusy} loading={runBusy} onClick={() => void startRun()}>
           {runBusy ? "Starting…" : "Start run"}
         </Button>
-      </div>
-      <div className="results-panel">
-        <h4 style={{ marginTop: 0 }}>Recent runs</h4>
-        {runs.length === 0 ? (
-          <p className="form-copy">No runs yet. Start one on the left.</p>
-        ) : (
-          runs.slice(0, 8).map((r) => (
-            <div key={r.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", fontSize: "0.85em" }}>
-                <strong>{kitRefLabel(r.kitRef)}</strong>
-                <Badge tone={ACTIVE.has(r.status) ? "brand" : "neutral"}>{r.status}</Badge>
-              </div>
-              <div style={{ fontSize: "0.78em", color: "var(--color-text-secondary)" }}>
-                {centsToUsd(r.spentCents)} / {centsToUsd(r.budgetCents)} · <ClientTime ts={r.createdAt} />
-              </div>
-            </div>
-          ))
-        )}
-        <p className="form-copy" style={{ marginTop: 8, fontSize: "0.8em" }}>Open the Runs tab for full history and output.</p>
       </div>
       </div>
       )}

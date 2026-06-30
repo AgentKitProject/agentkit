@@ -2,11 +2,18 @@ import Link from "next/link";
 import { AccountShell } from "@/components/AccountShell";
 import { OrgList } from "@/components/orgs/OrgsClient";
 import { requireUser } from "@/lib/auth/session";
+import { getUserRole } from "@/lib/auth/roles";
+import { isSelfHost } from "@/lib/self-host";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrgsPage() {
-  await requireUser("/account/orgs");
+  const user = await requireUser("/account/orgs");
+
+  // Self-host only: org creation is admin-only (mirrors the POST /api/orgs gate).
+  // Hosted → anyone can create.
+  const role = getUserRole(user);
+  const canCreateOrg = !isSelfHost() || role === "owner" || role === "admin";
 
   return (
     <AccountShell title="Organizations" eyebrow="AgentKitProject account">
@@ -23,7 +30,7 @@ export default async function OrgsPage() {
             </Link>
           </div>
         </div>
-        <OrgList />
+        <OrgList canCreateOrg={canCreateOrg} />
       </div>
     </AccountShell>
   );
