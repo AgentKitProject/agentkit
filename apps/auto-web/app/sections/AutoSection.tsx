@@ -18,10 +18,10 @@
 // the browser UI; the bearer path (/api/forge/auto/*) is for desktop/CLI clients.
 import { useCallback, useEffect, useState } from "react";
 import { Badge, BRAND_ACCENTS, Button, Card, Field, Input, Pill, Select, Textarea, brandVars } from "@agentkitforge/ui";
+import type { AutoSectionId } from "./section-ids";
 import { autoRoutes } from "@agentkitforge/contracts";
 import type { CatalogEntry, MyKitEntry, Notify, PublicProvider } from "./shared";
 import { errMsg } from "./shared";
-import { AutoLogo } from "./AutoLogo";
 import { ClientTime } from "./ClientTime";
 // Kit selectors address a kit by an opaque string value so a single <Select> can
 // offer BOTH local kits and entitled Market kits. The market-aware KitRef +
@@ -231,12 +231,16 @@ function DeliverySection({
 }
 
 export function AutoSection({
+  section,
   kits,
   notify,
   marketUrl,
   marketEnabled,
   allowedProviders
 }: {
+  /** Active dashboard tab (owned by AutoApp's sidebar nav). Each value renders
+   *  one full-width pane; sections not matching `section` are not rendered. */
+  section: AutoSectionId;
   kits: MyKitEntry[];
   notify: Notify;
   marketUrl?: string;
@@ -893,18 +897,11 @@ export function AutoSection({
 
   return (
     <div style={brandVars(AUTO_GREEN, AUTO_GREEN_STRONG)}>
-      {/* Auto section header: brand logo + name + green accent */}
-      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
-        <AutoLogo size={40} />
-        <div style={{ display: "grid", gap: 2 }}>
-          <strong style={{ fontSize: "1.15rem", lineHeight: 1.1 }}>AgentKitAuto</strong>
-          <span className="eyebrow">Autonomous runs</span>
-        </div>
-      </header>
+      {section === "approvals" && (
       <div className="form-layout">
       <div className="form-panel">
         {/* ---- Standing approval ---- */}
-        <h3>Authorize a kit</h3>
+        <h3 style={{ marginTop: 0 }}>Authorize a kit</h3>
         <p className="form-copy">
           A standing approval lets Auto run a kit autonomously (no per-step confirm). The tool allowlist is your
           consent; Auto can only use file tools confined to a per-run workspace. There is no autonomous shell.
@@ -982,8 +979,8 @@ export function AutoSection({
         <Button disabled={apprBusy} loading={apprBusy} onClick={() => void submitApproval()}>
           {apprBusy ? "Creating…" : "Create approval"}
         </Button>
-
-        <div className="results-panel" style={{ marginTop: 16 }}>
+      </div>
+      <div className="results-panel">
           <h4 style={{ marginTop: 0 }}>Active approvals</h4>
           {approvals.length === 0 ? (
             <p className="form-copy">No standing approvals yet.</p>
@@ -1011,10 +1008,15 @@ export function AutoSection({
               </div>
             ))
           )}
-        </div>
+      </div>
+      </div>
+      )}
 
+      {section === "settings" && (
+      <div className="form-layout">
+      <div className="form-panel">
         {/* ---- Inference & billing (BYO key) — Phase 2 ---- */}
-        <h3 style={{ marginTop: 24 }}>Inference &amp; billing</h3>
+        <h3 style={{ marginTop: 0 }}>Inference &amp; billing</h3>
         <p className="form-copy">
           Choose how your runs pay for inference. <strong>Managed credits</strong> use the platform key
           (debited from your prepaid balance). <strong>Bring your own provider</strong> runs on a provider
@@ -1075,7 +1077,7 @@ export function AutoSection({
             form hides types disallowed by ALLOWED_PROVIDERS; the server enforces
             the lock regardless. When EVERY type is locked out the whole manager is
             hidden (runs use managed credits). */}
-        {byoEnabled ? (
+        {byoEnabled && (
           <>
             <h4 style={{ margin: "12px 0 4px" }}>Your AI providers</h4>
             {providers.length === 0 ? (
@@ -1109,8 +1111,18 @@ export function AutoSection({
                 ))}
               </div>
             )}
-
-            <h4 style={{ margin: "8px 0 4px" }}>Add / update a provider</h4>
+          </>
+        )}
+        {!byoEnabled && (
+          <p className="form-copy">
+            Bring-your-own-provider is disabled by this deployment&apos;s provider policy. Runs use managed credits.
+          </p>
+        )}
+      </div>
+      <div className="results-panel">
+        {byoEnabled && (
+          <>
+            <h4 style={{ marginTop: 0 }}>Add / update a provider</h4>
             <Field label="Provider type">
               <Select value={provType} onChange={(e) => setProvType(e.target.value)}>
                 {visibleCatalog.length === 0 && isAllowed("anthropic") && (
@@ -1162,14 +1174,16 @@ export function AutoSection({
               {provBusy ? "Saving…" : "Save provider"}
             </Button>
           </>
-        ) : (
-          <p className="form-copy">
-            Bring-your-own-provider is disabled by this deployment&apos;s provider policy. Runs use managed credits.
-          </p>
         )}
+      </div>
+      </div>
+      )}
 
+      {section === "run" && (
+      <div className="form-layout">
+      <div className="form-panel">
         {/* ---- Start a run ---- */}
-        <h3 style={{ marginTop: 24 }}>Start a run</h3>
+        <h3 style={{ marginTop: 0 }}>Start a run</h3>
         <Field label="Kit (must have an approval)">
           <Select value={runKitId} onChange={(e) => setRunKitId(e.target.value)}>
             <option value="">Select a kit…</option>
@@ -1261,9 +1275,34 @@ export function AutoSection({
         <Button disabled={runBusy} loading={runBusy} onClick={() => void startRun()}>
           {runBusy ? "Starting…" : "Start run"}
         </Button>
+      </div>
+      <div className="results-panel">
+        <h4 style={{ marginTop: 0 }}>Recent runs</h4>
+        {runs.length === 0 ? (
+          <p className="form-copy">No runs yet. Start one on the left.</p>
+        ) : (
+          runs.slice(0, 8).map((r) => (
+            <div key={r.id} className="provider-card" style={{ marginBottom: 8, padding: "8px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", fontSize: "0.85em" }}>
+                <strong>{kitRefLabel(r.kitRef)}</strong>
+                <Badge tone={ACTIVE.has(r.status) ? "brand" : "neutral"}>{r.status}</Badge>
+              </div>
+              <div style={{ fontSize: "0.78em", color: "var(--color-text-secondary)" }}>
+                {centsToUsd(r.spentCents)} / {centsToUsd(r.budgetCents)} · <ClientTime ts={r.createdAt} />
+              </div>
+            </div>
+          ))
+        )}
+        <p className="form-copy" style={{ marginTop: 8, fontSize: "0.8em" }}>Open the Runs tab for full history and output.</p>
+      </div>
+      </div>
+      )}
 
+      {section === "schedules" && (
+      <div className="form-layout">
+      <div className="form-panel">
         {/* ---- Schedules (Phase B) ---- */}
-        <h3 style={{ marginTop: 24 }}>Schedules</h3>
+        <h3 style={{ marginTop: 0 }}>Schedules</h3>
         <p className="form-copy">
           A schedule fires a run automatically on a cron cadence, under the kit&apos;s standing approval and a
           per-run budget. Each fire is still gated by the approval — a schedule never widens consent.
@@ -1291,8 +1330,8 @@ export function AutoSection({
         <Button disabled={schedBusy} loading={schedBusy} onClick={() => void createSchedule()}>
           {schedBusy ? "Creating…" : "Create schedule"}
         </Button>
-
-        <div className="results-panel" style={{ marginTop: 16 }}>
+      </div>
+      <div className="results-panel">
           <h4 style={{ marginTop: 0 }}>Active schedules</h4>
           {schedules.length === 0 ? (
             <p className="form-copy">No schedules yet.</p>
@@ -1324,10 +1363,15 @@ export function AutoSection({
               </div>
             ))
           )}
-        </div>
+      </div>
+      </div>
+      )}
 
+      {section === "webhooks" && (
+      <div className="form-layout">
+      <div className="form-panel">
         {/* ---- Webhooks (Phase C) ---- */}
-        <h3 style={{ marginTop: 24 }}>Webhooks</h3>
+        <h3 style={{ marginTop: 0 }}>Webhooks</h3>
         <p className="form-copy">
           A webhook fires a run when a third-party service POSTs to its URL, authed by a per-webhook secret (no
           login). Each fire is still gated by the kit&apos;s standing approval and a per-fire budget — a webhook
@@ -1366,8 +1410,8 @@ export function AutoSection({
             </Button>
           </Card>
         )}
-
-        <div className="results-panel" style={{ marginTop: 16 }}>
+      </div>
+      <div className="results-panel">
           <h4 style={{ marginTop: 0 }}>Active webhooks</h4>
           {webhooks.length === 0 ? (
             <p className="form-copy">No webhooks yet.</p>
@@ -1398,11 +1442,14 @@ export function AutoSection({
               </div>
             ))
           )}
-        </div>
       </div>
+      </div>
+      )}
 
-      {/* ---- Run history + detail ---- */}
-      <div className="results-panel">
+      {section === "runs" && (
+      <div className="form-layout">
+      <div className="form-panel">
+        {/* ---- Run history + detail ---- */}
         <h3 style={{ marginTop: 0 }}>Runs</h3>
         {runs.length === 0 ? (
           <p className="form-copy">No runs yet.</p>
@@ -1424,9 +1471,11 @@ export function AutoSection({
             </div>
           ))
         )}
-
+      </div>
+      <div className="results-panel">
+        {!openRun && <p className="form-copy">Select a run on the left to see its output and audit log.</p>}
         {openRun && (
-          <div className="provider-card" style={{ marginTop: 12, padding: "12px 14px" }}>
+          <div className="provider-card" style={{ marginTop: 0, padding: "12px 14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h4 style={{ margin: 0 }}>Run detail</h4>
               {ACTIVE.has(openRun.status) && (
@@ -1477,6 +1526,7 @@ export function AutoSection({
         )}
       </div>
       </div>
+      )}
     </div>
   );
 }

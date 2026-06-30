@@ -374,6 +374,36 @@ const principles = [
     color: #5b21b6;
   }
 
+  /* Dark mode: the badges above mix their accent into WHITE (a light pill with a
+     dark accent text), which stays light-on-dark-page and reads as a leftover
+     light-mode chip. Re-tint them into the dark surface with a lightened accent
+     text so they sit correctly in the night view. */
+  :global(html[data-theme="dark"]) .roadmap-badge.done {
+    background: color-mix(in srgb, var(--success) 20%, var(--surface));
+    border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+    color: color-mix(in srgb, var(--success) 55%, white);
+  }
+  :global(html[data-theme="dark"]) .roadmap-badge.next {
+    background: color-mix(in srgb, var(--market) 20%, var(--surface));
+    border-color: color-mix(in srgb, var(--market) 42%, var(--border));
+    color: color-mix(in srgb, var(--market) 58%, white);
+  }
+  :global(html[data-theme="dark"]) .roadmap-badge.bridge {
+    background: color-mix(in srgb, var(--forge) 20%, var(--surface));
+    border-color: color-mix(in srgb, var(--forge) 42%, var(--border));
+    color: color-mix(in srgb, var(--forge) 62%, white);
+  }
+  :global(html[data-theme="dark"]) .roadmap-badge.later {
+    background: color-mix(in srgb, var(--project-blue) 20%, var(--surface));
+    border-color: color-mix(in srgb, var(--project-blue) 42%, var(--border));
+    color: color-mix(in srgb, var(--project-blue) 60%, white);
+  }
+  :global(html[data-theme="dark"]) .roadmap-badge.exploring {
+    background: color-mix(in srgb, var(--project-purple) 20%, var(--surface));
+    border-color: color-mix(in srgb, var(--project-purple) 42%, var(--border));
+    color: color-mix(in srgb, var(--project-purple) 62%, white);
+  }
+
   .feature-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 1.2rem;

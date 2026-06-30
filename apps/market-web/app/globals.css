@@ -48,6 +48,25 @@ html[data-theme="dark"] body {
     var(--ak-bg);
 }
 
+/* Flip the app-local --market-* TEXT tokens at the VARIABLE level in dark mode.
+   Light mode keeps the original dark navy/indigo. This single block makes every
+   `color: var(--market-navy/-indigo/-ink/-muted)` reference (~40 sites: headings,
+   <strong> titles, eyebrows, links) legible in dark mode in one place — far more
+   robust than patching each selector (which missed the .empty-state strong and
+   .rule-callout strong titles, rendering them dark-on-dark). Surface/border
+   tokens map to their framework equivalents too so any card using --market-card/
+   -soft/-line stays dark. (--market-indigo also tints the decorative .kit-icon
+   gradient; the lighter dark-mode brand reads fine behind its white glyph.) */
+html[data-theme="dark"] {
+  --market-navy: var(--ak-text);
+  --market-ink: var(--ak-text);
+  --market-indigo: var(--ak-brand);
+  --market-muted: var(--ak-muted);
+  --market-line: var(--ak-border);
+  --market-card: var(--ak-surface);
+  --market-soft: var(--ak-surface-muted);
+}
+
 /* App-specific surfaces that hardcode light fills/borders/text. In dark mode
    route them through the framework tokens so they stay legible. */
 html[data-theme="dark"] .account-pill,

@@ -4,6 +4,7 @@ import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { SiteChrome } from "@/components/SiteChrome";
 import { themeInitScript } from "@agentkitforge/ui";
 import { getCurrentUser, isAdminRole } from "@/lib/auth";
+import { isSelfHost, getEcosystemLinks } from "@/lib/self-host";
 // Shared UI framework stylesheet (tokens + SiteShell + primitives), imported
 // first so app-specific rules in globals.css layer on top and the legacy
 // --market-* token bridge resolves against the framework's --ak-* defaults.
@@ -39,6 +40,10 @@ const THEME_INIT_SCRIPT = themeInitScript();
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const user = await getCurrentUser();
   const showAdmin = isAdminRole(user?.role);
+  // Resolved at request time (honors runtime env, not build-time NEXT_PUBLIC_*
+  // baking) so the top nav drops the hosted ecosystem tabs on a self-host instance.
+  const selfHost = isSelfHost();
+  const ecosystemLinks = getEcosystemLinks();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -49,7 +54,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       </head>
       <body>
         <AuthKitProvider>
-          <SiteChrome signedIn={Boolean(user)} showAdmin={showAdmin}>
+          <SiteChrome
+            signedIn={Boolean(user)}
+            showAdmin={showAdmin}
+            selfHost={selfHost}
+            ecosystemLinks={ecosystemLinks}
+          >
             {children}
           </SiteChrome>
         </AuthKitProvider>

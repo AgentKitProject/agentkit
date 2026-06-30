@@ -18,6 +18,12 @@
    ========================================================================== */
 
 :root {
+  /* Match native UI (form controls, scrollbars, autofill) to the active theme.
+     Without this, native widgets follow the OS preference and look wrong when it
+     differs from the app theme (e.g. a light app on a dark-OS machine renders
+     <select>/<input> chrome dark). [data-theme="dark"] flips it below. */
+  color-scheme: light;
+
   /* Text / surfaces (Tailwind slate) */
   --ak-text: #0f172a; /* slate-900 */
   --ak-bg: #f8fafc; /* slate-50  */
@@ -69,6 +75,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --ak-text: #e5e7eb;
   --ak-bg: #020617; /* slate-950 */
   --ak-surface: #0f172a; /* slate-900 */

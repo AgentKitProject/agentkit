@@ -10,14 +10,26 @@ import {
   BRAND_ACCENTS,
   type NavItem,
 } from "@agentkitforge/ui";
-
-const AGENTKIT_PROFILE_ACCOUNT_URL = "https://profile.agentkitproject.com";
+import type { EcosystemLinks } from "@/lib/self-host";
 
 export type SiteChromeProps = {
   /** Whether a user is signed in (resolved server-side). */
   signedIn: boolean;
   /** Whether the signed-in user has an admin role. */
   showAdmin: boolean;
+  /**
+   * True when this is a self-hosted instance. Resolved server-side. When set, the
+   * canonical *.agentkitproject.com ecosystem tabs are dropped from the top nav
+   * (and the hosted Account link from the dropdown) so a self-host instance never
+   * points users back into our hosted ecosystem.
+   */
+  selfHost?: boolean;
+  /**
+   * Cross-ecosystem link bases (resolved server-side). On hosted these are the
+   * public *.agentkitproject.com URLs; on self-host only operator-configured ones
+   * are present (others undefined → the tab is hidden).
+   */
+  ecosystemLinks?: EcosystemLinks;
   children: ReactNode;
 };
 
@@ -26,7 +38,7 @@ export type SiteChromeProps = {
  * Contains personal/account-scoped items: My Submissions, My Purchases, Admin (admin only),
  * Account profile link, and Sign out. These are removed from the inline nav to reduce clutter.
  */
-function AccountDropdown({ showAdmin }: { showAdmin: boolean }) {
+function AccountDropdown({ showAdmin, profileUrl }: { showAdmin: boolean; profileUrl?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -90,16 +102,20 @@ function AccountDropdown({ showAdmin }: { showAdmin: boolean }) {
             </Link>
           )}
           <div className="account-dropdown__divider" role="separator" />
-          <a
-            className="account-dropdown__item"
-            href={AGENTKIT_PROFILE_ACCOUNT_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            AgentKitProject Account ↗
-          </a>
+          {/* Profile is a hosted (or operator-configured) service — hidden on a
+              self-host instance that has no profile URL. */}
+          {profileUrl && (
+            <a
+              className="account-dropdown__item"
+              href={profileUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+            >
+              AgentKitProject Account ↗
+            </a>
+          )}
           {/* Plain <a> ensures sign-out is a full-page navigation (not client-side routing). */}
           <a
             className="account-dropdown__item account-dropdown__item--signout"
@@ -123,18 +139,44 @@ function AccountDropdown({ showAdmin }: { showAdmin: boolean }) {
  * Inline nav: canonical ecosystem tabs + Kits + Submit Kit (public/catalog-level).
  * Account dropdown: My Submissions, My Purchases, Admin (admin only), Account, Sign out.
  */
-export function SiteChrome({ signedIn, showAdmin, children }: SiteChromeProps) {
-  const nav: NavItem[] = [
-    // Canonical ecosystem nav — Market tab marked active.
-    ...navWithActive("Market"),
-    // Market-specific catalog items appended after the canonical set.
-    { label: "Kits", href: "/kits" },
-    { label: "Submit Kit", href: "/submit" },
-  ];
+export function SiteChrome({
+  signedIn,
+  showAdmin,
+  selfHost = false,
+  ecosystemLinks,
+  children,
+}: SiteChromeProps) {
+  const links = ecosystemLinks ?? {};
+
+  // Self-host: drop the canonical *.agentkitproject.com ecosystem tabs entirely;
+  // surface only this Market's local catalog routes plus any sibling apps the
+  // operator explicitly configured (NEXT_PUBLIC_FORGE_URL / NEXT_PUBLIC_AUTO_URL).
+  // Hosted: the full canonical ecosystem nav (Market tab active) + local routes.
+  const nav: NavItem[] = selfHost
+    ? [
+        { label: "Kits", href: "/kits" },
+        { label: "Submit Kit", href: "/submit" },
+        ...(links.forgeUrl
+          ? [{ label: "Web Forge", href: links.forgeUrl, external: true }]
+          : []),
+        ...(links.autoUrl
+          ? [{ label: "Auto", href: links.autoUrl, external: true }]
+          : []),
+        ...(links.docsUrl
+          ? [{ label: "Docs", href: links.docsUrl, external: true }]
+          : []),
+      ]
+    : [
+        // Canonical ecosystem nav — Market tab marked active.
+        ...navWithActive("Market"),
+        // Market-specific catalog items appended after the canonical set.
+        { label: "Kits", href: "/kits" },
+        { label: "Submit Kit", href: "/submit" },
+      ];
 
   // The header dark-mode toggle is now the shell's built-in `themeToggle`.
   const account = signedIn ? (
-    <AccountDropdown showAdmin={showAdmin} />
+    <AccountDropdown showAdmin={showAdmin} profileUrl={links.profileUrl} />
   ) : (
     <Link className="ak-btn ak-btn--secondary ak-btn--sm" href="/auth/sign-in">
       Sign in / Create account
