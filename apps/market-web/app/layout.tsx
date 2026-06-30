@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { SiteChrome } from "@/components/SiteChrome";
-import { themeInitScript } from "@agentkitforge/ui";
+import { themeInitScript, sidebarInitScript } from "@agentkitforge/ui";
 import { getCurrentUser, isAdminRole } from "@/lib/auth";
 import { isSelfHost, getEcosystemLinks } from "@/lib/self-host";
 // Shared UI framework stylesheet (tokens + SiteShell + primitives), imported
@@ -36,6 +36,7 @@ export const metadata: Metadata = {
 // Set data-theme BEFORE React hydrates (no flash), from the same source the
 // shell's built-in ThemeToggle reads. Centralized in @agentkitforge/ui.
 const THEME_INIT_SCRIPT = themeInitScript();
+const SIDEBAR_INIT_SCRIPT = sidebarInitScript();
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const user = await getCurrentUser();
@@ -49,6 +50,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script defer src="https://analytics.agentkitproject.com/script.js" data-website-id="9682fe00-aa23-4345-b1a7-8dc7f6ab7364" data-domains="agentkitproject.com,market.agentkitproject.com,profile.agentkitproject.com,auto.agentkitproject.com,webapp.forge.agentkitproject.com" />
       </head>

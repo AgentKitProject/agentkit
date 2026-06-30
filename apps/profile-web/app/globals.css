@@ -59,9 +59,16 @@ html[data-theme="dark"] body {
    just those specific utilities to the framework tokens in dark. Surgical: the
    bulk of the UI already uses var(--panel/--background/--foreground/...) which
    flip with the framework dark block. */
+html[data-theme="dark"] .text-slate-950,
 html[data-theme="dark"] .text-slate-900,
+html[data-theme="dark"] .text-slate-800,
 html[data-theme="dark"] .text-slate-700 {
   color: var(--ak-text);
+}
+
+html[data-theme="dark"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500 {
+  color: var(--ak-muted);
 }
 
 html[data-theme="dark"] .bg-white,
@@ -75,6 +82,11 @@ html[data-theme="dark"] .bg-slate-100 {
 
 html[data-theme="dark"] .hover\:bg-white:hover {
   background-color: var(--ak-surface-muted);
+}
+
+html[data-theme="dark"] .border-slate-200,
+html[data-theme="dark"] .border-slate-300 {
+  border-color: var(--ak-border);
 }
 
 /* Profile pages own their own width/padding (mx-auto max-w-6xl px-5 py-…),

@@ -732,6 +732,87 @@
   min-width: 0;
 }
 
+/* Sidebar header: brand block + collapse toggle on one row */
+.ak-sidebar__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ak-sidebar__header .ak-sidebar__brand {
+  flex: 1;
+  min-width: 0;
+}
+.ak-sidebar__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--ak-radius-nav);
+  background: transparent;
+  color: var(--ak-muted);
+  cursor: pointer;
+  transition: var(--ak-transition);
+}
+.ak-sidebar__collapse:hover {
+  color: var(--ak-brand);
+  background: var(--ak-surface-muted);
+  border-color: var(--ak-border);
+}
+
+/* Cross-app switcher section */
+.ak-sidebar__apps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ak-border);
+}
+.ak-sidebar__apps-label {
+  padding: 0 12px 2px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ak-muted);
+}
+
+/* ---- Collapsed (icon-rail) mode — driven by the <html> attribute ---- */
+[data-ak-sidebar="collapsed"] .ak-app {
+  --ak-sidebar-width: 76px;
+}
+[data-ak-sidebar="collapsed"] .ak-sidebar {
+  padding-left: 14px;
+  padding-right: 14px;
+  align-items: stretch;
+}
+[data-ak-sidebar="collapsed"] .ak-sidebar__header {
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+[data-ak-sidebar="collapsed"] .ak-sidebar__brand {
+  justify-content: center;
+}
+[data-ak-sidebar="collapsed"] .ak-sidebar__brand-text,
+[data-ak-sidebar="collapsed"] .ak-sidebar__apps-label,
+[data-ak-sidebar="collapsed"] .ak-nav-item__label,
+[data-ak-sidebar="collapsed"] .ak-sidebar__account-text {
+  display: none;
+}
+[data-ak-sidebar="collapsed"] .ak-nav-item,
+[data-ak-sidebar="collapsed"] .ak-theme-toggle--nav {
+  justify-content: center;
+  padding: 0;
+}
+[data-ak-sidebar="collapsed"] .ak-sidebar__account {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 8px;
+}
+
 /* Responsive: collapse the rail (icon-only) then stack */
 @media (max-width: 980px) {
   .ak-app {

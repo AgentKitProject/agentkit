@@ -40,6 +40,8 @@ export default async function Page() {
       user={{ id: user.id, email: user.email }}
       marketUrl={links.marketUrl}
       profileUrl={links.profileUrl}
+      forgeUrl={links.forgeUrl}
+      docsUrl={links.docsUrl}
       marketEnabled={marketEnabled}
       allowedProviders={allowedProviders}
     />

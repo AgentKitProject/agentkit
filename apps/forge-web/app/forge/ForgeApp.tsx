@@ -9,7 +9,7 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell, SidebarAccount, BRAND_ACCENTS, type SidebarNavItem } from "@agentkitforge/ui";
+import { AppShell, SidebarAccount, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import { getForgeClient } from "@/forge-client";
 import type { MyKitEntry } from "@/forge-client";
 import {
@@ -27,7 +27,6 @@ import {
   UploadIcon,
   UserIcon
 } from "./icons";
-import { AutoLogo } from "./sections/AutoLogo";
 import type { Favorite, PublicConfig, SessionUser, UsageInfo } from "./sections/shared";
 import { ConfigProvider } from "./config-context";
 import { errMsg, fmtBytes } from "./sections/shared";
@@ -179,22 +178,6 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     }
   }));
 
-  // Auto is a standalone app: render it as a link-out (new tab) in the rail
-  // rather than an embedded section. Keep the official AgentKitAuto icon.
-  // Insert just after "Run / Chat" to preserve its historical position. Hidden
-  // on self-host unless an Auto URL is configured (no link back into our
-  // ecosystem by default).
-  if (config.links.autoUrl) {
-    const autoNavItem: SidebarNavItem = {
-      label: "Auto",
-      icon: <AutoLogo size={18} title="" aria-hidden />,
-      href: config.links.autoUrl,
-      external: true
-    };
-    const runIdx = navItems.findIndex((n) => n.label === "Run / Chat");
-    navItems.splice(runIdx >= 0 ? runIdx + 1 : navItems.length, 0, autoNavItem);
-  }
-
   // Organization: link out to the AgentKitProfile orgs page (Profile is now the
   // system of record for org management). Shown only when a Profile URL is
   // configured (self-host without a Profile hides it).
@@ -206,6 +189,20 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
       external: true
     });
   }
+
+  // Docs: external link to this app's docs page. Always present (docsUrl always
+  // defaults, even on self-host). Kept LAST in the functional nav.
+  navItems.push({
+    label: "Docs",
+    icon: (
+      <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 4.5h9a2 2 0 012 2V20a1.5 1.5 0 00-1.5-1.5H5z" />
+        <path d="M5 4.5A1.5 1.5 0 003.5 6v13A1.5 1.5 0 015 17.5" />
+      </svg>
+    ),
+    href: `${config.links.docsUrl}/web-forge/`,
+    external: true
+  });
 
   const usageNode =
     usage && !openKitId ? (
@@ -227,6 +224,7 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
         brandSubtitle="Web Forge"
         brandAccent={BRAND_ACCENTS.forge.accent}
         brandAccentStrong={BRAND_ACCENTS.forge.strong}
+        appSwitcher={buildAppSwitcher({ current: "forge", links: { market: config.links.marketUrl, auto: config.links.autoUrl, profile: config.links.profileUrl } })}
         nav={navItems}
         themeToggle
         account={

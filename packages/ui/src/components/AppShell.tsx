@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { brandVars } from "../brand.js";
+import { SIDEBAR_ATTR, SIDEBAR_STORAGE_KEY } from "../sidebar.js";
 import { SiteShell, type SiteShellProps } from "./SiteShell.js";
 import { ThemeToggle } from "./ThemeToggle.js";
 
@@ -42,6 +43,14 @@ export type AppShellProps = {
   nav?: SidebarNavItem[];
   /** Custom sidebar nav nodes (alternative to `nav`). */
   navChildren?: React.ReactNode;
+
+  /**
+   * Cross-app ecosystem switcher (Forge/Market/Auto/Profile). Rendered as a
+   * compact section above the primary nav so users move between apps the same
+   * way in every app. Mark the current app's entry `active`. Self-host: pass
+   * only the apps the operator has configured. Omit to hide the switcher.
+   */
+  appSwitcher?: SidebarNavItem[];
 
   /** Account block / extra controls pinned to the bottom of the rail. */
   account?: React.ReactNode;
@@ -156,11 +165,15 @@ function SidebarItem({ item }: { item: SidebarNavItem }) {
     </>
   );
 
+  // Tooltip shows the label when the rail is collapsed (label text is hidden).
+  const title = typeof item.label === "string" ? item.label : undefined;
+
   if (item.href !== undefined) {
     return (
       <a
         className={cls}
         href={item.href}
+        title={title}
         aria-current={item.active ? "page" : undefined}
         onClick={item.onClick}
         {...(item.external
@@ -176,10 +189,71 @@ function SidebarItem({ item }: { item: SidebarNavItem }) {
     <button
       type="button"
       className={cls}
+      title={title}
       aria-current={item.active ? "page" : undefined}
       onClick={item.onClick}
     >
       {body}
+    </button>
+  );
+}
+
+/**
+ * Collapse/expand control for the sidebar. The collapsed state lives on the
+ * <html> `data-ak-sidebar` attribute (set pre-paint by `sidebarInitScript` to
+ * avoid a width flash) and is mirrored to localStorage; the CSS rail rules key
+ * off the attribute, so toggling it is all that's needed.
+ */
+function SidebarCollapseToggle() {
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  React.useEffect(() => {
+    setCollapsed(
+      document.documentElement.getAttribute(SIDEBAR_ATTR) === "collapsed",
+    );
+  }, []);
+
+  const toggle = React.useCallback(() => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        if (next) {
+          document.documentElement.setAttribute(SIDEBAR_ATTR, "collapsed");
+          localStorage.setItem(SIDEBAR_STORAGE_KEY, "1");
+        } else {
+          document.documentElement.removeAttribute(SIDEBAR_ATTR);
+          localStorage.setItem(SIDEBAR_STORAGE_KEY, "0");
+        }
+      } catch {
+        /* private mode / no storage — attribute still toggles for this session */
+      }
+      return next;
+    });
+  }, []);
+
+  const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  return (
+    <button
+      type="button"
+      className="ak-sidebar__collapse"
+      onClick={toggle}
+      title={label}
+      aria-label={label}
+    >
+      <svg
+        width={18}
+        height={18}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        style={collapsed ? { transform: "rotate(180deg)" } : undefined}
+      >
+        <path d="M15 6l-6 6 6 6" />
+      </svg>
     </button>
   );
 }
@@ -205,6 +279,7 @@ export function AppShell(props: AppShellProps) {
     onBrandClick,
     nav,
     navChildren,
+    appSwitcher,
     account,
     sidebarFooter,
     themeToggle,
@@ -311,7 +386,18 @@ export function AppShell(props: AppShellProps) {
       </a>
 
       <aside className="ak-sidebar">
-        {brandBlock}
+        <div className="ak-sidebar__header">
+          {brandBlock}
+          <SidebarCollapseToggle />
+        </div>
+        {appSwitcher && appSwitcher.length > 0 ? (
+          <div className="ak-sidebar__apps" aria-label="Switch app">
+            <span className="ak-sidebar__apps-label">Apps</span>
+            {appSwitcher.map((item) => (
+              <SidebarItem key={(item.href ?? "") + item.label} item={item} />
+            ))}
+          </div>
+        ) : null}
         <nav className="ak-sidebar__nav" aria-label="Primary">
           {navNodes}
         </nav>

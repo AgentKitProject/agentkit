@@ -2,8 +2,9 @@
 
 import { type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { AppShell, BRAND_ACCENTS, type SidebarNavItem } from "@agentkitforge/ui";
+import { AppShell, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import { SidebarAuth } from "@/components/SidebarAuth";
+import type { EcosystemLinks } from "@/lib/self-host";
 
 /** Profile brand mark — flat teal avatar badge, shared flat-2D language. */
 function ProfileMark({ size = 38 }: { size?: number }) {
@@ -104,7 +105,13 @@ function isActive(pathname: string, prefix: string, exact?: boolean): boolean {
  * single external Docs link. Organizations is INTERNAL here — Profile is the
  * system of record for org management.
  */
-export function SiteChrome({ children }: { children: ReactNode }) {
+export function SiteChrome({
+  ecosystemLinks,
+  children,
+}: {
+  ecosystemLinks?: EcosystemLinks;
+  children: ReactNode;
+}) {
   const pathname = usePathname() ?? "/";
 
   const nav: SidebarNavItem[] = ROUTES.map((r) => ({
@@ -114,10 +121,10 @@ export function SiteChrome({ children }: { children: ReactNode }) {
     active: isActive(pathname, r.prefix, r.exact),
   }));
 
-  // Docs is the single allowed external link (hosted + self-host). NEXT_PUBLIC_*
-  // is inlined client-side; default to the public docs site.
-  const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL?.trim() || "https://docs.agentkitproject.com";
-  nav.push({ label: "Docs", href: docsUrl, icon: ICONS.docs, external: true });
+  // Docs is the single allowed external link (hosted + self-host). Resolved
+  // server-side via ecosystemLinks; default to the public docs site.
+  const docsUrl = ecosystemLinks?.docsUrl ?? "https://docs.agentkitproject.com";
+  nav.push({ label: "Docs", href: `${docsUrl}/profile/`, icon: ICONS.docs, external: true });
 
   return (
     <AppShell
@@ -131,6 +138,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
       brandHref="/"
       brandAccent={BRAND_ACCENTS.profile.accent}
       brandAccentStrong={BRAND_ACCENTS.profile.strong}
+      appSwitcher={buildAppSwitcher({ current: "profile", links: { forge: ecosystemLinks?.forgeUrl, market: ecosystemLinks?.marketUrl, auto: ecosystemLinks?.autoUrl } })}
       nav={nav}
       account={<SidebarAuth />}
       themeToggle

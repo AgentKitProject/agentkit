@@ -59,3 +59,10 @@ export type {
 export { themeInitScript, THEME_STORAGE_KEY } from "./theme.js";
 export type { Theme } from "./theme.js";
 export { useTheme } from "./use-theme.js";
+export {
+  sidebarInitScript,
+  SIDEBAR_STORAGE_KEY,
+  SIDEBAR_ATTR,
+} from "./sidebar.js";
+export { buildAppSwitcher } from "./ecosystem.js";
+export type { EcosystemAppId, EcosystemLinks } from "./ecosystem.js";

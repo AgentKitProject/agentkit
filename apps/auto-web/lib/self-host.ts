@@ -238,6 +238,8 @@ export interface EcosystemLinks {
   forgeUrl?: string;
   /** Identity / profile management. */
   profileUrl?: string;
+  /** Docs site. */
+  docsUrl?: string;
 }
 
 export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
@@ -248,17 +250,20 @@ export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
       // service url for server-side calls). Mirrors the other NEXT_PUBLIC_* links.
       marketUrl: trimmed(env.NEXT_PUBLIC_MARKET_URL) ?? "https://market.agentkitproject.com",
       forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL) ?? "https://forge.agentkitproject.com",
-      profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL) ?? "https://profile.agentkitproject.com"
+      profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL) ?? "https://profile.agentkitproject.com",
+      docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com"
     };
   }
   // Self-host: only surface links the operator explicitly configures. The Market
   // browser link follows NEXT_PUBLIC_MARKET_URL (public), not the server-side base.
+  // Docs always defaults (the single allowed external link even on self-host).
   const market = trimmed(env.NEXT_PUBLIC_MARKET_URL);
   return {
     projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL),
     ...(market ? { marketUrl: market } : {}),
     forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL),
-    profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL)
+    profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL),
+    docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com"
   };
 }
 

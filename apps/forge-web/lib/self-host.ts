@@ -166,27 +166,38 @@ export interface EcosystemLinks {
   profileUrl?: string;
   /** Standalone AgentKitAuto app (nav link-out + legacy ?section=auto redirect). */
   autoUrl?: string;
+  /** Docs site. */
+  docsUrl?: string;
 }
 
 export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
   if (!isSelfHost(env)) {
     return {
       projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL) ?? "https://agentkitproject.com",
-      marketUrl: getMarketBaseUrl(env) ?? "https://market.agentkitproject.com",
+      // marketUrl is a BROWSER-facing ecosystem link (App switcher, "Open
+      // AgentKitMarket", import-from-Market kit links) — distinct from the
+      // SERVER-side API base (getMarketBaseUrl / AGENTKITMARKET_BASE_URL, which
+      // on self-host is the in-cluster Service URL and NOT browser-reachable).
+      // Prefer an explicit browser URL; fall back to the API base on hosted.
+      marketUrl:
+        trimmed(env.NEXT_PUBLIC_MARKET_URL) ?? getMarketBaseUrl(env) ?? "https://market.agentkitproject.com",
       forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL) ?? "https://forge.agentkitproject.com",
       profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL) ?? "https://profile.agentkitproject.com",
-      autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL) ?? "https://auto.agentkitproject.com"
+      autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL) ?? "https://auto.agentkitproject.com",
+      docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com"
     };
   }
   // Self-host: only surface links the operator explicitly configures. The Market
-  // link follows the configured Market URL (own Market) when present.
-  const market = getMarketBaseUrl(env);
+  // browser link comes from NEXT_PUBLIC_MARKET_URL ONLY — never the in-cluster API
+  // base (getMarketBaseUrl), which isn't reachable from a browser. Docs always
+  // defaults (the single allowed external link even on self-host).
   return {
     projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL),
-    ...(market ? { marketUrl: market } : {}),
+    marketUrl: trimmed(env.NEXT_PUBLIC_MARKET_URL),
     forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL),
     profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL),
-    autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL)
+    autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL),
+    docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com"
   };
 }
 

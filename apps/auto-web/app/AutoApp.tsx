@@ -13,7 +13,7 @@
 // accent). Auth is enforced server-side in page.tsx (requireUser); this client
 // component assumes an authenticated session and talks to /api/* with cookies.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AppShell, SidebarAccount, BRAND_ACCENTS, type SidebarNavItem } from "@agentkitforge/ui";
+import { AppShell, SidebarAccount, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import type { MyKitEntry } from "@/forge-client";
 import { AutoSection } from "./sections/AutoSection";
 import { AUTO_SECTIONS, DEFAULT_AUTO_SECTION, isAutoSectionId, type AutoSectionId } from "./sections/section-ids";
@@ -38,6 +38,14 @@ const ORG_ICON: ReactNode = (
   </svg>
 );
 
+// Book icon for the external "Docs" link.
+const DOCS_ICON: ReactNode = (
+  <svg viewBox="0 0 24 24" width={18} height={18} {...stroke}>
+    <path d="M5 4.5h9a2 2 0 012 2V20a1.5 1.5 0 00-1.5-1.5H5z" />
+    <path d="M5 4.5A1.5 1.5 0 003.5 6v13A1.5 1.5 0 015 17.5" />
+  </svg>
+);
+
 const AUTO_GREEN = BRAND_ACCENTS.auto.accent;
 const AUTO_GREEN_STRONG = BRAND_ACCENTS.auto.strong;
 
@@ -47,12 +55,16 @@ export function AutoApp({
   user,
   marketUrl,
   profileUrl,
+  forgeUrl,
+  docsUrl,
   marketEnabled,
   allowedProviders
 }: {
   user: { id: string; email: string };
   marketUrl?: string;
   profileUrl?: string;
+  forgeUrl?: string;
+  docsUrl?: string;
   marketEnabled?: boolean;
   /** Provider-lock: the AI provider types this deployment permits, or null when
    *  unrestricted. The settings UI hides disallowed BYO options. */
@@ -111,6 +123,16 @@ export function AutoApp({
       external: true
     });
   }
+  // Docs: external link to Auto's docs page. Kept LAST in the functional nav.
+  // docsUrl always defaults (the single allowed external link even on self-host).
+  if (docsUrl) {
+    navItems.push({
+      label: "Docs",
+      icon: DOCS_ICON,
+      href: `${docsUrl}/auto/`,
+      external: true
+    });
+  }
   const activeTitle = AUTO_SECTIONS.find((s) => s.id === section)?.title ?? "Autonomous runs";
 
   return (
@@ -131,6 +153,7 @@ export function AutoApp({
       brandAccentStrong={AUTO_GREEN_STRONG}
       eyebrow="AgentKitAuto"
       title={activeTitle}
+      appSwitcher={buildAppSwitcher({ current: "auto", links: { forge: forgeUrl, market: marketUrl, profile: profileUrl } })}
       nav={navItems}
       account={
         <SidebarAccount name={user.email || "Account"} status="Signed in" initials={initials} href="/auth/sign-out" />

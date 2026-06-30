@@ -8,6 +8,7 @@ import {
   AppShell,
   SidebarAccount,
   BRAND_ACCENTS,
+  buildAppSwitcher,
   type SidebarNavItem,
 } from "@agentkitforge/ui";
 import type { EcosystemLinks } from "@/lib/self-host";
@@ -171,7 +172,7 @@ export function SiteChrome({
   // Docs is an allowed external link (hosted + self-host). Forge/Auto
   // cross-links are intentionally NOT surfaced in the sidebar.
   if (links.docsUrl) {
-    nav.push({ label: "Docs", href: links.docsUrl, icon: ICONS.docs, external: true });
+    nav.push({ label: "Docs", href: `${links.docsUrl}/market/`, icon: ICONS.docs, external: true });
   }
 
   // Account block: SidebarAccount + sign out when signed in (the per-page nav
@@ -225,6 +226,7 @@ export function SiteChrome({
       brandHref="/"
       brandAccent={BRAND_ACCENTS.market.accent}
       brandAccentStrong={BRAND_ACCENTS.market.strong}
+      appSwitcher={buildAppSwitcher({ current: "market", links: { forge: links.forgeUrl, auto: links.autoUrl, profile: links.profileUrl } })}
       nav={nav}
       account={account}
       themeToggle
