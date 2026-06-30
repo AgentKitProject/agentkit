@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#2f8f89"/>
-  <path d="M8 23L16 9L24 23H8Z" fill="white" fill-opacity="0.95"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">AgentKitProject account icon</title>
+  <desc id="desc">An avatar silhouette in a rounded teal badge.</desc>
+  <rect x="8" y="8" width="48" height="48" rx="14" fill="#E6F4F2" stroke="#2F8F89" stroke-width="4"/>
+  <circle cx="32" cy="27" r="7" fill="#2F8F89"/>
+  <path d="M20 46 a12 12 0 0 1 24 0 Z" fill="#2F8F89"/>
 </svg>

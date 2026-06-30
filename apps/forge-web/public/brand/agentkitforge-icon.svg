@@ -1,34 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">AgentKitForge icon</title>
-  <desc id="desc">A stacked modular cube icon with a cyan connector bridge.</desc>
-  <defs>
-    <linearGradient id="topFace" x1="20" x2="76" y1="14" y2="48" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#818CF8"/>
-      <stop offset="1" stop-color="#4F46E5"/>
-    </linearGradient>
-    <linearGradient id="leftFace" x1="18" x2="48" y1="26" y2="78" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4F46E5"/>
-      <stop offset="1" stop-color="#3730A3"/>
-    </linearGradient>
-    <linearGradient id="rightFace" x1="48" x2="78" y1="26" y2="78" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4338CA"/>
-      <stop offset="1" stop-color="#312E81"/>
-    </linearGradient>
-    <linearGradient id="connector" x1="36" x2="60" y1="36" y2="58" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22D3EE"/>
-      <stop offset="1" stop-color="#06B6D4"/>
-    </linearGradient>
-  </defs>
-  <g fill="none" stroke-linejoin="round">
-    <path d="M48 8 68 19.5 48 31 28 19.5 48 8Z" fill="url(#topFace)"/>
-    <path d="M28 19.5 48 31v17L28 36.5v-17Z" fill="#4F46E5"/>
-    <path d="M68 19.5 48 31v17l20-11.5v-17Z" fill="#3730A3"/>
-    <path d="M43 39.5h10v16.8l-5 4-5-4V39.5Z" fill="url(#connector)"/>
-    <path d="M48 50.5 78 67.8 48 85 18 67.8 48 50.5Z" fill="url(#topFace)"/>
-    <path d="M18 67.8 48 85V59.8L18 42.5v25.3Z" fill="url(#leftFace)"/>
-    <path d="M78 67.8 48 85V59.8l30-17.3v25.3Z" fill="url(#rightFace)"/>
-    <path d="M18 42.5 48 59.8l30-17.3-16-9.2-14 8.1-14-8.1-16 9.2Z" fill="#4F46E5"/>
-    <path d="M37 45.5 48 52l11-6.5v12.2L48 64l-11-6.3V45.5Z" fill="#E0F7FF"/>
-    <path d="M43 43.2 48 46.1l5-2.9v13.1l-5 4-5-4V43.2Z" fill="url(#connector)"/>
-  </g>
+  <desc id="desc">A flat line-art cube with a cyan front face in a rounded indigo badge.</desc>
+  <rect x="8" y="8" width="48" height="48" rx="14" fill="#EEF2FF" stroke="#4F46E5" stroke-width="4"/>
+  <path d="M32 33 L46 25 L46 39 L32 47 Z" fill="#06B6D4"/>
+  <path d="M32 17 L46 25 L46 39 L32 47 L18 39 L18 25 Z" fill="none" stroke="#4F46E5" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M18 25 L32 33 L46 25 M32 33 L32 47" fill="none" stroke="#4F46E5" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>
