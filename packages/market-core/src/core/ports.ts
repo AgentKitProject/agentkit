@@ -155,6 +155,15 @@ export interface OrgRepository {
   /** Every configured per-provider key for the org. */
   listOrgProviderKeys(orgId: string): Promise<OrgProviderKeyRecord[]>;
   clearOrgProviderKey(orgId: string, providerType: OrgKeyProviderType): Promise<void>;
+  /**
+   * Org default per-run budget (Auto). At most ONE per org: a positive integer in
+   * US cents that OVERRIDES each member's own default budget. `getOrgRunBudget`
+   * returns undefined when none is configured; `setOrgRunBudget` upserts;
+   * `clearOrgRunBudget` removes it.
+   */
+  setOrgRunBudget(orgId: string, input: { budgetCents: number; updatedByUserId: string }): Promise<void>;
+  getOrgRunBudget(orgId: string): Promise<OrgRunBudgetRecord | undefined>;
+  clearOrgRunBudget(orgId: string): Promise<void>;
 }
 
 /**
@@ -179,6 +188,14 @@ export interface OrgProviderKeyRecord {
   providerType: OrgKeyProviderType;
   apiKeyCiphertext: string;
   baseUrl?: string;
+  updatedByUserId: string;
+  updatedAt: string;
+}
+
+/** An org's default per-run budget (US cents). At most one per org. */
+export interface OrgRunBudgetRecord {
+  orgId: string;
+  budgetCents: number;
   updatedByUserId: string;
   updatedAt: string;
 }

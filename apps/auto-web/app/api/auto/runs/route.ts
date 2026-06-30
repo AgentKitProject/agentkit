@@ -21,6 +21,7 @@ import {
   parseKitRef,
   startRun
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,6 @@ export async function POST(request: Request) {
     kitRef?: unknown;
     input?: { prompt?: unknown; files?: unknown };
     prompt?: unknown;
-    budgetCents?: unknown;
     model?: unknown;
     inputFiles?: unknown;
     deliveryConfig?: unknown;
@@ -59,7 +59,9 @@ export async function POST(request: Request) {
             : []
         )
       : undefined;
-    const budgetCents = typeof body.budgetCents === "number" ? body.budgetCents : NaN;
+    // Budget is resolved server-side (org override → user default → 50¢ fallback).
+    // The form no longer asks; the per-run cutoff enforces this resolved cap.
+    const budgetCents = await resolveRunBudgetCents(userId);
     const model = typeof body.model === "string" ? body.model : undefined;
     // Phase C: out-of-band staged input files (presigned-uploaded then referenced).
     const inputFiles = parseInputFiles(body.inputFiles);

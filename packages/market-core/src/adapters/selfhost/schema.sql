@@ -217,6 +217,15 @@ CREATE TABLE IF NOT EXISTS org_provider_keys (
   PRIMARY KEY (org_id, provider_type)
 );
 
+-- Org default per-run budget (open-core; Auto per-run cap override). At most ONE
+-- row per org (PK org_id). When set it overrides each member's own default.
+CREATE TABLE IF NOT EXISTS org_run_budgets (
+  org_id              text PRIMARY KEY REFERENCES organizations(org_id) ON DELETE CASCADE,
+  budget_cents        integer NOT NULL,
+  updated_by_user_id  text NOT NULL,
+  updated_at          text NOT NULL
+);
+
 -- NOTE: The Tier-2 `entitlements` table (PK (user_id, kit_id) + kit_id index)
 -- lives in the COMMERCIAL schema (@agentkit-commercial/market-core); the free
 -- build does not define it.

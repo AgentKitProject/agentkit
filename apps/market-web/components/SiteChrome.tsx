@@ -163,10 +163,6 @@ export function SiteChrome({
     nav.push({ label: "Docs", href: links.docsUrl, icon: ICONS.docs, external: true });
   }
 
-  // Topbar title from the active route (defaults to Catalog).
-  const activeRoute = ROUTE_TITLES.find((r) => isActive(pathname, r.prefix));
-  const title = activeRoute?.title ?? "Catalog";
-
   // Account block: SidebarAccount + sign out when signed in (the per-page nav
   // items cover My Submissions / Purchases / Admin); a sign-in link otherwise.
   const account = signedIn ? (
@@ -221,8 +217,6 @@ export function SiteChrome({
       nav={nav}
       account={account}
       themeToggle
-      eyebrow="AgentKitMarket"
-      title={title}
     >
       {children}
     </AppShell>

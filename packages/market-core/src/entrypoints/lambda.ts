@@ -403,6 +403,9 @@ function createLazyDynamoOrgRepository(): OrgRepository {
     getOrgProviderKey(orgId, providerType) { return getRepository().getOrgProviderKey(orgId, providerType); },
     listOrgProviderKeys(orgId) { return getRepository().listOrgProviderKeys(orgId); },
     clearOrgProviderKey(orgId, providerType) { return getRepository().clearOrgProviderKey(orgId, providerType); },
+    setOrgRunBudget(orgId, input) { return getRepository().setOrgRunBudget(orgId, input); },
+    getOrgRunBudget(orgId) { return getRepository().getOrgRunBudget(orgId); },
+    clearOrgRunBudget(orgId) { return getRepository().clearOrgRunBudget(orgId); },
   };
 }
 

@@ -15,7 +15,8 @@ import {
   transferKitRequestSchema,
   setKitVisibilityRequestSchema,
   setOrgApiKeyRequestSchema,
-  orgKeyProviderTypeSchema
+  orgKeyProviderTypeSchema,
+  setOrgRunBudgetRequestSchema
 } from "@agentkitforge/contracts";
 import { fetchAdminBackend } from "@/lib/admin-api";
 import { requireUserForApi, UnauthorizedError, ForbiddenError } from "@/lib/auth";
@@ -354,6 +355,52 @@ export async function browserClearOrgApiKey(request: Request, orgId: string) {
       parsedProvider.data
     )}`;
     return proxyToBackend(backendPath, "DELETE", {
+      actorUserId: user.id
+    });
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Org default run budget — read / set / clear (owner/admin gated by the backend
+// via actorUserId). The org default OVERRIDES each member's own default budget.
+// ---------------------------------------------------------------------------
+
+export async function browserGetOrgRunBudget(_request: Request, orgId: string) {
+  try {
+    const user = await requireUserForApi();
+    // The backend GET requires actorUserId (owner/admin gated) as a query param.
+    const backendPath = `${marketBackendOrgRoutes.adminOrgRunBudget(orgId)}?actorUserId=${encodeURIComponent(user.id)}`;
+    return proxyToBackend(backendPath, "GET");
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+export async function browserSetOrgRunBudget(request: Request, orgId: string) {
+  try {
+    const user = await requireUserForApi();
+    const body = (await request.json()) as unknown;
+
+    // Validate the browser body WITHOUT actorUserId (the browser never sends it);
+    // inject the session user's id on the Seam-B hop.
+    const parsed = setOrgRunBudgetRequestSchema.omit({ actorUserId: true }).safeParse(body);
+    if (!parsed.success) {
+      return browserOrgError(parsed.error.issues[0]?.message ?? "Invalid request.", 400);
+    }
+
+    const backendBody = { ...parsed.data, actorUserId: user.id };
+    return proxyToBackend(marketBackendOrgRoutes.adminOrgRunBudget(orgId), "POST", backendBody);
+  } catch (error) {
+    return handleBrowserOrgException(error);
+  }
+}
+
+export async function browserClearOrgRunBudget(_request: Request, orgId: string) {
+  try {
+    const user = await requireUserForApi();
+    return proxyToBackend(marketBackendOrgRoutes.adminOrgRunBudget(orgId), "DELETE", {
       actorUserId: user.id
     });
   } catch (error) {

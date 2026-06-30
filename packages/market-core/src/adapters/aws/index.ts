@@ -33,6 +33,7 @@ import type {
   FavoritesRepository,
   ObjectStore,
   OrgProviderKeyRecord,
+  OrgRunBudgetRecord,
   OrgRepository,
   PackageUploadService,
   SubmissionValidationUpdate,
@@ -1159,6 +1160,44 @@ export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepositor
       await dynamo.send(new DeleteCommand({
         TableName: orgProviderKeysTableName,
         Key: { orgId, providerType },
+      }));
+    },
+
+    // Org default run budget — stored as attributes on the organization item
+    // itself (at most one per org). No separate table.
+    async setOrgRunBudget(orgId, input): Promise<void> {
+      await dynamo.send(new UpdateCommand({
+        TableName: organizationsTableName,
+        Key: { orgId },
+        UpdateExpression:
+          'SET defaultRunBudgetCents = :c, runBudgetUpdatedByUserId = :u, runBudgetUpdatedAt = :t',
+        ExpressionAttributeValues: {
+          ':c': input.budgetCents,
+          ':u': input.updatedByUserId,
+          ':t': new Date().toISOString(),
+        },
+      }));
+    },
+
+    async getOrgRunBudget(orgId): Promise<OrgRunBudgetRecord | undefined> {
+      const result = await dynamo.send(new GetCommand({ TableName: organizationsTableName, Key: { orgId } }));
+      const item = result.Item as Record<string, unknown> | undefined;
+      if (!item || typeof item.defaultRunBudgetCents !== 'number') {
+        return undefined;
+      }
+      return {
+        orgId,
+        budgetCents: item.defaultRunBudgetCents,
+        updatedByUserId: typeof item.runBudgetUpdatedByUserId === 'string' ? item.runBudgetUpdatedByUserId : '',
+        updatedAt: typeof item.runBudgetUpdatedAt === 'string' ? item.runBudgetUpdatedAt : '',
+      };
+    },
+
+    async clearOrgRunBudget(orgId): Promise<void> {
+      await dynamo.send(new UpdateCommand({
+        TableName: organizationsTableName,
+        Key: { orgId },
+        UpdateExpression: 'REMOVE defaultRunBudgetCents, runBudgetUpdatedByUserId, runBudgetUpdatedAt',
       }));
     },
   };

@@ -272,7 +272,6 @@ export function AutoSection({
   // Approval form state.
   const [apprKitId, setApprKitId] = useState("");
   const [apprTools, setApprTools] = useState<string[]>(["read_file", "list_dir"]);
-  const [apprBudgetUsd, setApprBudgetUsd] = useState("1.00");
   const [apprBusy, setApprBusy] = useState(false);
   // Phase C: network egress policy on the approval form.
   const [apprNetMode, setApprNetMode] = useState<"deny_all" | "allowlist">("deny_all");
@@ -309,7 +308,6 @@ export function AutoSection({
   // Run form state.
   const [runKitId, setRunKitId] = useState("");
   const [runPrompt, setRunPrompt] = useState("");
-  const [runBudgetUsd, setRunBudgetUsd] = useState("0.50");
   const [runBusy, setRunBusy] = useState(false);
   // Phase 2: per-run inference-mode override ("" = use account preference).
   const [runInferenceMode, setRunInferenceMode] = useState<"" | "managed" | "byo">("");
@@ -322,7 +320,6 @@ export function AutoSection({
   // Webhook state (Phase C).
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [whKitId, setWhKitId] = useState("");
-  const [whBudgetUsd, setWhBudgetUsd] = useState("0.50");
   const [whBusy, setWhBusy] = useState(false);
   // The one-time plaintext secret + ingest URL, shown ONCE after creation.
   const [whSecret, setWhSecret] = useState<{ secret: string; ingestUrl: string } | null>(null);
@@ -340,8 +337,20 @@ export function AutoSection({
   const [schedCron, setSchedCron] = useState("0 9 * * *"); // raw cron (advanced mode)
   const [schedTz, setSchedTz] = useState(localTimezone());
   const [schedPrompt, setSchedPrompt] = useState("");
-  const [schedBudgetUsd, setSchedBudgetUsd] = useState("0.50");
   const [schedBusy, setSchedBusy] = useState(false);
+
+  // Per-run budget settings (Phase 2.5): the per-run budget is no longer entered
+  // on each form — it is resolved server-side (org override → user default → 50¢).
+  // The Settings tab edits the user's own default; the forms show the resolved
+  // effective value read-only. `runBudget` holds the latest snapshot from
+  // /api/auto/run-budget; `runBudgetDraftUsd` is the Settings input.
+  const [runBudget, setRunBudget] = useState<{
+    userDefaultCents: number | null;
+    effectiveCents: number;
+    systemFallbackCents: number;
+  } | null>(null);
+  const [runBudgetDraftUsd, setRunBudgetDraftUsd] = useState("");
+  const [runBudgetBusy, setRunBudgetBusy] = useState(false);
   // Phase D: opt-in result-delivery fields copied onto every scheduled run.
   const [schedDelivery, setSchedDelivery] = useState<DeliveryFields>(EMPTY_DELIVERY);
 
@@ -410,6 +419,49 @@ export function AutoSection({
     }
   }, [notify]);
 
+  // The user's default per-run budget + the resolved effective value. Failure is
+  // non-fatal: the forms fall back to a generic note and runs still resolve the
+  // budget server-side.
+  const loadRunBudget = useCallback(async () => {
+    try {
+      const res = await jsonFetch<{
+        userDefaultCents: number | null;
+        effectiveCents: number;
+        systemFallbackCents: number;
+      }>("/api/auto/run-budget");
+      setRunBudget(res);
+      setRunBudgetDraftUsd(res.userDefaultCents !== null ? (res.userDefaultCents / 100).toFixed(2) : "");
+    } catch {
+      /* non-fatal — forms show the system fallback note */
+    }
+  }, []);
+
+  const saveRunBudget = useCallback(async () => {
+    const cents = Math.round(parseFloat(runBudgetDraftUsd) * 100);
+    if (!Number.isInteger(cents) || cents <= 0) {
+      notify("Default run budget must be a positive amount.", true);
+      return;
+    }
+    setRunBudgetBusy(true);
+    try {
+      const res = await jsonFetch<{
+        userDefaultCents: number | null;
+        effectiveCents: number;
+        systemFallbackCents: number;
+      }>("/api/auto/run-budget", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ budgetCents: cents })
+      });
+      setRunBudget(res);
+      notify("Default run budget saved.");
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setRunBudgetBusy(false);
+    }
+  }, [runBudgetDraftUsd, notify]);
+
   // Auto v2 billing snapshot. Failure is non-fatal (the endpoint already degrades
   // to an unmetered snapshot); leave billing null and the credits panel hides.
   const loadBilling = useCallback(async () => {
@@ -442,9 +494,10 @@ export function AutoSection({
     void loadWebhooks();
     void loadByo();
     void loadProviders();
+    void loadRunBudget();
     void loadBilling();
     void loadEntitled();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadProviders, loadBilling, loadEntitled]);
+  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadProviders, loadRunBudget, loadBilling, loadEntitled]);
 
   // The catalog filtered to the deployment's allowed provider types (disallowed
   // are hidden from the form; the server enforces the lock regardless).
@@ -576,8 +629,7 @@ export function AutoSection({
     if (!apprKitId) return notify("Pick a kit to authorize.", true);
     const kitRef = parseKitSelection(apprKitId, entitled);
     if (!kitRef) return notify("That kit is no longer available.", true);
-    const cents = Math.round(parseFloat(apprBudgetUsd) * 100);
-    if (!Number.isInteger(cents) || cents <= 0) return notify("Max budget must be a positive amount.", true);
+    // The per-run budget ceiling is resolved server-side (see Settings).
     // Phase C: assemble the network policy. An allowlist requires at least one host.
     let networkPolicy: NetworkPolicy = { mode: "deny_all" };
     if (apprNetMode === "allowlist") {
@@ -598,7 +650,7 @@ export function AutoSection({
       await jsonFetch<Approval>(autoRoutes.approvals(), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kitRef, toolAllowlist, maxBudgetCents: cents, networkPolicy })
+        body: JSON.stringify({ kitRef, toolAllowlist, networkPolicy })
       });
       notify("Standing approval created.");
       await loadApprovals();
@@ -700,8 +752,7 @@ export function AutoSection({
     const kitRef = parseKitSelection(runKitId, entitled);
     if (!kitRef) return notify("That kit is no longer available.", true);
     if (!runPrompt.trim()) return notify("Enter a task for the run.", true);
-    const cents = Math.round(parseFloat(runBudgetUsd) * 100);
-    if (!Number.isInteger(cents) || cents <= 0) return notify("Run budget is required (positive amount).", true);
+    // The per-run budget is resolved server-side (see Settings).
     setRunBusy(true);
     try {
       // Phase C: stage any selected input files first — request presigned PUT
@@ -742,7 +793,6 @@ export function AutoSection({
         body: JSON.stringify({
           kitRef,
           input: { prompt: runPrompt },
-          budgetCents: cents,
           ...(inputFiles && inputFiles.length > 0 ? { inputFiles } : {}),
           ...(deliveryConfig ? { deliveryConfig } : {}),
           ...(runInferenceMode ? { inferenceMode: runInferenceMode } : {})
@@ -788,8 +838,7 @@ export function AutoSection({
         : recurrenceToCron(schedRepeat, { time: schedTime, dayOfWeek: schedDow, dayOfMonth: schedDom });
     if (!cron) return notify("Enter a cron expression.", true);
     if (!schedPrompt.trim()) return notify("Enter a task for the schedule.", true);
-    const cents = Math.round(parseFloat(schedBudgetUsd) * 100);
-    if (!Number.isInteger(cents) || cents <= 0) return notify("Per-run budget is required (positive amount).", true);
+    // The per-run budget is resolved server-side (see Settings).
     setSchedBusy(true);
     try {
       // Phase D: opt-in delivery copied onto every run this schedule fires.
@@ -802,7 +851,6 @@ export function AutoSection({
           cron,
           timezone: schedTz.trim() || "UTC",
           input: { prompt: schedPrompt },
-          budgetCents: cents,
           approvalId: approval.id,
           ...(deliveryConfig ? { deliveryConfig } : {})
         })
@@ -847,8 +895,7 @@ export function AutoSection({
     if (!kitRef) return notify("That kit is no longer available.", true);
     const approval = approvalForSelection(whKitId);
     if (!approval) return notify("That kit has no standing approval.", true);
-    const cents = Math.round(parseFloat(whBudgetUsd) * 100);
-    if (!Number.isInteger(cents) || cents <= 0) return notify("Per-fire budget is required (positive amount).", true);
+    // The per-fire budget is resolved server-side (see Settings).
     setWhBusy(true);
     try {
       // Phase D: opt-in delivery copied onto every run this webhook fires.
@@ -858,7 +905,6 @@ export function AutoSection({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kitRef,
-          budgetCents: cents,
           approvalId: approval.id,
           ...(deliveryConfig ? { deliveryConfig } : {})
         })
@@ -907,6 +953,17 @@ export function AutoSection({
     return kits.find((k) => k.kitId === ref.localKitId)?.name ?? ref.localKitId ?? "(unknown kit)";
   };
 
+  // Read-only per-run budget note shown on the run/schedule/webhook/approval
+  // forms now that the budget is resolved server-side (Settings tab). Uses the
+  // resolved effective value when known, else a generic note.
+  const budgetNote = (
+    <p className="form-copy" style={{ marginTop: 0 }}>
+      Per-run budget:{" "}
+      <strong>{runBudget ? centsToUsd(runBudget.effectiveCents) : "set in Settings"}</strong>
+      {" "}(the per-run cap). Change it on the <strong>Settings</strong> tab; an org admin can override it.
+    </p>
+  );
+
   return (
     <div style={brandVars(AUTO_GREEN, AUTO_GREEN_STRONG)}>
       {section === "approvals" && (
@@ -947,9 +1004,7 @@ export function AutoSection({
             ))}
           </div>
         </Field>
-        <Field label="Max budget per run (USD)">
-          <Input type="number" min="0.01" step="0.01" value={apprBudgetUsd} onChange={(e) => setApprBudgetUsd(e.target.value)} />
-        </Field>
+        {budgetNote}
 
         {/* ---- Network egress policy (Phase C) ---- */}
         <Field label="Network access">
@@ -1081,6 +1136,47 @@ export function AutoSection({
               My own provider{byoHasKey ? "" : " (add a provider first)"}
             </option>
           </Select>
+        </Field>
+
+        {/* ---- Default run budget (Phase 2.5) ----
+            One per-run cap used by every run/schedule/webhook you start (the run
+            stops once it spends this much). The forms no longer ask per run. An
+            org admin can set an org-level default that OVERRIDES this. */}
+        <h4 style={{ margin: "12px 0 4px" }}>Default run budget</h4>
+        <p className="form-copy" style={{ marginTop: 0 }}>
+          The per-run cap (USD) for every AgentKitAuto run, schedule, and webhook you start — a run stops
+          once it spends this much. If your organization sets an org-level default, that OVERRIDES this for
+          all members.{" "}
+          {runBudget && (
+            <>
+              Effective now: <strong>{centsToUsd(runBudget.effectiveCents)}</strong>
+              {runBudget.userDefaultCents === null
+                ? ` (system default ${centsToUsd(runBudget.systemFallbackCents)} — set your own below)`
+                : ""}
+              .
+            </>
+          )}
+        </p>
+        <Field label="Default run budget (USD)">
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={runBudgetDraftUsd}
+              placeholder={runBudget ? (runBudget.systemFallbackCents / 100).toFixed(2) : "0.50"}
+              onChange={(e) => setRunBudgetDraftUsd(e.target.value)}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={runBudgetBusy || !runBudgetDraftUsd.trim()}
+              loading={runBudgetBusy}
+              onClick={() => void saveRunBudget()}
+            >
+              {runBudgetBusy ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </Field>
 
         {/* ---- BYO provider manager ----
@@ -1244,9 +1340,7 @@ export function AutoSection({
         <Field label="Task">
           <Textarea rows={4} value={runPrompt} onChange={(e) => setRunPrompt(e.target.value)} placeholder="What should the kit do, end to end?" />
         </Field>
-        <Field label="This run's budget (USD, required)">
-          <Input type="number" min="0.01" step="0.01" value={runBudgetUsd} onChange={(e) => setRunBudgetUsd(e.target.value)} />
-        </Field>
+        {budgetNote}
         {/* ---- Inference mode for THIS run (Phase 2) ----
             Hidden for a protected Market kit: it FORCES managed inference (a BYO
             key would route the server-fetched kit prompt through the buyer's own
@@ -1376,9 +1470,7 @@ export function AutoSection({
         <Field label="Task">
           <Textarea rows={3} value={schedPrompt} onChange={(e) => setSchedPrompt(e.target.value)} placeholder="What should the kit do on each run?" />
         </Field>
-        <Field label="Per-run budget (USD, required)">
-          <Input type="number" min="0.01" step="0.01" value={schedBudgetUsd} onChange={(e) => setSchedBudgetUsd(e.target.value)} />
-        </Field>
+        {budgetNote}
         {/* ---- Deliver result (Phase D) ---- */}
         <DeliverySection value={schedDelivery} onChange={setSchedDelivery} scopeNoun="scheduled run" />
         <Button disabled={schedBusy} loading={schedBusy} onClick={() => void createSchedule()}>
@@ -1437,9 +1529,7 @@ export function AutoSection({
             {renderKitOptions(true)}
           </Select>
         </Field>
-        <Field label="Per-fire budget (USD, required)">
-          <Input type="number" min="0.01" step="0.01" value={whBudgetUsd} onChange={(e) => setWhBudgetUsd(e.target.value)} />
-        </Field>
+        {budgetNote}
         {/* ---- Deliver result (Phase D) ---- */}
         <DeliverySection value={whDelivery} onChange={setWhDelivery} scopeNoun="webhook-fired run" />
         <Button disabled={whBusy} loading={whBusy} onClick={() => void createWebhook()}>

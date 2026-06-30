@@ -1024,6 +1024,32 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
           expect(await org().listOrgProviderKeys(created.orgId)).toEqual([]);
         });
       });
+
+      describe('org default run budget', () => {
+        it('is absent by default; set → get → clear round-trips', async () => {
+          const created = await org().createOrg({ displayName: 'Budget Org', ownerUserId: 'u_owner' });
+          expect(await org().getOrgRunBudget(created.orgId)).toBeUndefined();
+
+          await org().setOrgRunBudget(created.orgId, { budgetCents: 250, updatedByUserId: 'u_owner' });
+          const record = await org().getOrgRunBudget(created.orgId);
+          expect(record?.budgetCents).toBe(250);
+          expect(record?.updatedByUserId).toBe('u_owner');
+
+          // Upsert replaces the value.
+          await org().setOrgRunBudget(created.orgId, { budgetCents: 999, updatedByUserId: 'u_admin' });
+          expect((await org().getOrgRunBudget(created.orgId))?.budgetCents).toBe(999);
+
+          await org().clearOrgRunBudget(created.orgId);
+          expect(await org().getOrgRunBudget(created.orgId)).toBeUndefined();
+        });
+
+        it('deleting the org removes its run budget', async () => {
+          const created = await org().createOrg({ displayName: 'Delete Budget Org', ownerUserId: 'u_owner' });
+          await org().setOrgRunBudget(created.orgId, { budgetCents: 500, updatedByUserId: 'u_owner' });
+          await org().deleteOrg(created.orgId);
+          expect(await org().getOrgRunBudget(created.orgId)).toBeUndefined();
+        });
+      });
     });
 
     // NOTE: The Tier-2 paid/licensed-kit contract (set-pricing, grant/revoke

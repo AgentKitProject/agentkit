@@ -20,6 +20,7 @@ import {
   parseDeliveryConfig,
   parseKitRef
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 import { webhookListResponse, createWebhookResponse } from "./shared";
 
 export const dynamic = "force-dynamic";
@@ -35,14 +36,14 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as {
     kitRef?: unknown;
-    budgetCents?: unknown;
     model?: unknown;
     approvalId?: unknown;
     deliveryConfig?: unknown;
   };
   try {
     const kitRef = parseKitRef(body.kitRef);
-    const budgetCents = typeof body.budgetCents === "number" ? body.budgetCents : NaN;
+    // Per-fire budget is resolved server-side (org override → user default → 50¢).
+    const budgetCents = await resolveRunBudgetCents(userId);
     const model = typeof body.model === "string" ? body.model : undefined;
     const approvalId = typeof body.approvalId === "string" ? body.approvalId : "";
     // Phase D: opt-in result delivery copied onto every run this webhook fires.

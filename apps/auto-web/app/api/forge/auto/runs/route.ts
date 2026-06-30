@@ -20,6 +20,7 @@ import {
   parseKitRef,
   startRun
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,10 @@ export async function POST(request: Request) {
             : []
         )
       : undefined;
-    const budgetCents = typeof body.budgetCents === "number" ? body.budgetCents : NaN;
+    // Budget: bearer/CLI clients may still send an explicit budgetCents; when
+    // omitted, resolve it server-side (org override → user default → 50¢).
+    const budgetCents =
+      typeof body.budgetCents === "number" ? body.budgetCents : await resolveRunBudgetCents(userId);
     const model = typeof body.model === "string" ? body.model : undefined;
     const inputFiles = parseInputFiles(body.inputFiles);
     // Phase D: opt-in result delivery (email + signed webhook). Validated here

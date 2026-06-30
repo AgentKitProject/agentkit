@@ -355,6 +355,18 @@ export const serviceResolveOrgApiKeyRequestSchema = z.object({
 });
 export type ServiceResolveOrgApiKeyRequest = z.infer<typeof serviceResolveOrgApiKeyRequestSchema>;
 
+/**
+ * POST {marketServiceRoutes.resolveOrgRunBudget()} body. Asserts the user's id
+ * (no session). The Market service maps the user → their single org that has a
+ * default run budget set (server-side rule) and returns it. Auto calls this at
+ * run-create time, AFTER the user's own default and BEFORE the system fallback.
+ * Response = resolvedOrgRunBudgetSchema (orgs.ts): { found, budgetCents? }.
+ */
+export const serviceResolveOrgRunBudgetRequestSchema = z.object({
+  userId: z.string().min(1)
+});
+export type ServiceResolveOrgRunBudgetRequest = z.infer<typeof serviceResolveOrgRunBudgetRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Route builder (Seam S — web-forge ↔ market-app, service-key auth)
 // ---------------------------------------------------------------------------
@@ -369,7 +381,10 @@ export const marketServiceRoutes = {
   entitledKits: () => `/api/forge/service/me/entitled-kits`,
   /** POST /api/forge/service/me/org-api-key — service-key authed, asserts userId;
    *  resolves the user's effective org shared API key (decrypted) or { found:false }. */
-  resolveOrgApiKey: () => `/api/forge/service/me/org-api-key`
+  resolveOrgApiKey: () => `/api/forge/service/me/org-api-key`,
+  /** POST /api/forge/service/me/run-budget — service-key authed, asserts userId;
+   *  resolves the user's effective org default run budget or { found:false }. */
+  resolveOrgRunBudget: () => `/api/forge/service/me/run-budget`
 } as const;
 
 // ---------------------------------------------------------------------------

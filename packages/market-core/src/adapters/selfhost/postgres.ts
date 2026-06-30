@@ -23,6 +23,7 @@ import type {
   CatalogRepository,
   FavoritesRepository,
   OrgProviderKeyRecord,
+  OrgRunBudgetRecord,
   OrgRepository,
   SubmissionValidationUpdate,
   ValidationJobUpdate,
@@ -1204,6 +1205,40 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
         [orgId, providerType],
       );
     },
+
+    async setOrgRunBudget(orgId, input): Promise<void> {
+      const now = new Date().toISOString();
+      await pool.query(
+        `INSERT INTO org_run_budgets (org_id, budget_cents, updated_by_user_id, updated_at)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (org_id) DO UPDATE SET
+           budget_cents = EXCLUDED.budget_cents,
+           updated_by_user_id = EXCLUDED.updated_by_user_id,
+           updated_at = EXCLUDED.updated_at`,
+        [orgId, input.budgetCents, input.updatedByUserId, now],
+      );
+    },
+
+    async getOrgRunBudget(orgId): Promise<OrgRunBudgetRecord | undefined> {
+      const result = await pool.query(
+        `SELECT * FROM org_run_budgets WHERE org_id = $1`,
+        [orgId],
+      );
+      return result.rows[0] ? rowToRunBudget(result.rows[0]) : undefined;
+    },
+
+    async clearOrgRunBudget(orgId): Promise<void> {
+      await pool.query(`DELETE FROM org_run_budgets WHERE org_id = $1`, [orgId]);
+    },
+  };
+}
+
+function rowToRunBudget(row: any): OrgRunBudgetRecord {
+  return {
+    orgId: row.org_id,
+    budgetCents: Number(row.budget_cents),
+    updatedByUserId: row.updated_by_user_id,
+    updatedAt: row.updated_at,
   };
 }
 

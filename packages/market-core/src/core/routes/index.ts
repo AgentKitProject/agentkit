@@ -32,6 +32,7 @@ import type {
   FavoritesRepository,
   OrgKeyProviderType,
   OrgProviderKeyRecord,
+  OrgRunBudgetRecord,
   OrgRepository,
   PackageUploadService,
 } from '../ports.js';
@@ -44,6 +45,7 @@ import {
   removeOrgMemberRequestSchema,
   setKitVisibilityRequestSchema,
   setOrgApiKeyRequestSchema,
+  setOrgRunBudgetRequestSchema,
   transferKitRequestSchema,
   addFavoriteRequestSchema,
 } from '@agentkitforge/contracts';
@@ -344,6 +346,23 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'GET' && request.resource === '/admin/users/{userId}/org-api-key/resolve') {
         return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => resolveUserOrgApiKeyHandler(request, repo, allowedOrigins));
+      }
+
+      // --- Org default run budget (open-core; Auto per-run cap override) ---
+      if (request.resource === '/admin/orgs/{orgId}/run-budget') {
+        if (request.method === 'GET') {
+          return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => orgRunBudgetStatusHandler(request, repo, allowedOrigins));
+        }
+        if (request.method === 'POST') {
+          return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setOrgRunBudgetHandler(request, repo, allowedOrigins));
+        }
+        if (request.method === 'DELETE') {
+          return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => clearOrgRunBudgetHandler(request, repo, allowedOrigins));
+        }
+      }
+
+      if (request.method === 'GET' && request.resource === '/admin/users/{userId}/org-run-budget/resolve') {
+        return withOrgRepo(request, allowedOrigins, orgRepository, (repo) => resolveUserOrgRunBudgetHandler(request, repo, allowedOrigins));
       }
 
       // --- Commercial Tier-2 + Stripe-payout routes (optional) ---
@@ -1687,6 +1706,104 @@ async function resolveUserOrgApiKeyHandler(
     providerType: record.providerType,
     baseUrl: record.baseUrl,
   });
+}
+
+/** GET /admin/orgs/{orgId}/run-budget — the org's default run budget or null. */
+async function orgRunBudgetStatusHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const orgId = request.pathParameters?.orgId;
+  if (!orgId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing orgId' });
+  }
+  const actorUserId =
+    typeof request.queryStringParameters?.actorUserId === 'string'
+      ? request.queryStringParameters.actorUserId
+      : undefined;
+  if (!actorUserId) {
+    return json(request, allowedOrigins, 400, { message: 'actorUserId query parameter is required' });
+  }
+  const org = await orgRepository.getOrg(orgId);
+  if (!org) {
+    return json(request, allowedOrigins, 404, { message: 'Organization not found' });
+  }
+  const membership = await orgRepository.getMembership(orgId, actorUserId);
+  if (!membership || membership.status !== 'active' || !MANAGE_ROLES.has(membership.role)) {
+    return json(request, allowedOrigins, 403, { message: 'Only an owner or admin can read the run budget' });
+  }
+  const record = await orgRepository.getOrgRunBudget(orgId);
+  return json(request, allowedOrigins, 200, { budgetCents: record ? record.budgetCents : null });
+}
+
+/** POST /admin/orgs/{orgId}/run-budget — upsert the org's default run budget. */
+async function setOrgRunBudgetHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const gate = await requireOrgManager(request, orgRepository, allowedOrigins);
+  if ('statusCode' in gate) {
+    return gate;
+  }
+  const body = parseJsonBody(request) as Record<string, unknown> | undefined;
+  const parsed = setOrgRunBudgetRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return json(request, allowedOrigins, 400, { message: 'Invalid run budget payload' });
+  }
+  await orgRepository.setOrgRunBudget(gate.orgId, {
+    budgetCents: parsed.data.budgetCents,
+    updatedByUserId: gate.actorUserId,
+  });
+  return json(request, allowedOrigins, 200, { ok: true });
+}
+
+/** DELETE /admin/orgs/{orgId}/run-budget — clear the org's default run budget. */
+async function clearOrgRunBudgetHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const gate = await requireOrgManager(request, orgRepository, allowedOrigins);
+  if ('statusCode' in gate) {
+    return gate;
+  }
+  await orgRepository.clearOrgRunBudget(gate.orgId);
+  return json(request, allowedOrigins, 200, { ok: true });
+}
+
+/**
+ * GET /admin/users/{userId}/org-run-budget/resolve — runtime path (Auto). Admin-
+ * key auth only. Multi-org selection rule: among the user's ACTIVE-member orgs
+ * that have a default run budget set, return it only when EXACTLY ONE has one;
+ * zero or more than one → { found: false }.
+ */
+async function resolveUserOrgRunBudgetHandler(
+  request: CoreRequest,
+  orgRepository: OrgRepository,
+  allowedOrigins: string[],
+): Promise<CoreResponse> {
+  const userId = request.pathParameters?.userId;
+  if (!userId) {
+    return json(request, allowedOrigins, 400, { message: 'Missing userId' });
+  }
+  const orgs = await orgRepository.listOrgsForUser(userId);
+  const withBudget: OrgRunBudgetRecord[] = [];
+  for (const org of orgs) {
+    const membership = await orgRepository.getMembership(org.orgId, userId);
+    if (!membership || membership.status !== 'active') {
+      continue;
+    }
+    const record = await orgRepository.getOrgRunBudget(org.orgId);
+    if (record) {
+      withBudget.push(record);
+    }
+  }
+  if (withBudget.length !== 1) {
+    return json(request, allowedOrigins, 200, { found: false });
+  }
+  return json(request, allowedOrigins, 200, { found: true, budgetCents: withBudget[0]!.budgetCents });
 }
 
 function withFavoritesRepo(

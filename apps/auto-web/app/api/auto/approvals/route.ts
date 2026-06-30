@@ -15,6 +15,7 @@ import {
   parseKitRef,
   parseNetworkPolicy
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,6 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     kitRef?: unknown;
     toolAllowlist?: unknown;
-    maxBudgetCents?: unknown;
     networkPolicy?: unknown;
   };
 
@@ -39,7 +39,9 @@ export async function POST(request: Request) {
     const toolAllowlist = Array.isArray(body.toolAllowlist)
       ? body.toolAllowlist.filter((t): t is string => typeof t === "string")
       : [];
-    const maxBudgetCents = typeof body.maxBudgetCents === "number" ? body.maxBudgetCents : NaN;
+    // The approval ceiling is the resolved per-run budget (org override → user
+    // default → 50¢ fallback); the form no longer asks for a budget.
+    const maxBudgetCents = await resolveRunBudgetCents(userId);
     // Phase C: deny_all (default) or an allowlist of egress hosts. http_fetch in
     // the toolAllowlist is honored only with an allowlist policy (createApproval enforces).
     const networkPolicy = parseNetworkPolicy(body.networkPolicy);

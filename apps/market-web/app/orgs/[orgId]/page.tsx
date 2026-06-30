@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PageShell } from "@/components/PageShell";
-import { OrgMembersPanel, OrgApiKeyPanel } from "@/components/OrgsClient";
+import { OrgMembersPanel, OrgApiKeyPanel, OrgRunBudgetPanel } from "@/components/OrgsClient";
 import { CommercialPayouts } from "@/components/CommercialPayouts";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -33,6 +33,7 @@ export default async function OrgDetailPage({ params }: PageProps) {
     >
       <OrgMembersPanel orgId={orgId} />
       <OrgApiKeyPanel orgId={orgId} viewerUserId={user.id} />
+      <OrgRunBudgetPanel orgId={orgId} viewerUserId={user.id} />
       <CommercialPayouts orgId={orgId} />
     </PageShell>
   );

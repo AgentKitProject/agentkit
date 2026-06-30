@@ -18,6 +18,7 @@ import {
   parseDeliveryConfig,
   parseKitRef
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,6 @@ type ScheduleBody = {
   timezone?: unknown;
   input?: { prompt?: unknown; files?: unknown };
   prompt?: unknown;
-  budgetCents?: unknown;
   model?: unknown;
   approvalId?: unknown;
   deliveryConfig?: unknown;
@@ -66,7 +66,8 @@ export async function POST(request: Request) {
           ? body.prompt
           : "";
     const files = parseFiles(body.input);
-    const budgetCents = typeof body.budgetCents === "number" ? body.budgetCents : NaN;
+    // Per-run budget is resolved server-side (org override → user default → 50¢).
+    const budgetCents = await resolveRunBudgetCents(userId);
     const model = typeof body.model === "string" ? body.model : undefined;
     const approvalId = typeof body.approvalId === "string" ? body.approvalId : "";
     // Phase D: opt-in result delivery copied onto every run this schedule fires.

@@ -8,9 +8,10 @@ import type {
   OrgInvite,
   OrgKeyProviderType,
   OrgApiKeyStatus,
-  OrgApiKeyProviderStatus
+  OrgApiKeyProviderStatus,
+  OrgRunBudgetStatus
 } from "@agentkitforge/contracts";
-import { orgApiKeyStatusSchema } from "@agentkitforge/contracts";
+import { orgApiKeyStatusSchema, orgRunBudgetStatusSchema } from "@agentkitforge/contracts";
 import { Button, Input, Select } from "@agentkitforge/ui";
 
 // ---------------------------------------------------------------------------
@@ -766,6 +767,191 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
         <Button type="submit" disabled={saving || !apiKey.trim()}>
           {saving ? "Saving…" : "Save key"}
         </Button>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Org default run budget — owner/admin only
+// ---------------------------------------------------------------------------
+
+/**
+ * Owner/admin surface for the org's DEFAULT per-run budget (Auto). When set it
+ * OVERRIDES each member's own default budget for every run they start. The
+ * viewer's role is derived from the org membership list (same source the members
+ * panel reads); the panel renders nothing for members/viewers. The backend
+ * independently enforces owner/admin on every write — this gate is UI-only.
+ */
+export function OrgRunBudgetPanel({ orgId, viewerUserId }: { orgId: string; viewerUserId: string }) {
+  const [canManage, setCanManage] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<Loadable<OrgRunBudgetStatus>>({ status: "loading" });
+  const [budgetUsd, setBudgetUsd] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [clearingBudget, setClearingBudget] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
+
+  // Determine the viewer's role from the membership list (owner/admin → show).
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/orgs/${encodeURIComponent(orgId)}/members`, { headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        if (!active) return;
+        const items = Array.isArray(payload)
+          ? (payload as OrgMembership[])
+          : Array.isArray((payload as Record<string, unknown>)?.items)
+            ? ((payload as Record<string, unknown[]>).items as OrgMembership[])
+            : Array.isArray((payload as Record<string, unknown>)?.members)
+              ? ((payload as Record<string, unknown[]>).members as OrgMembership[])
+              : [];
+        const mine = items.find((m) => m.userId === viewerUserId);
+        setCanManage(mine?.role === "owner" || mine?.role === "admin");
+      })
+      .catch(() => {
+        if (active) setCanManage(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [orgId, viewerUserId]);
+
+  const loadStatus = useCallback(() => {
+    setStatus({ status: "loading" });
+    fetch(`/api/orgs/${encodeURIComponent(orgId)}/run-budget`, { headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        const parsed = orgRunBudgetStatusSchema.safeParse(payload);
+        const data: OrgRunBudgetStatus = parsed.success ? parsed.data : { budgetCents: null };
+        setStatus({ status: "loaded", data });
+        setBudgetUsd(data.budgetCents !== null ? (data.budgetCents / 100).toFixed(2) : "");
+      })
+      .catch((err: unknown) => {
+        setStatus({ status: "failed", message: err instanceof Error ? err.message : "Could not load the run budget." });
+      });
+  }, [orgId]);
+
+  useEffect(() => {
+    if (canManage) loadStatus();
+  }, [canManage, loadStatus]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cents = Math.round(parseFloat(budgetUsd) * 100);
+    if (!Number.isInteger(cents) || cents <= 0) {
+      setFormError("Enter a positive budget amount.");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    setFormNotice(null);
+    try {
+      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/run-budget`, {
+        method: "PUT",
+        body: JSON.stringify({ budgetCents: cents })
+      });
+      setFormNotice("Org default run budget saved.");
+      loadStatus();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to save the run budget.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setClearingBudget(true);
+    setFormError(null);
+    setFormNotice(null);
+    try {
+      await apiFetch(`/api/orgs/${encodeURIComponent(orgId)}/run-budget`, { method: "DELETE" });
+      setBudgetUsd("");
+      setFormNotice("Org default run budget cleared.");
+      loadStatus();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to clear the run budget.");
+    } finally {
+      setClearingBudget(false);
+    }
+  };
+
+  // Hide entirely for non-owner/admin (and while the role is still resolving).
+  if (canManage !== true) {
+    return null;
+  }
+
+  const current = status.status === "loaded" ? status.data.budgetCents : null;
+
+  return (
+    <div>
+      <h2>Organization default run budget</h2>
+      <p>
+        Set a per-run budget (USD) for AgentKitAuto runs started by your members. When set, this OVERRIDES
+        each member&apos;s own default budget. Leave it unset to let members use their own default.
+      </p>
+
+      {status.status === "loading" && (
+        <div className="empty-state">
+          <strong>Loading run budget</strong>
+        </div>
+      )}
+      {status.status === "failed" && (
+        <div className="empty-state danger-state">
+          <strong>Could not load the run budget</strong>
+          <p>{status.message}</p>
+        </div>
+      )}
+      {status.status === "loaded" && (
+        <div className="empty-state" style={{ marginBottom: "1.5rem" }}>
+          <strong>
+            {current !== null ? `Current org default: $${(current / 100).toFixed(2)} per run` : "No org default set"}
+          </strong>
+          {current === null && <p>Members use their own default run budget.</p>}
+        </div>
+      )}
+
+      <form className="inline-form" style={{ marginBottom: "1rem" }} onSubmit={(e) => { void handleSave(e); }}>
+        <h3>Set the org default</h3>
+        {formError && (
+          <div className="rule-callout danger-callout">
+            <strong>Error</strong>
+            <span>{formError}</span>
+          </div>
+        )}
+        {formNotice && (
+          <div className="rule-callout">
+            <strong>Saved</strong>
+            <span>{formNotice}</span>
+          </div>
+        )}
+        <label className="field-label">
+          Default run budget (USD) <span className="required">*</span>
+          <Input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={budgetUsd}
+            onChange={(e) => setBudgetUsd(e.target.value)}
+            placeholder="0.50"
+            disabled={saving}
+          />
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button type="submit" disabled={saving || !budgetUsd.trim()}>
+            {saving ? "Saving…" : "Save budget"}
+          </Button>
+          {current !== null && (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={clearingBudget}
+              onClick={() => { void handleClear(); }}
+            >
+              {clearingBudget ? "Clearing…" : "Clear org default"}
+            </Button>
+          )}
+        </div>
       </form>
     </div>
   );

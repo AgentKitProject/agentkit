@@ -294,7 +294,28 @@ export const marketBackendOrgRoutes = {
    * Returns the raw key over the admin-key-authenticated in-cluster channel only.
    */
   adminResolveUserOrgApiKey: (userId: string, providerType: string) =>
-    `/admin/users/${encodeURIComponent(userId)}/org-api-key/resolve?providerType=${encodeURIComponent(providerType)}`
+    `/admin/users/${encodeURIComponent(userId)}/org-api-key/resolve?providerType=${encodeURIComponent(providerType)}`,
+  /**
+   * GET (read the org's default run budget) / POST (set it) / DELETE (clear it)
+   * for the org-level default per-run budget that OVERRIDES each member's own
+   * default. An org stores at most ONE budget (a nullable integer, US cents).
+   *  - GET: returns `orgRunBudgetStatusSchema` (`{ budgetCents: number | null }`);
+   *    owner/admin gated (actorUserId query param).
+   *  - POST: body (`setOrgRunBudgetRequestSchema`) carries `budgetCents` +
+   *    `actorUserId`; upserts the org default. Owner/admin gated.
+   *  - DELETE: clears the org default (`actorUserId` in body). Owner/admin gated.
+   */
+  adminOrgRunBudget: (orgId: string) =>
+    `/admin/orgs/${encodeURIComponent(orgId)}/run-budget`,
+  /**
+   * GET — resolve the effective org default run budget for a USER (Seam B). Auto
+   * calls this at run-create time, AFTER the user's own default and BEFORE the
+   * system fallback. The multi-org selection rule lives server-side: pick the
+   * user's single active-membership org that HAS a default run budget set, else
+   * not-found. Returns `resolvedOrgRunBudgetSchema` (`{ found, budgetCents? }`).
+   */
+  adminResolveUserOrgRunBudget: (userId: string) =>
+    `/admin/users/${encodeURIComponent(userId)}/org-run-budget/resolve`
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -400,3 +421,56 @@ export const resolvedOrgApiKeySchema = z.object({
   baseUrl: z.string().optional()
 });
 export type ResolvedOrgApiKey = z.infer<typeof resolvedOrgApiKeySchema>;
+
+// ---------------------------------------------------------------------------
+// Org default run budget (Auto — org override of each member's per-run cap)
+// ---------------------------------------------------------------------------
+
+/**
+ * Browser routes (market-app, AuthKit-cookie auth, gated to org owner/admin) for
+ * the org's default per-run budget. The web UI reads/sets/clears one nullable
+ * integer (US cents); when set it OVERRIDES every member's own default budget.
+ */
+export const orgRunBudgetRoutes = {
+  /**
+   * GET (read `{ budgetCents: number | null }`) / PUT (set — body carries
+   * `budgetCents`) / DELETE (clear) for the org's default per-run budget.
+   */
+  orgRunBudget: (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/run-budget`
+} as const;
+
+/**
+ * Body of PUT /api/orgs/{orgId}/run-budget (browser) and POST the Seam-B
+ * adminOrgRunBudget. `budgetCents` is the org-wide default per-run cap (a
+ * positive integer, US cents). `actorUserId` is injected server-side from the
+ * session on the Seam-B hop (the browser body carries only `budgetCents`).
+ * Owner/admin gated.
+ */
+export const setOrgRunBudgetRequestSchema = z.object({
+  budgetCents: z.number().int().positive(),
+  /** Set on the Seam-B hop from the authenticated session; absent on the browser body. */
+  actorUserId: z.string().min(1).optional()
+});
+export type SetOrgRunBudgetRequest = z.infer<typeof setOrgRunBudgetRequestSchema>;
+
+/**
+ * Status of an org's default run budget — safe to return to the browser. A null
+ * `budgetCents` means the org has no default configured (members fall back to
+ * their own default).
+ */
+export const orgRunBudgetStatusSchema = z.object({
+  budgetCents: z.number().int().positive().nullable()
+});
+export type OrgRunBudgetStatus = z.infer<typeof orgRunBudgetStatusSchema>;
+
+/**
+ * Result of resolving a user's effective org default run budget (Seam B / Seam
+ * S). Returned to Auto at run-create time. `found:false` ⇒ no org default
+ * applies (the caller falls through to the user's own default, then the system
+ * fallback).
+ */
+export const resolvedOrgRunBudgetSchema = z.object({
+  found: z.boolean(),
+  budgetCents: z.number().int().positive().optional()
+});
+export type ResolvedOrgRunBudget = z.infer<typeof resolvedOrgRunBudgetSchema>;

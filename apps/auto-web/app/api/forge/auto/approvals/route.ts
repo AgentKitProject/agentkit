@@ -15,6 +15,7 @@ import {
   parseKitRef,
   parseNetworkPolicy
 } from "@/server/core/auto";
+import { resolveRunBudgetCents } from "@/server/core/run-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
     const toolAllowlist = Array.isArray(body.toolAllowlist)
       ? body.toolAllowlist.filter((t): t is string => typeof t === "string")
       : [];
-    const maxBudgetCents = typeof body.maxBudgetCents === "number" ? body.maxBudgetCents : NaN;
+    const maxBudgetCents =
+      typeof body.maxBudgetCents === "number" ? body.maxBudgetCents : await resolveRunBudgetCents(userId);
     const networkPolicy = parseNetworkPolicy(body.networkPolicy);
     const approval = await createApproval({ userId, kitRef, toolAllowlist, maxBudgetCents, networkPolicy });
     return Response.json(approval, { status: 201 });
