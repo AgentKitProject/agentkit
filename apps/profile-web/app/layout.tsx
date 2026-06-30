@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
+import { isOidcProvider } from "@/lib/auth-provider";
 import { SiteChrome } from "@/components/SiteChrome";
 import { themeInitScript } from "@agentkitforge/ui";
 import "./globals.css";
@@ -45,9 +46,16 @@ export default function RootLayout({
         <script defer src="https://analytics.agentkitproject.com/script.js" data-website-id="9682fe00-aa23-4345-b1a7-8dc7f6ab7364" data-domains="agentkitproject.com,market.agentkitproject.com,profile.agentkitproject.com,auto.agentkitproject.com,webapp.forge.agentkitproject.com" />
       </head>
       <body>
-        <AuthKitProvider>
+        {/* AuthKitProvider is WorkOS-only and calls withAuth(); on the OIDC
+            self-host path it must NOT wrap the tree (no AuthKit middleware runs
+            there). Render the shell directly under OIDC; wrap under WorkOS. */}
+        {isOidcProvider() ? (
           <SiteChrome>{children}</SiteChrome>
-        </AuthKitProvider>
+        ) : (
+          <AuthKitProvider>
+            <SiteChrome>{children}</SiteChrome>
+          </AuthKitProvider>
+        )}
       </body>
     </html>
   );
