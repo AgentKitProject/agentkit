@@ -44,7 +44,7 @@ spec:
           command:
             - sh
             - -c
-            - 'until pg_isready -h {{ include "agentkitprofile.postgresHost" . }} -p 5432; do echo "waiting for postgres"; sleep 2; done'
+            - 'until pg_isready -h {{ include "agentkitprofile.postgresHost" . }} -p 5432 -U {{ .Values.postgres.user }}; do echo "waiting for postgres"; sleep 2; done'
       {{- end }}
       containers:
         - name: migrate
