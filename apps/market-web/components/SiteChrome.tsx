@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AppShell,
-  SidebarAccount,
+  SidebarAccountFooter,
   BRAND_ACCENTS,
   buildAppSwitcher,
   type SidebarNavItem,
@@ -16,6 +16,8 @@ import type { EcosystemLinks } from "@/lib/self-host";
 export type SiteChromeProps = {
   /** Whether a user is signed in (resolved server-side). */
   signedIn: boolean;
+  /** Signed-in user's email (resolved server-side) for the account tile. */
+  userEmail?: string;
   /** Whether the signed-in user has an admin role. */
   showAdmin: boolean;
   /**
@@ -136,6 +138,7 @@ function isActive(pathname: string, prefix: string): boolean {
  */
 export function SiteChrome({
   signedIn,
+  userEmail,
   showAdmin,
   selfHost = false,
   ecosystemLinks,
@@ -175,31 +178,10 @@ export function SiteChrome({
     nav.push({ label: "Docs", href: `${links.docsUrl}/market/`, icon: ICONS.docs, external: true });
   }
 
-  // Account block: SidebarAccount + sign out when signed in (the per-page nav
-  // items cover My Submissions / Purchases / Admin); a sign-in link otherwise.
+  // Account block: the SHARED standard footer (tile + Sign out only) when signed
+  // in — identical across every app; a sign-in link otherwise.
   const account = signedIn ? (
-    <>
-      <SidebarAccount name="Account" status="Signed in" initials="AK" href="/submissions" />
-      {links.profileUrl && (
-        <a
-          className="ak-nav-item"
-          href={links.profileUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          <span className="ak-nav-item__icon" aria-hidden="true">
-            {ICONS.docs}
-          </span>
-          <span className="ak-nav-item__label">AgentKitProject Account ↗</span>
-        </a>
-      )}
-      <a className="ak-nav-item" href="/auth/sign-out">
-        <span className="ak-nav-item__icon" aria-hidden="true">
-          {ICONS.signOut}
-        </span>
-        <span className="ak-nav-item__label">Sign out</span>
-      </a>
-    </>
+    <SidebarAccountFooter identity={userEmail} accountHref="/submissions" />
   ) : (
     <Link className="ak-btn ak-btn--secondary ak-btn--sm" href="/auth/sign-in">
       Sign in / Create account

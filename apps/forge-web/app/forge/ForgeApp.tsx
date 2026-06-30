@@ -9,7 +9,7 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AppShell, SidebarAccount, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
+import { AppShell, SidebarAccountFooter, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import { getForgeClient } from "@/forge-client";
 import type { MyKitEntry } from "@/forge-client";
 import {
@@ -24,8 +24,7 @@ import {
   PlugIcon,
   SettingsIcon,
   SparklesIcon,
-  UploadIcon,
-  UserIcon
+  UploadIcon
 } from "./icons";
 import type { Favorite, PublicConfig, SessionUser, UsageInfo } from "./sections/shared";
 import { ConfigProvider } from "./config-context";
@@ -74,13 +73,6 @@ const SECTION_TITLES: Record<SectionId, { eyebrow: string; title: string }> = {
   account: { eyebrow: "Account", title: "Your AgentKitProject account" },
   about: { eyebrow: "About", title: "About AgentKitForge" }
 };
-
-function initials(email?: string): string {
-  if (!email) return "";
-  const name = email.split("@")[0];
-  const parts = name.split(/[._-]+/).filter(Boolean);
-  return (parts[0]?.[0] ?? name[0] ?? "").concat(parts[1]?.[0] ?? "").toUpperCase();
-}
 
 export default function ForgeApp({ user, config }: { user: SessionUser; config: PublicConfig }) {
   const forge: Forge = useMemo(() => getForgeClient(), []);
@@ -228,16 +220,13 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
         nav={navItems}
         themeToggle
         account={
-          <SidebarAccount
-            name={user?.email ?? "Signed in"}
-            status="AgentKitProject account"
-            initials={initials(user?.email)}
-            avatar={initials(user?.email) ? undefined : <UserIcon size={18} />}
-            onClick={() => {
+          <SidebarAccountFooter
+            identity={user?.email}
+            accountActive={section === "account" && !openKitId}
+            onAccountClick={() => {
               setOpenKitId(null);
               setSection("account");
             }}
-            className={section === "account" && !openKitId ? "ak-sidebar__account--active" : undefined}
           />
         }
         eyebrow={heading.eyebrow}

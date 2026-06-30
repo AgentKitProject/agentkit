@@ -1,10 +1,22 @@
 // Instance-level "require login" gate for self-hosted Market.
 //
-// By DEFAULT (env unset / anything but "true") the Market catalog is PUBLIC —
-// the hosted marketplace is unaffected. When an operator sets REQUIRE_LOGIN=true
-// (e.g. an internet-facing self-host that should be private), EVERY request must
-// carry an authenticated cookie session or it is sent to sign-in (pages) / 401'd
-// (API).
+// DEFAULTS by deployment type (overridable):
+//   - HOSTED (public marketplace): PUBLIC catalog — browse without sign-in.
+//   - SELF-HOST (AUTH_PROVIDER=oidc or SELF_HOST=true): PRIVATE by default —
+//     a self-hosted Market should never be open to anonymous users just because
+//     the operator didn't set a flag.
+// An explicit REQUIRE_LOGIN always wins: "true" forces private (even hosted),
+// "false" forces public (even self-host). When private, EVERY request must carry
+// an authenticated cookie session or it is sent to sign-in (pages) / 401'd (API).
+
+// Self-host signal — kept inline (not imported from ./self-host) so this module
+// stays dependency-free for the bare `node --test` runner. Mirrors
+// lib/self-host.ts isSelfHost: AUTH_PROVIDER=oidc OR SELF_HOST truthy.
+function isSelfHostEnv(env: NodeJS.ProcessEnv): boolean {
+  if ((env.AUTH_PROVIDER ?? "").trim().toLowerCase() === "oidc") return true;
+  const v = (env.SELF_HOST ?? "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
 //
 // This gate is for the COOKIE-session browser surface ONLY. The device-bearer
 // (`/api/forge/*`) and service-key (`/api/forge/service/*`) routes own their own
@@ -16,9 +28,16 @@
 // unit-tested without the Next.js runtime; `requireLoginEnabled()` mirrors the
 // existing `SELF_HOST` env pattern in `lib/forge-link.ts`.
 
-/** True only when REQUIRE_LOGIN is exactly "true" (case/space-insensitive). */
+/**
+ * Whether the require-login gate is active. Explicit REQUIRE_LOGIN wins
+ * ("true"/"false"); when unset, defaults ON for self-host (never run an open
+ * self-hosted Market) and OFF for the hosted public catalog.
+ */
 export function requireLoginEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return (env.REQUIRE_LOGIN ?? "").trim().toLowerCase() === "true";
+  const raw = (env.REQUIRE_LOGIN ?? "").trim().toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return isSelfHostEnv(env);
 }
 
 /**

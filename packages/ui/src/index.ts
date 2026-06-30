@@ -40,11 +40,12 @@ export type {
 export { SiteShell } from "./components/SiteShell.js";
 export type { SiteShellProps } from "./components/SiteShell.js";
 
-export { AppShell, SidebarAccount } from "./components/AppShell.js";
+export { AppShell, SidebarAccount, SidebarAccountFooter } from "./components/AppShell.js";
 export type {
   AppShellProps,
   SidebarNavItem,
   SidebarAccountProps,
+  SidebarAccountFooterProps,
 } from "./components/AppShell.js";
 
 export { brandVars, BRAND_ACCENTS } from "./brand.js";

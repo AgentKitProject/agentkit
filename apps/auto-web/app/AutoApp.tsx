@@ -13,7 +13,7 @@
 // accent). Auth is enforced server-side in page.tsx (requireUser); this client
 // component assumes an authenticated session and talks to /api/* with cookies.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { AppShell, SidebarAccount, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
+import { AppShell, SidebarAccountFooter, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import type { MyKitEntry } from "@/forge-client";
 import { AutoSection } from "./sections/AutoSection";
 import { AUTO_SECTIONS, DEFAULT_AUTO_SECTION, isAutoSectionId, type AutoSectionId } from "./sections/section-ids";
@@ -95,8 +95,6 @@ export function AutoApp({
     void refreshKits();
   }, [refreshKits]);
 
-  const initials = (user.email || "?").slice(0, 2).toUpperCase();
-
   // Active dashboard tab. Each maps to one full-width pane in AutoSection.
   const [section, setSection] = useState<AutoSectionId>(DEFAULT_AUTO_SECTION);
   // Deep-link the active tab from ?section= (falls back to the default). The
@@ -155,9 +153,7 @@ export function AutoApp({
       title={activeTitle}
       appSwitcher={buildAppSwitcher({ current: "auto", links: { forge: forgeUrl, market: marketUrl, profile: profileUrl } })}
       nav={navItems}
-      account={
-        <SidebarAccount name={user.email || "Account"} status="Signed in" initials={initials} href="/auth/sign-out" />
-      }
+      account={<SidebarAccountFooter identity={user.email} />}
       themeToggle
     >
       {toast && (

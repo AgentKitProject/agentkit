@@ -146,6 +146,83 @@ export function SidebarAccount({
   );
 }
 
+/** Derive up-to-2-char initials from an email/name for the account avatar. */
+function accountInitials(identity?: string | null): string {
+  const v = (identity ?? "").trim();
+  if (!v) return "AK";
+  const local = v.split("@")[0] ?? v;
+  const parts = local.split(/[.\-_+\s]+/).filter(Boolean);
+  const chars =
+    parts.length >= 2 ? parts[0]![0]! + parts[1]![0]! : local.slice(0, 2);
+  return chars.toUpperCase();
+}
+
+const SIGN_OUT_ICON = (
+  <svg
+    viewBox="0 0 24 24"
+    width={18}
+    height={18}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M15 12H6m0 0l3-3m-3 3l3 3" />
+    <path d="M11 4.5h6a1 1 0 011 1v13a1 1 0 01-1 1h-6" />
+  </svg>
+);
+
+export type SidebarAccountFooterProps = {
+  /** Signed-in identity (email/handle). Shown on the tile; falls back to "Account". */
+  identity?: string | null;
+  /** Optional link for the account tile (e.g. the account/settings page). */
+  accountHref?: string;
+  /** Optional click handler for the tile (SPA apps that switch an in-app section
+   *  rather than navigating, e.g. Forge). Ignored if `accountHref` is set. */
+  onAccountClick?: (event: React.MouseEvent) => void;
+  /** Marks the tile active (for SPA section highlighting). */
+  accountActive?: boolean;
+  /** Sign-out link. Defaults to "/auth/sign-out". */
+  signOutHref?: string;
+};
+
+/**
+ * Standard signed-in account block for the AppShell `account` slot — IDENTICAL
+ * across every app: an identity tile (avatar + identity + "Signed in") plus a
+ * Sign out row. The dark/light toggle is rendered separately by AppShell's
+ * `themeToggle` prop, so the account region is exactly: tile · Sign out · theme.
+ * Apps must not add extra links here (keep the block uniform).
+ */
+export function SidebarAccountFooter({
+  identity,
+  accountHref,
+  onAccountClick,
+  accountActive,
+  signOutHref = "/auth/sign-out",
+}: SidebarAccountFooterProps) {
+  const name = identity && identity.trim() ? identity.trim() : "Account";
+  return (
+    <>
+      <SidebarAccount
+        name={name}
+        status="Signed in"
+        initials={accountInitials(identity)}
+        href={accountHref}
+        onClick={accountHref ? undefined : onAccountClick}
+        className={accountActive ? "ak-sidebar__account--active" : undefined}
+      />
+      <a className="ak-nav-item" href={signOutHref}>
+        <span className="ak-nav-item__icon" aria-hidden="true">
+          {SIGN_OUT_ICON}
+        </span>
+        <span className="ak-nav-item__label">Sign out</span>
+      </a>
+    </>
+  );
+}
+
 function SidebarItem({ item }: { item: SidebarNavItem }) {
   const cls = [
     "ak-nav-item",

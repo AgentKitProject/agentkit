@@ -74,6 +74,12 @@ describe("app security boundaries", () => {
 
   it("renders sign-out as full-page navigation only", async () => {
     const header = await readFile(new URL("../components/SiteChrome.tsx", import.meta.url), "utf8");
+    // The account block (incl. sign-out) is now the SHARED SidebarAccountFooter
+    // from @agentkitforge/ui; the plain-<a> guarantee lives there.
+    const footer = await readFile(
+      new URL("../../../packages/ui/src/components/AppShell.tsx", import.meta.url),
+      "utf8"
+    );
     // Sign-out handling now lives in the WorkOS auth provider (hosted path); the
     // route is a thin delegate. The full-page-navigation guard is unchanged.
     const signOutHandler = await readFile(
@@ -81,12 +87,16 @@ describe("app security boundaries", () => {
       "utf8"
     );
 
-    // Sign-out must use a plain <a> (not next/link or router.push) so it performs
-    // full-page navigation and hits the sign-out route handler rather than being
-    // intercepted by the client-side router.
-    assert.match(header, /<a\b[^>]*href="\/auth\/sign-out"[^>]*>/);
+    // Market delegates the account block to the shared footer and must NOT
+    // client-route sign-out itself (no next/link, no router.push/fetch).
+    assert.match(header, /<SidebarAccountFooter\b/);
     assert.doesNotMatch(header, /<Link\b[^>]*href="\/auth\/sign-out"/);
     assert.doesNotMatch(header, /router\.push\([^)]*sign-out|fetch\([^)]*sign-out/);
+    // The shared footer renders sign-out as a plain <a> (full-page nav), not a
+    // next/link, defaulting to the sign-out route.
+    assert.match(footer, /<a\b[^>]*href=\{signOutHref\}/);
+    assert.match(footer, /signOutHref\s*=\s*"\/auth\/sign-out"/);
+    assert.doesNotMatch(footer, /<Link\b[^>]*signOutHref/);
     assert.match(signOutHandler, /NextResponse\.redirect/);
     assert.match(signOutHandler, /isPrefetchOrRscRequest/);
   });

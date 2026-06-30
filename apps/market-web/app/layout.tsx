@@ -58,6 +58,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <AuthKitProvider>
           <SiteChrome
             signedIn={Boolean(user)}
+            userEmail={user?.email}
             showAdmin={showAdmin}
             selfHost={selfHost}
             ecosystemLinks={ecosystemLinks}

@@ -60,10 +60,17 @@ describe("url-config", () => {
 
   it("renders sign-out as a plain anchor instead of a prefetched Next link", async () => {
     const header = await readFile(new URL("../components/SiteChrome.tsx", import.meta.url), "utf8");
+    const footer = await readFile(
+      new URL("../../../packages/ui/src/components/AppShell.tsx", import.meta.url),
+      "utf8"
+    );
 
-    // Plain <a> (not next/link) — href may be accompanied by class/role/onClick attributes.
-    assert.match(header, /<a\b[^>]*href="\/auth\/sign-out"[^>]*>/);
+    // Sign-out is delegated to the shared SidebarAccountFooter, which uses a plain
+    // <a> (not next/link) so navigation is full-page and hits the sign-out route.
+    assert.match(header, /<SidebarAccountFooter\b/);
     assert.doesNotMatch(header, /<Link\b[^>]*href="\/auth\/sign-out"/);
+    assert.match(footer, /<a\b[^>]*href=\{signOutHref\}/);
+    assert.doesNotMatch(footer, /<Link\b[^>]*signOutHref/);
   });
 
   it("sign-out route uses APP_URL and does not redirect to sign-in", async () => {

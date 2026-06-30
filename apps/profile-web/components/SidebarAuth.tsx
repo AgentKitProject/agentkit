@@ -1,29 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SidebarAccount } from "@agentkitforge/ui";
+import { SidebarAccountFooter } from "@agentkitforge/ui";
 
 type SessionResponse = {
   authenticated: boolean;
   role?: "user" | "admin" | "owner";
+  email?: string;
 };
-
-// Door / arrow — matches the sign-out glyph used in the market sidebar.
-const signOutIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    width={18}
-    height={18}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.8}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M15 12H6m0 0l3-3m-3 3l3 3" />
-    <path d="M11 4.5h6a1 1 0 011 1v13a1 1 0 01-1 1h-6" />
-  </svg>
-);
 
 /**
  * Sidebar account block for the Profile AppShell. Resolves the session
@@ -65,15 +49,5 @@ export function SidebarAuth() {
     );
   }
 
-  return (
-    <>
-      <SidebarAccount name="Account" status="Signed in" initials="AK" href="/account" />
-      <a className="ak-nav-item" href="/auth/sign-out">
-        <span className="ak-nav-item__icon" aria-hidden="true">
-          {signOutIcon}
-        </span>
-        <span className="ak-nav-item__label">Sign out</span>
-      </a>
-    </>
-  );
+  return <SidebarAccountFooter identity={session.email} accountHref="/account" />;
 }

@@ -10,6 +10,7 @@ export async function GET() {
       ? {
           authenticated: true,
           role: getUserRole(user),
+          email: user.email,
         }
       : { authenticated: false },
     {

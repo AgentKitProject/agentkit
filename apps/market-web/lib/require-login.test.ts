@@ -26,21 +26,43 @@ function envWith(requireLogin: string): NodeJS.ProcessEnv {
 }
 
 describe("requireLoginEnabled", () => {
-  it("is false when REQUIRE_LOGIN is unset (public default)", () => {
-    delete process.env.REQUIRE_LOGIN;
-    assert.equal(requireLoginEnabled(), false);
+  it("is false when REQUIRE_LOGIN is unset on a hosted (non-self-host) instance", () => {
+    assert.equal(
+      requireLoginEnabled({} as unknown as NodeJS.ProcessEnv),
+      false,
+    );
   });
 
-  it("is false for anything other than 'true'", () => {
-    for (const value of ["false", "1", "yes", "on", "", "TRUEISH"]) {
+  it("is false for explicit falsey values (not 'true')", () => {
+    for (const value of ["false", "FALSE", "  False  "]) {
       assert.equal(requireLoginEnabled(envWith(value)), false, value);
     }
   });
 
-  it("is true for 'true' (case/space-insensitive)", () => {
+  it("is true for 'true' (case/space-insensitive), even on hosted", () => {
     for (const value of ["true", "TRUE", "  True  "]) {
       assert.equal(requireLoginEnabled(envWith(value)), true, value);
     }
+  });
+
+  it("defaults ON for self-host when REQUIRE_LOGIN is unset", () => {
+    for (const env of [{ AUTH_PROVIDER: "oidc" }, { SELF_HOST: "true" }]) {
+      assert.equal(
+        requireLoginEnabled(env as unknown as NodeJS.ProcessEnv),
+        true,
+        JSON.stringify(env),
+      );
+    }
+  });
+
+  it("explicit REQUIRE_LOGIN=false wins even on self-host", () => {
+    assert.equal(
+      requireLoginEnabled({
+        AUTH_PROVIDER: "oidc",
+        REQUIRE_LOGIN: "false",
+      } as unknown as NodeJS.ProcessEnv),
+      false,
+    );
   });
 });
 
