@@ -72,6 +72,9 @@ import {
   orgUsageSummarySchema,
   orgUsageCheckSchema,
   recordOrgUsageRequestSchema,
+  resolvedUserOrgUsageCheckSchema,
+  recordUserOrgUsageRequestSchema,
+  resolvedUserOrgUsageRecordSchema,
   setOrgMonthlyLimitsRequestSchema
 } from "../dist/index.js";
 
@@ -237,6 +240,14 @@ describe("contracts", () => {
       profileOrgRoutes.resolveUserOrgRunBudget("u1"),
       p.resolveUserOrgRunBudget.replace("{userId}", "u1")
     );
+    assert.equal(
+      profileOrgRoutes.resolveUserOrgUsageCheck("u1"),
+      p.resolveUserOrgUsageCheck.replace("{userId}", "u1")
+    );
+    assert.equal(
+      profileOrgRoutes.recordUserOrgUsage("u1"),
+      p.recordUserOrgUsage.replace("{userId}", "u1")
+    );
   });
 
   it("org monthly-limits + usage routes produce expected paths", () => {
@@ -322,6 +333,33 @@ describe("contracts", () => {
       poolRemainingCents: 100,
       poolRemainingMinutes: null
     });
+  });
+
+  it("user-keyed org-usage check/record schemas validate their shapes", () => {
+    // check result: found with an embedded OrgUsageCheck, and the not-found case.
+    resolvedUserOrgUsageCheckSchema.parse({
+      found: true,
+      orgId: "org1",
+      check: {
+        allowed: false,
+        memberRemainingCents: 0,
+        memberRemainingMinutes: null,
+        poolRemainingCents: null,
+        poolRemainingMinutes: null
+      }
+    });
+    resolvedUserOrgUsageCheckSchema.parse({ found: false });
+    // record request: no orgId (Profile resolves it from the user).
+    recordUserOrgUsageRequestSchema.parse({ period: "2026-06", addCents: 50, addMinutes: 2.5 });
+    assert.throws(() =>
+      recordUserOrgUsageRequestSchema.parse({ period: "bad", addCents: 0, addMinutes: 0 })
+    );
+    assert.throws(() =>
+      recordUserOrgUsageRequestSchema.parse({ period: "2026-06", addCents: -1, addMinutes: 0 })
+    );
+    // record result.
+    resolvedUserOrgUsageRecordSchema.parse({ recorded: true, orgId: "org1" });
+    resolvedUserOrgUsageRecordSchema.parse({ recorded: false });
   });
 
   it("ensurePersonalOrgRequestSchema validates displayName", () => {
@@ -658,6 +696,7 @@ describe("contracts", () => {
     for (const code of [
       "invalid_request",
       "approval_denied",
+      "org_limit_exceeded",
       "insufficient_balance",
       "not_found",
       "inputs_unconfigured",

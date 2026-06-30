@@ -14,6 +14,7 @@ import {
   ApprovalDeniedError,
   AutoValidationError,
   InsufficientComputeBalanceError,
+  MonthlyLimitExceededError,
   listRuns,
   parseDeliveryConfig,
   parseInputFiles,
@@ -88,6 +89,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof ApprovalDeniedError) {
       return Response.json({ error: autoErrorCodeSchema.enum.approval_denied, message: error.message }, { status: 403 });
+    }
+    if (error instanceof MonthlyLimitExceededError) {
+      return Response.json({ error: autoErrorCodeSchema.enum.org_limit_exceeded, message: error.message }, { status: 403 });
     }
     if (error instanceof AutoValidationError) {
       return Response.json({ error: autoErrorCodeSchema.enum.invalid_request, message: error.message }, { status: 400 });

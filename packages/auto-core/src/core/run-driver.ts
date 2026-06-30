@@ -147,6 +147,22 @@ export interface RunAutoRunDeps {
    * ledger and is idempotent per run.
    */
   freeActiveMinutesPerMonth?: number;
+  /**
+   * GOVERNANCE ACCOUNTING (org budgets v2) — best-effort, open-core-safe. When
+   * provided, called ONCE at run finalize (every terminal status) with the run's
+   * final spend (inference + compute cents) and elapsed active-minutes, keyed by
+   * user + UTC `YYYY-MM` period. The consumer (auto-web) forwards this to the
+   * Profile usage seam so an org's monthly usage rolls up. Default undefined → a
+   * NO-OP: open-core / self-host runs don't depend on any usage service. It must
+   * never throw and never affect the run result (the call is awaited under a
+   * swallowing `.catch`).
+   */
+  recordOrgUsage?: (info: {
+    userId: string;
+    period: string;
+    cents: number;
+    minutes: number;
+  }) => Promise<void>;
 }
 
 export interface RunAutoRunArgs {
@@ -349,6 +365,19 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     // spentComputeCents = the full v2 run fee (invocation + active-minutes); it
     // is what the run's spent_compute_cents column persists.
     const spentComputeCents = spentInvocationCents + spentActiveMinuteCents;
+
+    // GOVERNANCE ACCOUNTING (org budgets v2) — best-effort, fires on EVERY terminal
+    // status. Reports the run's FINAL spend (inference + compute) and elapsed
+    // active-minutes to the (optional) usage recorder so an org's monthly usage
+    // rolls up. Default-absent → no-op (open-core / self-host). Swallows all errors
+    // and is awaited so a slow recorder doesn't outlive the run, but it can NEVER
+    // throw or change the run's terminal result.
+    await deps.recordOrgUsage?.({
+      userId: run.userId,
+      period: utcYearMonth(startedAtIso),
+      cents: spentInferenceCents + spentComputeCents,
+      minutes: elapsedMinutes(startedAtIso, now()),
+    }).catch(() => {});
 
     let result: AutoRunResult | undefined;
     if (status === "succeeded" || status === "budget_exceeded" || status === "canceled") {

@@ -312,4 +312,70 @@ describe("runAutoRun", () => {
     );
     expect(composeSystemPrompt("")).toBe(AUTO_NO_QUESTIONS_PREAMBLE);
   });
+
+  it("calls recordOrgUsage at finalize with the run's user, UTC period, cents + minutes", async () => {
+    // A clock that advances 90s between calls, so finalize sees elapsed minutes > 0.
+    let tick = 0;
+    const advancingNow = (): string =>
+      new Date(Date.parse("2026-06-18T00:00:00.000Z") + tick++ * 90_000).toISOString();
+
+    const { runs, workspace, workspaceId, run } = await setup(100_000);
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId, runId: run.id, approval, repo: runs, now: advancingNow });
+
+    const calls: { userId: string; period: string; cents: number; minutes: number }[] = [];
+    const out = await runAutoRun({
+      run,
+      approval,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        ...driverDeps(runs, workspace, provider),
+        now: advancingNow,
+        // Make compute non-zero so cents reflects the run fee too.
+        invocationFeeCents: 10,
+        recordOrgUsage: async (info) => {
+          calls.push(info);
+        },
+      },
+    });
+
+    expect(out.status).toBe("succeeded");
+    // Fired exactly once at finalize.
+    expect(calls.length).toBe(1);
+    const info = calls[0]!;
+    expect(info.userId).toBe("u1");
+    // Period keys the run's START time (UTC YYYY-MM).
+    expect(info.period).toBe("2026-06");
+    // cents = inference + compute (here >= the 10¢ invocation fee).
+    expect(info.cents).toBe(out.spentCents);
+    expect(info.cents).toBeGreaterThanOrEqual(10);
+    // Wall-clock advanced, so elapsed minutes > 0.
+    expect(info.minutes).toBeGreaterThan(0);
+  });
+
+  it("a throwing recordOrgUsage never breaks finalize / the run result", async () => {
+    const { runs, workspace, workspaceId, run } = await setup(100_000);
+    const provider = new FakeChatProvider([textResponse("all done")]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId, runId: run.id, approval, repo: runs, now: noopNow });
+    const out = await runAutoRun({
+      run,
+      approval,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        ...driverDeps(runs, workspace, provider),
+        recordOrgUsage: async () => {
+          throw new Error("profile unreachable");
+        },
+      },
+    });
+    // The run still succeeds and persists its result despite the throwing hook.
+    expect(out.status).toBe("succeeded");
+    expect(out.result?.output).toBe("all done");
+    const persisted = await runs.getRun("run-1");
+    expect(persisted?.status).toBe("succeeded");
+  });
 });

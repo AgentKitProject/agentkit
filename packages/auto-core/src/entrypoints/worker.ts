@@ -97,6 +97,18 @@ export interface ProcessAutoRunDeps {
   maxTokens?: number;
   maxToolRounds?: number;
   /**
+   * GOVERNANCE ACCOUNTING (org budgets v2) — best-effort, open-core-safe. Forwarded
+   * verbatim to the run-driver, which calls it ONCE at finalize with the run's
+   * final spend + elapsed active-minutes. Default undefined → no-op (open-core /
+   * self-host). Never throws, never affects the run result.
+   */
+  recordOrgUsage?: (info: {
+    userId: string;
+    period: string;
+    cents: number;
+    minutes: number;
+  }) => Promise<void>;
+  /**
    * Opt-in result delivery (Phase D). When a run carries a `deliveryConfig`,
    * these deps are used AFTER the run reaches a terminal status to notify the
    * user. Delivery is best-effort — a failure here NEVER fails the run.
@@ -238,6 +250,9 @@ export async function processAutoRun(
           ? { freeActiveMinutesPerMonth: deps.freeActiveMinutesPerMonth }
           : {}),
         ...(deps.maxTokens !== undefined ? { maxTokens: deps.maxTokens } : {}),
+        ...(deps.recordOrgUsage !== undefined
+          ? { recordOrgUsage: deps.recordOrgUsage }
+          : {}),
       },
       ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
     });

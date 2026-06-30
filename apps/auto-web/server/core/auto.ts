@@ -88,6 +88,7 @@ import { getCreditLedger } from "@/server/core/gateway";
 import { creditLedgerBackend, isSelfHost, isSelfHostManagedBilling } from "@/lib/self-host";
 import { getUserSettingsStore } from "@/server/store/user-settings";
 import { resolveOrgApiKey } from "@/server/core/org-key-client";
+import { checkOrgUsage, recordOrgUsage as recordOrgUsageSeam } from "@/server/core/org-usage-client";
 import { getKitStore } from "@/server/store/index";
 import { withEphemeralTree } from "@/server/core/runner";
 import { MANAGED_DEFAULT_MODEL, isManagedModel } from "@/server/core/managed-models";
@@ -861,7 +862,13 @@ async function buildProcessDeps(
     // are 0, so a self-host pays nothing.
     invocationFeeCents: rates.invocationFeeCents,
     activeMinuteRateCents: rates.activeMinuteRateCents,
-    freeActiveMinutesPerMonth: rates.freeActiveMinutesPerMonth
+    freeActiveMinutesPerMonth: rates.freeActiveMinutesPerMonth,
+    // GOVERNANCE ACCOUNTING (org budgets v2): on finalize the run-driver rolls the
+    // run's final spend + active-minutes up to the user's org via the Profile usage
+    // seam. Best-effort + fail-open inside the client (no-op when Profile is
+    // disabled/unreachable or the user has no single org with monthly limits).
+    recordOrgUsage: (info) =>
+      recordOrgUsageSeam(info.userId, info.period, info.cents, info.minutes)
   };
 }
 
@@ -976,6 +983,19 @@ export class AutoValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AutoValidationError";
+  }
+}
+
+/**
+ * Thrown by the pre-run gate when the user's org monthly usage limit (org budgets
+ * v2) is exhausted. Routes map this to a 403 (alongside approval_denied). FAIL
+ * OPEN: this is thrown ONLY when Profile affirmatively reports the limit exhausted
+ * (`check.allowed === false`); any Profile absence/error leaves the gate to proceed.
+ */
+export class MonthlyLimitExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MonthlyLimitExceededError";
   }
 }
 
@@ -1193,6 +1213,21 @@ export async function startRun(input: {
   if (isPromptExtractionAttempt(input.prompt) && (await isProtectedKit(input.kitRef, input.kitContext))) {
     throw new AutoValidationError(
       "This run looks like an attempt to extract a protected kit's underlying instructions, which can't be shared. Rephrase your task to use the kit's capabilities instead."
+    );
+  }
+
+  // ---- Org monthly-usage gate (org budgets v2) ---------------------------
+  // If the user's org has monthly usage limits set and they're exhausted, block
+  // the run BEFORE create/dispatch (a clean 403, mirroring the approval gate).
+  // FAIL OPEN: checkOrgUsage returns undefined whenever Profile is disabled /
+  // unreachable / has no single matching org, in which case the run proceeds.
+  // Only an AFFIRMATIVE `allowed === false` blocks. The post-run record hook
+  // (wired into the run-driver) accumulates usage on completion.
+  const usagePeriod = new Date().toISOString().slice(0, 7); // UTC YYYY-MM
+  const usage = await checkOrgUsage(input.userId, usagePeriod);
+  if (usage?.found && usage.check && usage.check.allowed === false) {
+    throw new MonthlyLimitExceededError(
+      "This organization's monthly usage limit has been reached."
     );
   }
 

@@ -543,6 +543,8 @@ export const autoErrorCodeSchema = z.enum([
   "invalid_request",
   /** No matching/non-revoked approval, or budget over the approval ceiling. (403) */
   "approval_denied",
+  /** The user's org monthly usage limit (org budgets v2) is exhausted. (403) */
+  "org_limit_exceeded",
   /** BYO + cloud run lacks prepaid balance for the compute fee. (402) */
   "insufficient_balance",
   /** Resource not found or ownership mismatch. (404) */

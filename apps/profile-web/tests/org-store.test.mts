@@ -358,6 +358,65 @@ test("usage + monthly limits handlers: gate + service paths", async () => {
   await assert.rejects(() => handlers.checkOrgUsage(store, org.orgId, "u_member", "nope"));
 });
 
+test("user-keyed org-usage check/record resolve the single org with monthly limits (fail-open)", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+
+  // No monthly limits configured anywhere → not-found / not-recorded (fail-open).
+  assert.deepEqual(
+    (await handlers.resolveUserOrgMonthlyUsageCheck(store, "u_owner", "2026-06")).body,
+    { found: false },
+  );
+  assert.deepEqual(
+    (
+      await handlers.recordUserOrgMonthlyUsage(store, "u_owner", {
+        period: "2026-06",
+        addCents: 10,
+        addMinutes: 1,
+      })
+    ).body,
+    { recorded: false },
+  );
+
+  // Set a member cap on the org → exactly one matching org now resolves.
+  await store.setOrgMonthlyLimits(org.orgId, {
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    updatedByUserId: "u_owner",
+  });
+
+  // record routes through to recordOrgUsage on the resolved org.
+  const recorded = await handlers.recordUserOrgMonthlyUsage(store, "u_owner", {
+    period: "2026-06",
+    addCents: 40,
+    addMinutes: 2,
+  });
+  assert.deepEqual(recorded.body, { recorded: true, orgId: org.orgId });
+
+  // check returns the embedded OrgUsageCheck for the resolved org.
+  const checked = await handlers.resolveUserOrgMonthlyUsageCheck(store, "u_owner", "2026-06");
+  const body = checked.body as Record<string, unknown>;
+  assert.equal(body.found, true);
+  assert.equal(body.orgId, org.orgId);
+  assert.equal((body.check as Record<string, unknown>).memberRemainingCents, 60);
+
+  // Bad period rejected; bad/empty userId rejected.
+  await assert.rejects(() => handlers.resolveUserOrgMonthlyUsageCheck(store, "u_owner", "nope"));
+  await assert.rejects(() =>
+    handlers.recordUserOrgMonthlyUsage(store, "u_owner", { period: "bad", addCents: 0, addMinutes: 0 }),
+  );
+
+  // Ambiguous (>1 org with limits) → not-found / not-recorded (fail-open).
+  const org2 = await store.createOrg({ displayName: "Team Two", ownerUserId: "u_owner" });
+  await store.setOrgMonthlyLimits(org2.orgId, {
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    updatedByUserId: "u_owner",
+  });
+  assert.deepEqual(
+    (await handlers.resolveUserOrgMonthlyUsageCheck(store, "u_owner", "2026-06")).body,
+    { found: false },
+  );
+});
+
 test("encrypt/decrypt round-trips a provider key through the handlers", async () => {
   process.env.PROFILE_KEY_ENCRYPTION_SECRET = "0".repeat(64); // 64 hex chars
   const store = await freshStore();

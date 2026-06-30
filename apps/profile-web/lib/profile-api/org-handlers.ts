@@ -20,6 +20,7 @@ import {
   ensurePersonalOrgRequestSchema,
   orgUsagePeriodSchema,
   recordOrgUsageRequestSchema,
+  recordUserOrgUsageRequestSchema,
   removeOrgMemberRequestSchema,
   setOrgApiKeyRequestSchema,
   setOrgMonthlyLimitsRequestSchema,
@@ -717,4 +718,90 @@ export async function recordOrgUsage(
     parsed.data.addMinutes,
   );
   return { status: 200, body: { ok: true } };
+}
+
+/**
+ * Resolve the user's SINGLE org that has monthly limits configured (org budgets
+ * v2). MIRRORS `resolveUserOrgRunBudget`: among the user's ACTIVE-member orgs that
+ * have monthly limits set, return the orgId only when EXACTLY ONE has them;
+ * zero/more than one → undefined. Used by both the user-keyed check + record
+ * service hot-paths so they agree on which org applies.
+ */
+async function resolveUserMonthlyLimitsOrgId(
+  store: OrgStore,
+  userId: string,
+): Promise<string | undefined> {
+  const orgs = await store.listOrgsForUser(userId);
+  const withLimits: string[] = [];
+  for (const org of orgs) {
+    const membership = await store.getMembership(org.orgId, userId);
+    if (!membership || membership.status !== "active") {
+      continue;
+    }
+    const record = await store.getOrgMonthlyLimits(org.orgId);
+    if (record) {
+      withLimits.push(org.orgId);
+    }
+  }
+  return withLimits.length === 1 ? withLimits[0] : undefined;
+}
+
+/**
+ * GET /users/{userId}/org-usage/check?period=YYYY-MM — service-context runtime
+ * usage check. Resolves the user's single org with monthly limits set (see
+ * resolveUserMonthlyLimitsOrgId) and returns its OrgUsageCheck. Fail-open:
+ * `{ found:false }` when zero/ambiguous match. Returns
+ * resolvedUserOrgUsageCheckSchema.
+ */
+export async function resolveUserOrgMonthlyUsageCheck(
+  store: OrgStore,
+  userId: string,
+  periodRaw: unknown,
+): Promise<HandlerResult> {
+  if (!userId) {
+    throw new ApiError(400, "Missing userId");
+  }
+  const period = orgUsagePeriodSchema.safeParse(periodRaw);
+  if (!period.success) {
+    throw new ApiError(400, "period query parameter (YYYY-MM) is required");
+  }
+  const orgId = await resolveUserMonthlyLimitsOrgId(store, userId);
+  if (!orgId) {
+    return { status: 200, body: { found: false } };
+  }
+  const check = await store.checkOrgUsageRemaining(orgId, userId, period.data);
+  return { status: 200, body: { found: true, orgId, check } };
+}
+
+/**
+ * POST /users/{userId}/org-usage/record — service-context usage accumulation.
+ * Resolves the user's single org with monthly limits set and accumulates the
+ * usage into the (org, member, period) row. Fail-open: `{ recorded:false }` when
+ * zero/ambiguous match. Body: recordUserOrgUsageRequestSchema. Returns
+ * resolvedUserOrgUsageRecordSchema.
+ */
+export async function recordUserOrgMonthlyUsage(
+  store: OrgStore,
+  userId: string,
+  body: unknown,
+): Promise<HandlerResult> {
+  if (!userId) {
+    throw new ApiError(400, "Missing userId");
+  }
+  const parsed = recordUserOrgUsageRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(400, "Invalid usage payload");
+  }
+  const orgId = await resolveUserMonthlyLimitsOrgId(store, userId);
+  if (!orgId) {
+    return { status: 200, body: { recorded: false } };
+  }
+  await store.recordOrgUsage(
+    orgId,
+    userId,
+    parsed.data.period,
+    parsed.data.addCents,
+    parsed.data.addMinutes,
+  );
+  return { status: 200, body: { recorded: true, orgId } };
 }

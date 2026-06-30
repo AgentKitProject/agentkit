@@ -56,7 +56,9 @@
     "orgApiKeyStatus": "/orgs/{orgId}/api-key/status",
     "resolveUserOrgApiKey": "/users/{userId}/org-api-key/resolve",
     "orgRunBudget": "/orgs/{orgId}/run-budget",
-    "resolveUserOrgRunBudget": "/users/{userId}/org-run-budget/resolve"
+    "resolveUserOrgRunBudget": "/users/{userId}/org-run-budget/resolve",
+    "resolveUserOrgUsageCheck": "/users/{userId}/org-usage/check",
+    "recordUserOrgUsage": "/users/{userId}/org-usage/record"
   },
   "profileOrgUsage": {
     "orgMonthlyLimits": "/orgs/{orgId}/monthly-limits",

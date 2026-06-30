@@ -73,6 +73,9 @@ export {
   orgUsageSummarySchema,
   orgUsageCheckSchema,
   recordOrgUsageRequestSchema,
+  resolvedUserOrgUsageCheckSchema,
+  recordUserOrgUsageRequestSchema,
+  resolvedUserOrgUsageRecordSchema,
   setOrgMonthlyLimitsRequestSchema,
   orgMonthlyLimitsRoutes,
   profileOrgUsageRoutes,
@@ -113,6 +116,9 @@ export {
   type OrgUsageSummary,
   type OrgUsageCheck,
   type RecordOrgUsage,
+  type ResolvedUserOrgUsageCheck,
+  type RecordUserOrgUsage,
+  type ResolvedUserOrgUsageRecord,
   type SetOrgMonthlyLimitsRequest
 } from "./orgs.js";
 

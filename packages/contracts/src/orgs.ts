@@ -412,7 +412,25 @@ export const profileOrgRoutes = {
    * Returns resolvedOrgRunBudgetSchema. Fail-open (`{ found:false }`).
    */
   resolveUserOrgRunBudget: (userId: string) =>
-    `/users/${encodeURIComponent(userId)}/org-run-budget/resolve`
+    `/users/${encodeURIComponent(userId)}/org-run-budget/resolve`,
+
+  // --- org monthly usage (org budgets v2) — user-keyed service hot-paths ---
+  /**
+   * GET /users/{userId}/org-usage/check?period=YYYY-MM — service-context runtime
+   * usage check. Profile maps the user → their single org with monthly limits set
+   * and returns its OrgUsageCheck. Returns resolvedUserOrgUsageCheckSchema.
+   * Fail-open (`{ found:false }`).
+   */
+  resolveUserOrgUsageCheck: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/org-usage/check`,
+  /**
+   * POST /users/{userId}/org-usage/record — service-context usage accumulation.
+   * Body: recordUserOrgUsageRequestSchema. Profile maps the user → their single
+   * org with monthly limits and accumulates the usage. Returns
+   * resolvedUserOrgUsageRecordSchema. Fail-open (`{ recorded:false }`).
+   */
+  recordUserOrgUsage: (userId: string) =>
+    `/users/${encodeURIComponent(userId)}/org-usage/record`
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -653,6 +671,41 @@ export const recordOrgUsageRequestSchema = z.object({
   addMinutes: z.number().min(0)
 });
 export type RecordOrgUsage = z.infer<typeof recordOrgUsageRequestSchema>;
+
+/**
+ * Result of the user-keyed service usage CHECK (Auto → Profile). Profile maps the
+ * user → their single org that has monthly limits set and returns its
+ * OrgUsageCheck. `found:false` ⇒ no org monthly limits apply (zero or ambiguous
+ * match) and the caller proceeds (fail-open).
+ */
+export const resolvedUserOrgUsageCheckSchema = z.object({
+  found: z.boolean(),
+  orgId: z.string().min(1).optional(),
+  check: orgUsageCheckSchema.optional()
+});
+export type ResolvedUserOrgUsageCheck = z.infer<typeof resolvedUserOrgUsageCheckSchema>;
+
+/**
+ * Body of the user-keyed service "record usage" call (Auto → Profile). Same
+ * accumulation semantics as recordOrgUsageRequestSchema, but Profile resolves the
+ * org from the user (so no orgId is supplied).
+ */
+export const recordUserOrgUsageRequestSchema = z.object({
+  period: orgUsagePeriodSchema,
+  addCents: z.number().int().min(0),
+  addMinutes: z.number().min(0)
+});
+export type RecordUserOrgUsage = z.infer<typeof recordUserOrgUsageRequestSchema>;
+
+/**
+ * Result of the user-keyed service usage RECORD (Auto → Profile). `recorded:false`
+ * ⇒ no org monthly limits applied (zero or ambiguous match); the call is a no-op.
+ */
+export const resolvedUserOrgUsageRecordSchema = z.object({
+  recorded: z.boolean(),
+  orgId: z.string().min(1).optional()
+});
+export type ResolvedUserOrgUsageRecord = z.infer<typeof resolvedUserOrgUsageRecordSchema>;
 
 /**
  * Body of PUT /api/orgs/{orgId}/monthly-limits (browser) and POST the Profile-seam
