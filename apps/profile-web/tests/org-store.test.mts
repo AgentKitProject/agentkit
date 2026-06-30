@@ -8,13 +8,16 @@ import { PostgresOrgStore, type PgPool } from "../lib/store/postgres-org-store.t
 import * as handlers from "../lib/profile-api/org-handlers.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const schemaSql = readFileSync(join(here, "..", "db", "migrations", "0002_orgs.sql"), "utf8");
+const migrationsDir = join(here, "..", "db", "migrations");
+const schemaSql = readFileSync(join(migrationsDir, "0002_orgs.sql"), "utf8");
+const monthlyLimitsSql = readFileSync(join(migrationsDir, "0003_org_monthly_limits.sql"), "utf8");
 
 async function freshStore(): Promise<PostgresOrgStore> {
   const db = newDb();
   const { Pool } = db.adapters.createPg();
   const pool = new Pool() as unknown as PgPool;
   await pool.query(schemaSql);
+  await pool.query(monthlyLimitsSql);
   return new PostgresOrgStore(pool);
 }
 
@@ -188,6 +191,171 @@ test("resolve hot-paths apply the single-matching-org rule (fail-open)", async (
     (await handlers.resolveUserOrgRunBudget(store, "u_owner")).body,
     { found: true, budgetCents: 250 },
   );
+});
+
+test("monthly limits round-trip (nullable caps) + clear", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+
+  // No limits configured yet.
+  assert.equal(await store.getOrgMonthlyLimits(org.orgId), undefined);
+
+  await store.setOrgMonthlyLimits(org.orgId, {
+    limits: { poolCents: 10000, poolMinutes: null, memberCapCents: 2500, memberCapMinutes: 60 },
+    updatedByUserId: "u_owner",
+  });
+  const rec = await store.getOrgMonthlyLimits(org.orgId);
+  assert.deepEqual(rec?.limits, {
+    poolCents: 10000,
+    poolMinutes: null,
+    memberCapCents: 2500,
+    memberCapMinutes: 60,
+  });
+
+  // Upsert overwrites.
+  await store.setOrgMonthlyLimits(org.orgId, {
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null },
+    updatedByUserId: "u_owner",
+  });
+  assert.deepEqual((await store.getOrgMonthlyLimits(org.orgId))?.limits, {
+    poolCents: null,
+    poolMinutes: null,
+    memberCapCents: null,
+    memberCapMinutes: null,
+  });
+
+  await store.clearOrgMonthlyLimits(org.orgId);
+  assert.equal(await store.getOrgMonthlyLimits(org.orgId), undefined);
+});
+
+test("usage accumulates per (org, member, period) and summary aggregates", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+
+  assert.deepEqual(await store.getMemberUsage(org.orgId, "u_owner", "2026-06"), {
+    spentCents: 0,
+    activeMinutes: 0,
+  });
+
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 100, 5);
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 50, 3);
+  await store.recordOrgUsage(org.orgId, "u_member", "2026-06", 200, 10);
+  // Different period is isolated.
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-07", 999, 99);
+
+  assert.deepEqual(await store.getMemberUsage(org.orgId, "u_owner", "2026-06"), {
+    spentCents: 150,
+    activeMinutes: 8,
+  });
+
+  const summary = await store.getOrgUsageSummary(org.orgId, "2026-06");
+  assert.equal(summary.period, "2026-06");
+  assert.equal(summary.orgTotalCents, 350);
+  assert.equal(summary.orgTotalMinutes, 18);
+  assert.equal(summary.members.length, 2);
+});
+
+test("checkOrgUsageRemaining: no limits → allowed, all remaining null", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 500, 30);
+  const check = await store.checkOrgUsageRemaining(org.orgId, "u_owner", "2026-06");
+  assert.deepEqual(check, {
+    allowed: true,
+    memberRemainingCents: null,
+    memberRemainingMinutes: null,
+    poolRemainingCents: null,
+    poolRemainingMinutes: null,
+  });
+});
+
+test("checkOrgUsageRemaining: computes remaining per capped unit/scope", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+  await store.setOrgMonthlyLimits(org.orgId, {
+    limits: { poolCents: 1000, poolMinutes: null, memberCapCents: 300, memberCapMinutes: 60 },
+    updatedByUserId: "u_owner",
+  });
+  // Member uses some; another member contributes to the pool.
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 100, 20);
+  await store.recordOrgUsage(org.orgId, "u_member", "2026-06", 250, 5);
+
+  const check = await store.checkOrgUsageRemaining(org.orgId, "u_owner", "2026-06");
+  assert.equal(check.allowed, true);
+  assert.equal(check.memberRemainingCents, 200); // 300 - 100
+  assert.equal(check.memberRemainingMinutes, 40); // 60 - 20
+  assert.equal(check.poolRemainingCents, 650); // 1000 - (100+250)
+  assert.equal(check.poolRemainingMinutes, null); // unlimited
+});
+
+test("checkOrgUsageRemaining: exhausting any capped unit blocks (allowed=false)", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+  await store.setOrgMonthlyLimits(org.orgId, {
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    updatedByUserId: "u_owner",
+  });
+  await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 100, 0);
+  const check = await store.checkOrgUsageRemaining(org.orgId, "u_owner", "2026-06");
+  assert.equal(check.memberRemainingCents, 0);
+  assert.equal(check.allowed, false);
+});
+
+test("usage + monthly limits handlers: gate + service paths", async () => {
+  const store = await freshStore();
+  const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
+  await store.addMember(org.orgId, "u_member", "member", "u_owner");
+  await store.acceptInvite(org.orgId, "u_member");
+
+  // Non-manager cannot set monthly limits.
+  const denied = await handlers.setOrgMonthlyLimits(store, org.orgId, "u_member", {
+    poolCents: null,
+    poolMinutes: null,
+    memberCapCents: 100,
+    memberCapMinutes: null,
+  });
+  assert.equal(denied.status, 403);
+
+  // Owner can.
+  const ok = await handlers.setOrgMonthlyLimits(store, org.orgId, "u_owner", {
+    poolCents: null,
+    poolMinutes: null,
+    memberCapCents: 100,
+    memberCapMinutes: null,
+  });
+  assert.equal(ok.status, 200);
+
+  // Status returns the caps (owner/admin).
+  const status = await handlers.orgMonthlyLimitsStatus(store, org.orgId, "u_owner");
+  assert.equal(status.status, 200);
+  assert.deepEqual(status.body, {
+    poolCents: null,
+    poolMinutes: null,
+    memberCapCents: 100,
+    memberCapMinutes: null,
+  });
+
+  // Service record + check (no role gate).
+  const recorded = await handlers.recordOrgUsage(store, org.orgId, {
+    userId: "u_member",
+    period: "2026-06",
+    addCents: 40,
+    addMinutes: 2,
+  });
+  assert.equal(recorded.status, 200);
+
+  const checked = await handlers.checkOrgUsage(store, org.orgId, "u_member", "2026-06");
+  assert.equal(checked.status, 200);
+  assert.equal((checked.body as Record<string, unknown>).memberRemainingCents, 60);
+
+  // Summary (owner/admin).
+  const summary = await handlers.orgUsageSummary(store, org.orgId, "u_owner", "2026-06");
+  assert.equal(summary.status, 200);
+  assert.equal((summary.body as Record<string, unknown>).orgTotalCents, 40);
+
+  // Bad period rejected.
+  await assert.rejects(() => handlers.orgUsageSummary(store, org.orgId, "u_owner", "2026-6"));
+  await assert.rejects(() => handlers.checkOrgUsage(store, org.orgId, "u_member", "nope"));
 });
 
 test("encrypt/decrypt round-trips a provider key through the handlers", async () => {

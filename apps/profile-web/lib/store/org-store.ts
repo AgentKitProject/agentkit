@@ -18,6 +18,9 @@ import type {
   OrgMembership,
   OrgRole,
   OrgKeyProviderType,
+  OrgMonthlyLimits,
+  OrgUsageSummary,
+  OrgUsageCheck,
 } from "@agentkitforge/contracts";
 
 export type {
@@ -26,6 +29,9 @@ export type {
   OrgMembership,
   OrgRole,
   OrgKeyProviderType,
+  OrgMonthlyLimits,
+  OrgUsageSummary,
+  OrgUsageCheck,
 } from "@agentkitforge/contracts";
 
 /**
@@ -46,6 +52,18 @@ export interface OrgProviderKeyRecord {
 export interface OrgRunBudgetRecord {
   orgId: string;
   budgetCents: number;
+  updatedByUserId: string;
+  updatedAt: string;
+}
+
+/**
+ * An org's monthly limits (org budgets v2). At most one per org. Each of the four
+ * caps is nullable (null = unlimited): `limits` carries the cap values; the
+ * record adds audit fields. Mirrors `OrgRunBudgetRecord`'s shape.
+ */
+export interface OrgMonthlyLimitsRecord {
+  orgId: string;
+  limits: OrgMonthlyLimits;
   updatedByUserId: string;
   updatedAt: string;
 }
@@ -114,4 +132,24 @@ export interface OrgStore {
   setOrgRunBudget(orgId: string, input: { budgetCents: number; updatedByUserId: string }): Promise<void>;
   getOrgRunBudget(orgId: string): Promise<OrgRunBudgetRecord | undefined>;
   clearOrgRunBudget(orgId: string): Promise<void>;
+  /**
+   * Org monthly limits (org budgets v2) — ADDITIVE to the per-run budget above.
+   * At most ONE row per org; each of the four caps is nullable (null = unlimited).
+   */
+  getOrgMonthlyLimits(orgId: string): Promise<OrgMonthlyLimitsRecord | undefined>;
+  setOrgMonthlyLimits(orgId: string, input: { limits: OrgMonthlyLimits; updatedByUserId: string }): Promise<void>;
+  clearOrgMonthlyLimits(orgId: string): Promise<void>;
+  /** Sum + per-member usage rows for an org in a period (UTC month, YYYY-MM). */
+  getOrgUsageSummary(orgId: string, period: string): Promise<OrgUsageSummary>;
+  /** One member's accumulated usage for a period (zeros when no row exists). */
+  getMemberUsage(orgId: string, userId: string, period: string): Promise<{ spentCents: number; activeMinutes: number }>;
+  /** Accumulate a member's usage into the (org, member, period) row. */
+  recordOrgUsage(orgId: string, userId: string, period: string, addCents: number, addMinutes: number): Promise<void>;
+  /**
+   * Compute remaining member-cap + pool budget for a member in a period. Each
+   * `*Remaining*` is null when that cap is unlimited, else `max(0, limit - used)`.
+   * `allowed` is true unless any CAPPED unit/scope is exhausted (remaining 0); no
+   * limits set ⇒ allowed true with all remaining null.
+   */
+  checkOrgUsageRemaining(orgId: string, userId: string, period: string): Promise<OrgUsageCheck>;
 }

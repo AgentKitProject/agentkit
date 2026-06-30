@@ -571,3 +571,138 @@ export const resolvedOrgRunBudgetSchema = z.object({
   budgetCents: z.number().int().positive().optional()
 });
 export type ResolvedOrgRunBudget = z.infer<typeof resolvedOrgRunBudgetSchema>;
+
+// ---------------------------------------------------------------------------
+// Org monthly limits + usage accumulation (Org budgets v2)
+//
+// ADDITIVE to the per-run budget above (org_run_budgets). This vertical adds two
+// MONTHLY caps, each expressed in TWO units (US cents AND active-minutes):
+//   - a PER-MEMBER monthly cap (each member's own monthly ceiling), and
+//   - an ORG-WIDE monthly pool (a shared ceiling across all members).
+// Every limit field is nullable: null = unlimited for that unit/scope. Usage is
+// accumulated per (org, member, UTC month) and checked by Auto at run time.
+// Applies on self-host AND hosted.
+// ---------------------------------------------------------------------------
+
+/** A non-negative integer limit, or null for "unlimited". */
+const nullableNonNegInt = z.number().int().min(0).nullable();
+
+/**
+ * An org's monthly limits. Each of the four caps is independent and nullable
+ * (null = unlimited):
+ *   - `poolCents` / `poolMinutes`        — org-wide monthly pool (shared).
+ *   - `memberCapCents` / `memberCapMinutes` — per-member monthly ceiling.
+ */
+export const orgMonthlyLimitsSchema = z.object({
+  poolCents: nullableNonNegInt,
+  poolMinutes: nullableNonNegInt,
+  memberCapCents: nullableNonNegInt,
+  memberCapMinutes: nullableNonNegInt
+});
+export type OrgMonthlyLimits = z.infer<typeof orgMonthlyLimitsSchema>;
+
+/** A usage period: a UTC calendar month in `YYYY-MM` form. */
+export const orgUsagePeriodSchema = z.string().regex(/^\d{4}-\d{2}$/);
+export type OrgUsagePeriod = z.infer<typeof orgUsagePeriodSchema>;
+
+/** One member's accumulated usage within a period. */
+export const orgMemberUsageSchema = z.object({
+  userId: z.string().min(1),
+  spentCents: z.number().int().min(0),
+  activeMinutes: z.number().min(0)
+});
+export type OrgMemberUsage = z.infer<typeof orgMemberUsageSchema>;
+
+/**
+ * An org's accumulated usage for a period: the org-wide totals plus the
+ * per-member breakdown. `members` is empty when no usage was recorded.
+ */
+export const orgUsageSummarySchema = z.object({
+  period: orgUsagePeriodSchema,
+  orgTotalCents: z.number().int().min(0),
+  orgTotalMinutes: z.number().min(0),
+  members: z.array(orgMemberUsageSchema)
+});
+export type OrgUsageSummary = z.infer<typeof orgUsageSummarySchema>;
+
+/**
+ * Result of checking how much of a member's monthly caps + the org pool remain
+ * for a period. Each `*Remaining*` field is null when that cap is unlimited;
+ * otherwise it is `max(0, limit - used)`. `allowed` is true unless any CAPPED
+ * unit/scope is exhausted (remaining 0). No limits set ⇒ `allowed:true`, all
+ * remaining null. Auto consumes this at run time.
+ */
+export const orgUsageCheckSchema = z.object({
+  allowed: z.boolean(),
+  memberRemainingCents: z.number().int().min(0).nullable(),
+  memberRemainingMinutes: z.number().min(0).nullable(),
+  poolRemainingCents: z.number().int().min(0).nullable(),
+  poolRemainingMinutes: z.number().min(0).nullable()
+});
+export type OrgUsageCheck = z.infer<typeof orgUsageCheckSchema>;
+
+/**
+ * Body of the service "record usage" call (Auto → Profile). Accumulates a
+ * member's usage into the (org, member, period) row. `addCents` is an integer ≥
+ * 0; `addMinutes` is a number ≥ 0 (active-minutes may be fractional).
+ */
+export const recordOrgUsageRequestSchema = z.object({
+  userId: z.string().min(1),
+  period: orgUsagePeriodSchema,
+  addCents: z.number().int().min(0),
+  addMinutes: z.number().min(0)
+});
+export type RecordOrgUsage = z.infer<typeof recordOrgUsageRequestSchema>;
+
+/**
+ * Body of PUT /api/orgs/{orgId}/monthly-limits (browser) and POST the Profile-seam
+ * monthly-limits route. Carries the four nullable caps; `actorUserId` is injected
+ * server-side from the session on the seam hop (the browser body carries only the
+ * limits). Owner/admin gated.
+ */
+export const setOrgMonthlyLimitsRequestSchema = orgMonthlyLimitsSchema.extend({
+  /** Set on the seam hop from the authenticated session; absent on the browser body. */
+  actorUserId: z.string().min(1).optional()
+});
+export type SetOrgMonthlyLimitsRequest = z.infer<typeof setOrgMonthlyLimitsRequestSchema>;
+
+/**
+ * Browser routes (market-app / profile-web web UI, session auth, gated to org
+ * owner/admin) for the org's monthly limits + usage summary.
+ */
+export const orgMonthlyLimitsRoutes = {
+  /**
+   * GET (read the four nullable caps) / PUT (set them — body carries the caps) /
+   * DELETE (clear all caps) for the org's monthly limits.
+   */
+  orgMonthlyLimits: (orgId: string) =>
+    `/api/orgs/${encodeURIComponent(orgId)}/monthly-limits`,
+  /** GET /api/orgs/{orgId}/usage?period=YYYY-MM — the org's usage summary for a period. */
+  orgUsage: (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/usage`
+} as const;
+
+/**
+ * Profile-seam routes AgentKitProfile SERVES for org monthly limits + usage. The
+ * limits CRUD + usage summary are owner/admin gated (per-user trusted-context);
+ * the usage-check + record-usage hot-paths are service-context (Auto asserts the
+ * target userId).
+ */
+export const profileOrgUsageRoutes = {
+  /** GET (read) / POST (set) / DELETE (clear) /orgs/{orgId}/monthly-limits (owner/admin). */
+  orgMonthlyLimits: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/monthly-limits`,
+  /** GET /orgs/{orgId}/usage?period=YYYY-MM — usage summary (owner/admin). */
+  orgUsage: (orgId: string) => `/orgs/${encodeURIComponent(orgId)}/usage`,
+  /**
+   * GET /orgs/{orgId}/usage/check?userId=...&period=YYYY-MM — service-context
+   * remaining check (Auto). Returns orgUsageCheckSchema.
+   */
+  checkOrgUsage: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/usage/check`,
+  /**
+   * POST /orgs/{orgId}/usage/record — service-context usage accumulation (Auto).
+   * Body: recordOrgUsageRequestSchema.
+   */
+  recordOrgUsage: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/usage/record`
+} as const;

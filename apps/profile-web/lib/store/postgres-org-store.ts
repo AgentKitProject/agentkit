@@ -3,10 +3,14 @@ import type {
   Organization,
   OrgInvite,
   OrgMembership,
+  OrgMonthlyLimits,
+  OrgMonthlyLimitsRecord,
   OrgProviderKeyRecord,
   OrgRole,
   OrgRunBudgetRecord,
   OrgStore,
+  OrgUsageCheck,
+  OrgUsageSummary,
 } from "./org-store.ts";
 
 /**
@@ -158,6 +162,39 @@ function rowToRunBudget(r: Record<string, unknown>): OrgRunBudgetRecord {
     updatedByUserId: row.updated_by_user_id,
     updatedAt: row.updated_at,
   };
+}
+
+/** Coerces a nullable numeric column to `number | null` (Postgres may return strings). */
+function numOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+function rowToMonthlyLimits(r: Record<string, unknown>): OrgMonthlyLimitsRecord {
+  const row = r as {
+    org_id: string;
+    pool_cents: number | string | null;
+    pool_minutes: number | string | null;
+    member_cap_cents: number | string | null;
+    member_cap_minutes: number | string | null;
+    updated_by_user_id: string;
+    updated_at: string;
+  };
+  return {
+    orgId: row.org_id,
+    limits: {
+      poolCents: numOrNull(row.pool_cents),
+      poolMinutes: numOrNull(row.pool_minutes),
+      memberCapCents: numOrNull(row.member_cap_cents),
+      memberCapMinutes: numOrNull(row.member_cap_minutes),
+    },
+    updatedByUserId: row.updated_by_user_id,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** remaining for one capped unit: null when unlimited, else max(0, limit - used). */
+function remaining(limit: number | null, used: number): number | null {
+  return limit === null ? null : Math.max(0, limit - used);
 }
 
 export class PostgresOrgStore implements OrgStore {
@@ -409,6 +446,8 @@ export class PostgresOrgStore implements OrgStore {
   async deleteOrg(orgId: string): Promise<void> {
     await this.pool.query(`DELETE FROM org_provider_keys WHERE org_id = $1`, [orgId]);
     await this.pool.query(`DELETE FROM org_run_budgets WHERE org_id = $1`, [orgId]);
+    await this.pool.query(`DELETE FROM org_monthly_limits WHERE org_id = $1`, [orgId]);
+    await this.pool.query(`DELETE FROM org_usage WHERE org_id = $1`, [orgId]);
     await this.pool.query(`DELETE FROM org_invites WHERE org_id = $1`, [orgId]);
     await this.pool.query(`DELETE FROM org_memberships WHERE org_id = $1`, [orgId]);
     await this.pool.query(`DELETE FROM organizations WHERE org_id = $1`, [orgId]);
@@ -479,5 +518,121 @@ export class PostgresOrgStore implements OrgStore {
 
   async clearOrgRunBudget(orgId: string): Promise<void> {
     await this.pool.query(`DELETE FROM org_run_budgets WHERE org_id = $1`, [orgId]);
+  }
+
+  // === org monthly limits + usage (org budgets v2) ==============================
+
+  async getOrgMonthlyLimits(orgId: string): Promise<OrgMonthlyLimitsRecord | undefined> {
+    const result = await this.pool.query(`SELECT * FROM org_monthly_limits WHERE org_id = $1`, [orgId]);
+    return result.rows[0] ? rowToMonthlyLimits(result.rows[0]) : undefined;
+  }
+
+  async setOrgMonthlyLimits(
+    orgId: string,
+    input: { limits: OrgMonthlyLimits; updatedByUserId: string },
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const { poolCents, poolMinutes, memberCapCents, memberCapMinutes } = input.limits;
+    await this.pool.query(
+      `INSERT INTO org_monthly_limits
+         (org_id, pool_cents, pool_minutes, member_cap_cents, member_cap_minutes, updated_by_user_id, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (org_id) DO UPDATE SET
+         pool_cents = EXCLUDED.pool_cents,
+         pool_minutes = EXCLUDED.pool_minutes,
+         member_cap_cents = EXCLUDED.member_cap_cents,
+         member_cap_minutes = EXCLUDED.member_cap_minutes,
+         updated_by_user_id = EXCLUDED.updated_by_user_id,
+         updated_at = EXCLUDED.updated_at`,
+      [orgId, poolCents, poolMinutes, memberCapCents, memberCapMinutes, input.updatedByUserId, now],
+    );
+  }
+
+  async clearOrgMonthlyLimits(orgId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM org_monthly_limits WHERE org_id = $1`, [orgId]);
+  }
+
+  async getOrgUsageSummary(orgId: string, period: string): Promise<OrgUsageSummary> {
+    const result = await this.pool.query(
+      `SELECT user_id, spent_cents, active_minutes FROM org_usage
+         WHERE org_id = $1 AND period = $2 ORDER BY user_id`,
+      [orgId, period],
+    );
+    let orgTotalCents = 0;
+    let orgTotalMinutes = 0;
+    const members = result.rows.map((r) => {
+      const row = r as { user_id: string; spent_cents: number | string; active_minutes: number | string };
+      const spentCents = Number(row.spent_cents);
+      const activeMinutes = Number(row.active_minutes);
+      orgTotalCents += spentCents;
+      orgTotalMinutes += activeMinutes;
+      return { userId: row.user_id, spentCents, activeMinutes };
+    });
+    return { period, orgTotalCents, orgTotalMinutes, members };
+  }
+
+  async getMemberUsage(
+    orgId: string,
+    userId: string,
+    period: string,
+  ): Promise<{ spentCents: number; activeMinutes: number }> {
+    const result = await this.pool.query(
+      `SELECT spent_cents, active_minutes FROM org_usage
+         WHERE org_id = $1 AND user_id = $2 AND period = $3`,
+      [orgId, userId, period],
+    );
+    const row = result.rows[0] as { spent_cents: number | string; active_minutes: number | string } | undefined;
+    if (!row) {
+      return { spentCents: 0, activeMinutes: 0 };
+    }
+    return { spentCents: Number(row.spent_cents), activeMinutes: Number(row.active_minutes) };
+  }
+
+  async recordOrgUsage(
+    orgId: string,
+    userId: string,
+    period: string,
+    addCents: number,
+    addMinutes: number,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.pool.query(
+      `INSERT INTO org_usage (org_id, user_id, period, spent_cents, active_minutes, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (org_id, user_id, period) DO UPDATE SET
+         spent_cents = org_usage.spent_cents + EXCLUDED.spent_cents,
+         active_minutes = org_usage.active_minutes + EXCLUDED.active_minutes,
+         updated_at = EXCLUDED.updated_at`,
+      [orgId, userId, period, addCents, addMinutes, now],
+    );
+  }
+
+  async checkOrgUsageRemaining(orgId: string, userId: string, period: string): Promise<OrgUsageCheck> {
+    const limitsRecord = await this.getOrgMonthlyLimits(orgId);
+    // No limits configured → everything unlimited.
+    if (!limitsRecord) {
+      return {
+        allowed: true,
+        memberRemainingCents: null,
+        memberRemainingMinutes: null,
+        poolRemainingCents: null,
+        poolRemainingMinutes: null,
+      };
+    }
+    const { limits } = limitsRecord;
+    const member = await this.getMemberUsage(orgId, userId, period);
+    const summary = await this.getOrgUsageSummary(orgId, period);
+
+    const memberRemainingCents = remaining(limits.memberCapCents, member.spentCents);
+    const memberRemainingMinutes = remaining(limits.memberCapMinutes, member.activeMinutes);
+    const poolRemainingCents = remaining(limits.poolCents, summary.orgTotalCents);
+    const poolRemainingMinutes = remaining(limits.poolMinutes, summary.orgTotalMinutes);
+
+    // Allowed unless any CAPPED unit/scope is exhausted (remaining 0). Null (unlimited) never blocks.
+    const allowed = [memberRemainingCents, memberRemainingMinutes, poolRemainingCents, poolRemainingMinutes].every(
+      (value) => value === null || value > 0,
+    );
+
+    return { allowed, memberRemainingCents, memberRemainingMinutes, poolRemainingCents, poolRemainingMinutes };
   }
 }

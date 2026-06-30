@@ -58,6 +58,12 @@
     "orgRunBudget": "/orgs/{orgId}/run-budget",
     "resolveUserOrgRunBudget": "/users/{userId}/org-run-budget/resolve"
   },
+  "profileOrgUsage": {
+    "orgMonthlyLimits": "/orgs/{orgId}/monthly-limits",
+    "orgUsage": "/orgs/{orgId}/usage",
+    "checkOrgUsage": "/orgs/{orgId}/usage/check",
+    "recordOrgUsage": "/orgs/{orgId}/usage/record"
+  },
   "marketBackendPricing": {
     "adminSetKitPricing": "/admin/kits/{kitId}/pricing",
     "adminListUserEntitlements": "/admin/users/{userId}/entitlements",

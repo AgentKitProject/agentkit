@@ -18,8 +18,11 @@ import {
   createEmailInviteRequestSchema,
   createOrgRequestSchema,
   ensurePersonalOrgRequestSchema,
+  orgUsagePeriodSchema,
+  recordOrgUsageRequestSchema,
   removeOrgMemberRequestSchema,
   setOrgApiKeyRequestSchema,
+  setOrgMonthlyLimitsRequestSchema,
   setOrgRunBudgetRequestSchema,
   type OrgKeyProviderType,
   type OrgRole,
@@ -556,4 +559,162 @@ export async function resolveUserOrgRunBudget(store: OrgStore, userId: string): 
     return { status: 200, body: { found: false } };
   }
   return { status: 200, body: { found: true, budgetCents: withBudget[0]!.budgetCents } };
+}
+
+// === org monthly limits + usage (org budgets v2) ==============================
+
+/** Null-cap shape returned when an org has no monthly limits configured. */
+const NULL_MONTHLY_LIMITS = {
+  poolCents: null,
+  poolMinutes: null,
+  memberCapCents: null,
+  memberCapMinutes: null,
+} as const;
+
+/**
+ * GET /orgs/{orgId}/monthly-limits — the org's four nullable monthly caps
+ * (owner/admin). Returns all-null when none configured.
+ */
+export async function orgMonthlyLimitsStatus(
+  store: OrgStore,
+  orgId: string,
+  actorUserId: string,
+): Promise<HandlerResult> {
+  if (!orgId) {
+    throw new ApiError(400, "Missing orgId");
+  }
+  if (!actorUserId) {
+    throw new ApiError(400, "actorUserId query parameter is required");
+  }
+  const org = await store.getOrg(orgId);
+  if (!org) {
+    return { status: 404, body: { message: "Organization not found" } };
+  }
+  const membership = await store.getMembership(orgId, actorUserId);
+  if (!membership || membership.status !== "active" || !MANAGE_ROLES.has(membership.role)) {
+    return { status: 403, body: { message: "Only an owner or admin can read the monthly limits" } };
+  }
+  const record = await store.getOrgMonthlyLimits(orgId);
+  return { status: 200, body: record ? record.limits : { ...NULL_MONTHLY_LIMITS } };
+}
+
+/** POST /orgs/{orgId}/monthly-limits — upsert the org's monthly caps (owner/admin). */
+export async function setOrgMonthlyLimits(
+  store: OrgStore,
+  orgId: string,
+  actorUserId: string,
+  body: unknown,
+): Promise<HandlerResult> {
+  const gate = await requireOrgManager(store, orgId, actorUserId);
+  if ("status" in gate) {
+    return gate;
+  }
+  const parsed = setOrgMonthlyLimitsRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(400, "Invalid monthly limits payload");
+  }
+  await store.setOrgMonthlyLimits(orgId, {
+    limits: {
+      poolCents: parsed.data.poolCents,
+      poolMinutes: parsed.data.poolMinutes,
+      memberCapCents: parsed.data.memberCapCents,
+      memberCapMinutes: parsed.data.memberCapMinutes,
+    },
+    updatedByUserId: actorUserId,
+  });
+  return { status: 200, body: { ok: true } };
+}
+
+/** DELETE /orgs/{orgId}/monthly-limits — clear the org's monthly caps (owner/admin). */
+export async function clearOrgMonthlyLimits(
+  store: OrgStore,
+  orgId: string,
+  actorUserId: string,
+): Promise<HandlerResult> {
+  const gate = await requireOrgManager(store, orgId, actorUserId);
+  if ("status" in gate) {
+    return gate;
+  }
+  await store.clearOrgMonthlyLimits(orgId);
+  return { status: 200, body: { ok: true } };
+}
+
+/** GET /orgs/{orgId}/usage?period=YYYY-MM — usage summary for a period (owner/admin). */
+export async function orgUsageSummary(
+  store: OrgStore,
+  orgId: string,
+  actorUserId: string,
+  periodRaw: unknown,
+): Promise<HandlerResult> {
+  if (!orgId) {
+    throw new ApiError(400, "Missing orgId");
+  }
+  if (!actorUserId) {
+    throw new ApiError(400, "actorUserId query parameter is required");
+  }
+  const period = orgUsagePeriodSchema.safeParse(periodRaw);
+  if (!period.success) {
+    throw new ApiError(400, "period query parameter (YYYY-MM) is required");
+  }
+  const org = await store.getOrg(orgId);
+  if (!org) {
+    return { status: 404, body: { message: "Organization not found" } };
+  }
+  const membership = await store.getMembership(orgId, actorUserId);
+  if (!membership || membership.status !== "active" || !MANAGE_ROLES.has(membership.role)) {
+    return { status: 403, body: { message: "Only an owner or admin can read usage" } };
+  }
+  const summary = await store.getOrgUsageSummary(orgId, period.data);
+  return { status: 200, body: summary };
+}
+
+/**
+ * GET /orgs/{orgId}/usage/check?userId=...&period=YYYY-MM — service-context
+ * remaining check. No role gate (the asserted service caller passes orgId, userId,
+ * period directly). Returns orgUsageCheckSchema.
+ */
+export async function checkOrgUsage(
+  store: OrgStore,
+  orgId: string,
+  userIdRaw: unknown,
+  periodRaw: unknown,
+): Promise<HandlerResult> {
+  if (!orgId) {
+    throw new ApiError(400, "Missing orgId");
+  }
+  if (typeof userIdRaw !== "string" || !userIdRaw) {
+    throw new ApiError(400, "userId query parameter is required");
+  }
+  const period = orgUsagePeriodSchema.safeParse(periodRaw);
+  if (!period.success) {
+    throw new ApiError(400, "period query parameter (YYYY-MM) is required");
+  }
+  const check = await store.checkOrgUsageRemaining(orgId, userIdRaw, period.data);
+  return { status: 200, body: check };
+}
+
+/**
+ * POST /orgs/{orgId}/usage/record — service-context usage accumulation (Auto).
+ * No role gate (asserted service caller). Body: recordOrgUsageRequestSchema.
+ */
+export async function recordOrgUsage(
+  store: OrgStore,
+  orgId: string,
+  body: unknown,
+): Promise<HandlerResult> {
+  if (!orgId) {
+    throw new ApiError(400, "Missing orgId");
+  }
+  const parsed = recordOrgUsageRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ApiError(400, "Invalid usage payload");
+  }
+  await store.recordOrgUsage(
+    orgId,
+    parsed.data.userId,
+    parsed.data.period,
+    parsed.data.addCents,
+    parsed.data.addMinutes,
+  );
+  return { status: 200, body: { ok: true } };
 }

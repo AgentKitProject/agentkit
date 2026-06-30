@@ -64,7 +64,15 @@ import {
   autoHookRoutes,
   autoInternalRoutes,
   autoWebhookSecretHeader,
-  autoInternalServiceKeyHeader
+  autoInternalServiceKeyHeader,
+  profileOrgUsageRoutes,
+  orgMonthlyLimitsRoutes,
+  orgMonthlyLimitsSchema,
+  orgUsagePeriodSchema,
+  orgUsageSummarySchema,
+  orgUsageCheckSchema,
+  recordOrgUsageRequestSchema,
+  setOrgMonthlyLimitsRequestSchema
 } from "../dist/index.js";
 
 const fixture = (name: string) =>
@@ -229,6 +237,91 @@ describe("contracts", () => {
       profileOrgRoutes.resolveUserOrgRunBudget("u1"),
       p.resolveUserOrgRunBudget.replace("{userId}", "u1")
     );
+  });
+
+  it("org monthly-limits + usage routes produce expected paths", () => {
+    const routes = fixture("routes.json");
+    const u = routes.profileOrgUsage;
+    assert.equal(profileOrgUsageRoutes.orgMonthlyLimits("org1"), u.orgMonthlyLimits.replace("{orgId}", "org1"));
+    assert.equal(profileOrgUsageRoutes.orgUsage("org1"), u.orgUsage.replace("{orgId}", "org1"));
+    assert.equal(profileOrgUsageRoutes.checkOrgUsage("org1"), u.checkOrgUsage.replace("{orgId}", "org1"));
+    assert.equal(profileOrgUsageRoutes.recordOrgUsage("org1"), u.recordOrgUsage.replace("{orgId}", "org1"));
+    assert.equal(orgMonthlyLimitsRoutes.orgMonthlyLimits("org1"), "/api/orgs/org1/monthly-limits");
+    assert.equal(orgMonthlyLimitsRoutes.orgUsage("org1"), "/api/orgs/org1/usage");
+  });
+
+  it("orgMonthlyLimitsSchema accepts nulls and non-negative ints, rejects negatives/floats", () => {
+    orgMonthlyLimitsSchema.parse({
+      poolCents: null,
+      poolMinutes: null,
+      memberCapCents: null,
+      memberCapMinutes: null
+    });
+    orgMonthlyLimitsSchema.parse({
+      poolCents: 0,
+      poolMinutes: 100,
+      memberCapCents: 5000,
+      memberCapMinutes: 60
+    });
+    assert.throws(() =>
+      orgMonthlyLimitsSchema.parse({ poolCents: -1, poolMinutes: null, memberCapCents: null, memberCapMinutes: null })
+    );
+    assert.throws(() =>
+      orgMonthlyLimitsSchema.parse({ poolCents: 1.5, poolMinutes: null, memberCapCents: null, memberCapMinutes: null })
+    );
+    // actorUserId is optional on the request schema variant.
+    setOrgMonthlyLimitsRequestSchema.parse({
+      poolCents: null,
+      poolMinutes: null,
+      memberCapCents: 100,
+      memberCapMinutes: null,
+      actorUserId: "u1"
+    });
+  });
+
+  it("orgUsagePeriodSchema enforces YYYY-MM", () => {
+    orgUsagePeriodSchema.parse("2026-06");
+    assert.throws(() => orgUsagePeriodSchema.parse("2026-6"));
+    assert.throws(() => orgUsagePeriodSchema.parse("2026-06-01"));
+    assert.throws(() => orgUsagePeriodSchema.parse("june"));
+  });
+
+  it("recordOrgUsageRequestSchema validates additive usage", () => {
+    recordOrgUsageRequestSchema.parse({ userId: "u1", period: "2026-06", addCents: 0, addMinutes: 0 });
+    recordOrgUsageRequestSchema.parse({ userId: "u1", period: "2026-06", addCents: 50, addMinutes: 2.5 });
+    assert.throws(() =>
+      recordOrgUsageRequestSchema.parse({ userId: "u1", period: "2026-06", addCents: -1, addMinutes: 0 })
+    );
+    assert.throws(() =>
+      recordOrgUsageRequestSchema.parse({ userId: "u1", period: "2026-06", addCents: 1.5, addMinutes: 0 })
+    );
+    assert.throws(() =>
+      recordOrgUsageRequestSchema.parse({ userId: "u1", period: "bad", addCents: 0, addMinutes: 0 })
+    );
+  });
+
+  it("orgUsageSummarySchema + orgUsageCheckSchema validate their shapes", () => {
+    orgUsageSummarySchema.parse({
+      period: "2026-06",
+      orgTotalCents: 150,
+      orgTotalMinutes: 12.5,
+      members: [{ userId: "u1", spentCents: 150, activeMinutes: 12.5 }]
+    });
+    orgUsageSummarySchema.parse({ period: "2026-06", orgTotalCents: 0, orgTotalMinutes: 0, members: [] });
+    orgUsageCheckSchema.parse({
+      allowed: true,
+      memberRemainingCents: null,
+      memberRemainingMinutes: null,
+      poolRemainingCents: null,
+      poolRemainingMinutes: null
+    });
+    orgUsageCheckSchema.parse({
+      allowed: false,
+      memberRemainingCents: 0,
+      memberRemainingMinutes: 30,
+      poolRemainingCents: 100,
+      poolRemainingMinutes: null
+    });
   });
 
   it("ensurePersonalOrgRequestSchema validates displayName", () => {
