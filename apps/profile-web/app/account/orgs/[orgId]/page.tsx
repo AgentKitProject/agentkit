@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AccountShell } from "@/components/AccountShell";
-import { OrgMembersPanel, OrgApiKeyPanel, OrgRunBudgetPanel } from "@/components/orgs/OrgsClient";
+import { OrgMembersPanel, OrgApiKeyPanel, OrgRunBudgetPanel, OrgMonthlyLimitsPanel } from "@/components/orgs/OrgsClient";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,7 @@ export default async function OrgDetailPage({ params }: PageProps) {
         <OrgMembersPanel orgId={orgId} />
         <OrgApiKeyPanel orgId={orgId} viewerUserId={user.id} />
         <OrgRunBudgetPanel orgId={orgId} viewerUserId={user.id} />
+        <OrgMonthlyLimitsPanel orgId={orgId} viewerUserId={user.id} />
       </div>
     </AccountShell>
   );

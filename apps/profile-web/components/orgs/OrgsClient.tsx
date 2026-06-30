@@ -10,8 +10,16 @@ import type {
   OrgApiKeyStatus,
   OrgApiKeyProviderStatus,
   OrgRunBudgetStatus,
+  OrgMonthlyLimits,
+  OrgUsageSummary,
 } from "@agentkitforge/contracts";
-import { orgApiKeyStatusSchema, orgRunBudgetStatusSchema } from "@agentkitforge/contracts";
+import {
+  orgApiKeyStatusSchema,
+  orgRunBudgetStatusSchema,
+  orgMonthlyLimitsSchema,
+  orgUsageSummarySchema,
+  orgMonthlyLimitsRoutes,
+} from "@agentkitforge/contracts";
 import { Button, Input, Select } from "@agentkitforge/ui";
 
 // ---------------------------------------------------------------------------
@@ -707,6 +715,233 @@ export function OrgRunBudgetPanel({ orgId, viewerUserId }: { orgId: string; view
           )}
         </div>
       </form>
+    </div>
+  );
+}
+
+/**
+ * Owner/admin surface for the org's MONTHLY limits (org budgets v2) + usage.
+ * Sibling to OrgRunBudgetPanel: four nullable caps (pool + per-member, in
+ * dollars and active-minutes), additive to the per-run budget, plus this
+ * month's usage. Hidden for members/viewers (UI-only gate; the handler
+ * independently enforces owner/admin).
+ */
+export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; viewerUserId: string }) {
+  const canManage = useCanManage(orgId, viewerUserId);
+  const [status, setStatus] = useState<Loadable<OrgMonthlyLimits>>({ status: "loading" });
+  const [poolUsd, setPoolUsd] = useState("");
+  const [poolMinutes, setPoolMinutes] = useState("");
+  const [memberCapUsd, setMemberCapUsd] = useState("");
+  const [memberCapMinutes, setMemberCapMinutes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
+  const [usage, setUsage] = useState<Loadable<OrgUsageSummary>>({ status: "loading" });
+
+  const emptyLimits: OrgMonthlyLimits = { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null };
+
+  const loadStatus = useCallback(() => {
+    setStatus({ status: "loading" });
+    fetch(orgMonthlyLimitsRoutes.orgMonthlyLimits(orgId), { credentials: "include", headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        const parsed = orgMonthlyLimitsSchema.safeParse(payload);
+        const data: OrgMonthlyLimits = parsed.success ? parsed.data : emptyLimits;
+        setStatus({ status: "loaded", data });
+        setPoolUsd(data.poolCents !== null ? (data.poolCents / 100).toFixed(2) : "");
+        setPoolMinutes(data.poolMinutes !== null ? String(data.poolMinutes) : "");
+        setMemberCapUsd(data.memberCapCents !== null ? (data.memberCapCents / 100).toFixed(2) : "");
+        setMemberCapMinutes(data.memberCapMinutes !== null ? String(data.memberCapMinutes) : "");
+      })
+      .catch((err: unknown) => {
+        setStatus({ status: "failed", message: err instanceof Error ? err.message : "Could not load the monthly limits." });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
+
+  const loadUsage = useCallback(() => {
+    setUsage({ status: "loading" });
+    const period = new Date().toISOString().slice(0, 7);
+    fetch(`${orgMonthlyLimitsRoutes.orgUsage(orgId)}?period=${encodeURIComponent(period)}`, { credentials: "include", headers: { Accept: "application/json" } })
+      .then((r) => r.json())
+      .then((payload: unknown) => {
+        const parsed = orgUsageSummarySchema.safeParse(payload);
+        if (parsed.success) {
+          setUsage({ status: "loaded", data: parsed.data });
+        } else {
+          setUsage({ status: "loaded", data: { period, orgTotalCents: 0, orgTotalMinutes: 0, members: [] } });
+        }
+      })
+      .catch((err: unknown) => {
+        setUsage({ status: "failed", message: err instanceof Error ? err.message : "Could not load this month's usage." });
+      });
+  }, [orgId]);
+
+  useEffect(() => {
+    if (canManage) {
+      loadStatus();
+      loadUsage();
+    }
+  }, [canManage, loadStatus, loadUsage]);
+
+  // Parse an optional USD field → cents (null = blank/unlimited). Throws on invalid.
+  const parseUsd = (raw: string): number | null => {
+    const v = raw.trim();
+    if (v === "") return null;
+    const cents = Math.round(parseFloat(v) * 100);
+    if (!Number.isInteger(cents) || cents < 0) throw new Error("Enter valid, non-negative dollar amounts.");
+    return cents;
+  };
+
+  // Parse an optional integer-minutes field (null = blank/unlimited). Throws on invalid.
+  const parseMinutes = (raw: string): number | null => {
+    const v = raw.trim();
+    if (v === "") return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) throw new Error("Enter valid, whole, non-negative minute amounts.");
+    return n;
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setFormNotice(null);
+    let body: OrgMonthlyLimits;
+    try {
+      body = {
+        poolCents: parseUsd(poolUsd),
+        poolMinutes: parseMinutes(poolMinutes),
+        memberCapCents: parseUsd(memberCapUsd),
+        memberCapMinutes: parseMinutes(memberCapMinutes),
+      };
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Invalid input.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch(orgMonthlyLimitsRoutes.orgMonthlyLimits(orgId), { method: "PUT", body: JSON.stringify(body) });
+      setFormNotice("Organization monthly limits saved.");
+      loadStatus();
+      loadUsage();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to save the monthly limits.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setClearing(true);
+    setFormError(null);
+    setFormNotice(null);
+    try {
+      await apiFetch(orgMonthlyLimitsRoutes.orgMonthlyLimits(orgId), { method: "DELETE" });
+      setPoolUsd("");
+      setPoolMinutes("");
+      setMemberCapUsd("");
+      setMemberCapMinutes("");
+      setFormNotice("Organization monthly limits cleared.");
+      loadStatus();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to clear the monthly limits.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  if (canManage !== true) {
+    return null;
+  }
+
+  const current = status.status === "loaded" ? status.data : null;
+  const anySet =
+    current !== null &&
+    (current.poolCents !== null || current.poolMinutes !== null || current.memberCapCents !== null || current.memberCapMinutes !== null);
+
+  return (
+    <div className="grid gap-4">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-950">Organization monthly limits</h2>
+        <p className={`mt-1 ${MUTED}`}>
+          Caps the whole org (pool) and each member (per-member), per calendar month (UTC), in dollars and/or active-minutes. A run
+          is blocked when any set cap is reached; the per-run budget still applies.
+        </p>
+      </div>
+
+      {status.status === "loading" && <p className={MUTED}>Loading monthly limits…</p>}
+      {status.status === "failed" && <div className={DANGER}>{status.message}</div>}
+      {status.status === "loaded" && (
+        <div className={PANEL}>
+          <strong className="text-slate-950">{anySet ? "Current monthly limits set" : "No monthly limits set"}</strong>
+          {!anySet && <p className={`mt-1 ${MUTED}`}>The org and its members are unlimited this month (only the per-run budget applies).</p>}
+        </div>
+      )}
+
+      <form className={`${PANEL} grid gap-4`} onSubmit={(e) => { void handleSave(e); }}>
+        <h3 className="text-lg font-semibold text-slate-950">Set the monthly limits</h3>
+        {formError && <div className={DANGER}>{formError}</div>}
+        {formNotice && <div className={NOTICE}>{formNotice}</div>}
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className={LABEL}>
+            Org-wide pool — dollars / month
+            <Input type="number" min="0" step="0.01" value={poolUsd} onChange={(e) => setPoolUsd(e.target.value)} placeholder="Unlimited" disabled={saving} />
+            <span className={MUTED}>Leave blank for unlimited.</span>
+          </label>
+          <label className={LABEL}>
+            Org-wide pool — minutes / month
+            <Input type="number" min="0" step="1" value={poolMinutes} onChange={(e) => setPoolMinutes(e.target.value)} placeholder="Unlimited" disabled={saving} />
+            <span className={MUTED}>Leave blank for unlimited.</span>
+          </label>
+          <label className={LABEL}>
+            Per-member cap — dollars / month
+            <Input type="number" min="0" step="0.01" value={memberCapUsd} onChange={(e) => setMemberCapUsd(e.target.value)} placeholder="Unlimited" disabled={saving} />
+            <span className={MUTED}>Leave blank for unlimited.</span>
+          </label>
+          <label className={LABEL}>
+            Per-member cap — minutes / month
+            <Input type="number" min="0" step="1" value={memberCapMinutes} onChange={(e) => setMemberCapMinutes(e.target.value)} placeholder="Unlimited" disabled={saving} />
+            <span className={MUTED}>Leave blank for unlimited.</span>
+          </label>
+        </div>
+        <div className="flex gap-3">
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save limits"}
+          </Button>
+          {anySet && (
+            <Button type="button" variant="danger" disabled={clearing} onClick={() => { void handleClear(); }}>
+              {clearing ? "Clearing…" : "Clear all"}
+            </Button>
+          )}
+        </div>
+      </form>
+
+      <div className={`${PANEL} grid gap-3`}>
+        <h3 className="text-lg font-semibold text-slate-950">This month&apos;s usage</h3>
+        {usage.status === "loading" && <p className={MUTED}>Loading this month&apos;s usage…</p>}
+        {usage.status === "failed" && <div className={DANGER}>{usage.message}</div>}
+        {usage.status === "loaded" && (
+          <>
+            <div className="text-sm text-slate-950">
+              <strong>Org totals ({usage.data.period}):</strong> ${(usage.data.orgTotalCents / 100).toFixed(2)} ·{" "}
+              {usage.data.orgTotalMinutes} min
+            </div>
+            {usage.data.members.length === 0 ? (
+              <p className={MUTED}>No usage yet this month.</p>
+            ) : (
+              <ul className="grid gap-2">
+                {usage.data.members.map((m) => (
+                  <li key={m.userId} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-slate-950">{m.userId}</span>
+                    <span className={MUTED}>${(m.spentCents / 100).toFixed(2)} · {m.activeMinutes} min</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
