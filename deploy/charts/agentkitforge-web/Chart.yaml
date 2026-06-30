@@ -2,7 +2,7 @@ apiVersion: v2
 name: agentkitforge-web
 description: Self-hosted AgentKitForge WebApp (Next.js standalone server, KITSTORE_BACKEND=selfhost, bundled Postgres + MinIO)
 type: application
-version: 0.7.1
+version: 0.7.5
 appVersion: "0.2.0"
 keywords:
   - agentkit

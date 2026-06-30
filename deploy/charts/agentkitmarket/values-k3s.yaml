@@ -29,7 +29,7 @@ image:
   repository: ghcr.io/agentkitproject/agentkitmarket-core
   # Pinned to a self-host release for reproducibility. Bump to the latest release
   # tag from `release-selfhost` (see deploy/SELF_HOSTING.md → Images).
-  tag: "v0.7.1"
+  tag: "v0.7.5"
   pullPolicy: IfNotPresent
 
 # Both images live in the public AgentKitProject GHCR org → no pull secret.
@@ -58,7 +58,7 @@ web:
   image:
     repository: ghcr.io/agentkitproject/agentkitmarket-app
     # Pinned to a self-host release for reproducibility (see deploy/SELF_HOSTING.md).
-    tag: "v0.7.1"
+    tag: "v0.7.5"
     pullPolicy: IfNotPresent
   # Generic OpenID Connect (Keycloak, Authentik, Dex, Auth0, Okta, etc.).
   authProvider: "oidc"
