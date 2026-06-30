@@ -1,7 +1,11 @@
-import { handleAuth } from "@workos-inc/authkit-nextjs";
-import { getAppUrl } from "@/lib/auth/urls";
+import { getAuthProvider } from "@/lib/auth-provider";
+import type { NextRequest } from "next/server";
 
-export const GET = handleAuth({
-  baseURL: getAppUrl(),
-  returnPathname: "/account",
-});
+// Resolve URLs/handlers at request time, not build time. Keeps the image
+// runtime-configured (one image, env supplied at deploy).
+export const dynamic = "force-dynamic";
+
+export async function GET(request: NextRequest) {
+  const provider = await getAuthProvider();
+  return provider.handleCallback(request);
+}

@@ -1,19 +1,9 @@
-import { redirect } from "next/navigation";
-import { getSignInUrl, getSignUpUrl } from "@/lib/auth/workos";
-import { safeReturnTo } from "@/lib/auth/urls";
+import { getAuthProvider } from "@/lib/auth-provider";
+import type { NextRequest } from "next/server";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const returnTo = safeReturnTo(searchParams.get("returnTo"));
+export const dynamic = "force-dynamic";
 
-  console.info("[auth] sign-in route hit", {
-    returnTo,
-  });
-
-  const signInUrl =
-    searchParams.get("mode") === "sign-up"
-      ? await getSignUpUrl(returnTo)
-      : await getSignInUrl(returnTo);
-
-  redirect(signInUrl);
+export async function GET(request: NextRequest) {
+  const provider = await getAuthProvider();
+  return provider.handleSignIn(request);
 }

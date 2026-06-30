@@ -115,6 +115,20 @@ Auto-generated + persisted when left empty (and no existingSecret is set).
 {{- end }}
 
 {{/*
+Effective web SESSION_SECRET (OIDC): explicit | persisted | seeded-fallback.
+Signs the iron-session cookie for the OIDC (self-host) auth path. Only emitted
+when authProvider=oidc. Auto-generated + persisted across upgrades when empty.
+*/}}
+{{- define "agentkitprofile.effectiveSessionSecret" -}}
+{{- if .Values.web.secrets.sessionSecret -}}
+{{- .Values.web.secrets.sessionSecret -}}
+{{- else -}}
+{{- $prev := include "agentkitprofile._liveSecretValue" (list . (include "agentkitprofile.webSecretName" .) "SESSION_SECRET") -}}
+{{- $prev | default (include "agentkitprofile._seededSecret" (list . "session-secret")) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Effective PROFILE_KEY_ENCRYPTION_SECRET (explicit | persisted | seeded-fallback).
 AES-256-GCM at-rest key for org shared LLM provider keys (mirrors Market's
 MARKET_KEY_ENCRYPTION_SECRET). Auto-generated + persisted when left empty (and no

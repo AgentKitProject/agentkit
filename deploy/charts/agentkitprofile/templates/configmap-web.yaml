@@ -8,9 +8,15 @@
   {{- $profileApiBaseUrl = printf "http://%s-web" $fullname -}}
 {{- end -}}
 {{- $appUrl := .Values.web.config.appUrl -}}
+{{- $isOidc := eq .Values.web.authProvider "oidc" -}}
 {{- $redirect := .Values.web.config.workosRedirectUri -}}
 {{- if and (not $redirect) $appUrl -}}
   {{- $redirect = printf "%s/auth/callback" (trimSuffix "/" $appUrl) -}}
+{{- end -}}
+{{- $oidc := .Values.web.config.oidc -}}
+{{- $oidcRedirect := $oidc.redirectUri -}}
+{{- if and (not $oidcRedirect) $appUrl -}}
+  {{- $oidcRedirect = printf "%s/auth/callback" (trimSuffix "/" $appUrl) -}}
 {{- end -}}
 apiVersion: v1
 kind: ConfigMap
@@ -23,6 +29,8 @@ data:
   NODE_ENV: "production"
   PORT: {{ .Values.web.port | quote }}
   HOSTNAME: "0.0.0.0"
+  # Auth provider: "workos" (hosted default) or "oidc" (self-host).
+  AUTH_PROVIDER: {{ .Values.web.authProvider | quote }}
   # Profile backend selector — only "postgres" is implemented.
   PROFILE_STORE: {{ .Values.web.config.profileStore | quote }}
   # Profile API base URL — server-side self-call into this same web tier.
@@ -38,11 +46,31 @@ data:
   {{- if .Values.web.config.adminEmails }}
   AGENTKITPROJECT_ADMIN_EMAILS: {{ .Values.web.config.adminEmails | quote }}
   {{- end }}
+  {{- if $isOidc }}
+  # ---- OIDC (self-host) ----
+  {{- with .Values.web.config.oidc.issuer }}
+  OIDC_ISSUER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.web.config.oidc.clientId }}
+  OIDC_CLIENT_ID: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.web.config.oidc.scopes }}
+  OIDC_SCOPES: {{ . | quote }}
+  {{- end }}
+  {{- if $oidcRedirect }}
+  OIDC_REDIRECT_URI: {{ $oidcRedirect | quote }}
+  {{- end }}
+  {{- if .Values.web.config.oidc.allowInsecure }}
+  OIDC_ALLOW_INSECURE: "true"
+  {{- end }}
+  {{- else }}
+  # ---- WorkOS (hosted default) ----
   {{- if .Values.web.config.workosClientId }}
   # WorkOS client id — public, safe in the ConfigMap.
   WORKOS_CLIENT_ID: {{ .Values.web.config.workosClientId | quote }}
   {{- end }}
   {{- if $redirect }}
   WORKOS_REDIRECT_URI: {{ $redirect | quote }}
+  {{- end }}
   {{- end }}
 {{- end }}

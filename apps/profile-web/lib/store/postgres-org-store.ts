@@ -18,7 +18,7 @@ import type {
  */
 
 export interface PgQueryable {
-  query(text: string, values?: unknown[]): Promise<{ rows: any[]; rowCount: number | null }>;
+  query(text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
 }
 
 export interface PgPoolClient extends PgQueryable {
@@ -81,7 +81,12 @@ function str(value: unknown): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
 }
 
-function rowToOrganization(row: any): Organization {
+function rowToOrganization(r: Record<string, unknown>): Organization {
+  const row = r as {
+    org_id: string; slug: string; display_name: string; type: Organization["type"]; owner_user_id: string;
+    handle: string | null; avatar_initials: string | null; verified: boolean | null;
+    workos_organization_id: string | null; created_at: string; updated_at: string;
+  };
   return {
     orgId: row.org_id,
     slug: row.slug,
@@ -97,7 +102,11 @@ function rowToOrganization(row: any): Organization {
   };
 }
 
-function rowToMembership(row: any): OrgMembership {
+function rowToMembership(r: Record<string, unknown>): OrgMembership {
+  const row = r as {
+    org_id: string; user_id: string; role: OrgMembership["role"]; status: OrgMembership["status"];
+    invited_by_user_id: string | null; created_at: string;
+  };
   return {
     orgId: row.org_id,
     userId: row.user_id,
@@ -108,7 +117,11 @@ function rowToMembership(row: any): OrgMembership {
   };
 }
 
-function rowToInvite(row: any): OrgInvite {
+function rowToInvite(r: Record<string, unknown>): OrgInvite {
+  const row = r as {
+    org_id: string; user_id: string | null; email: string | null; role: OrgInvite["role"];
+    invited_by_user_id: string; created_at: string;
+  };
   const userId = str(row.user_id);
   return {
     orgId: row.org_id,
@@ -120,7 +133,11 @@ function rowToInvite(row: any): OrgInvite {
   };
 }
 
-function rowToProviderKey(row: any): OrgProviderKeyRecord {
+function rowToProviderKey(r: Record<string, unknown>): OrgProviderKeyRecord {
+  const row = r as {
+    org_id: string; provider_type: OrgProviderKeyRecord["providerType"]; api_key_ciphertext: string;
+    base_url: string | null; updated_by_user_id: string; updated_at: string;
+  };
   return {
     orgId: row.org_id,
     providerType: row.provider_type,
@@ -131,7 +148,10 @@ function rowToProviderKey(row: any): OrgProviderKeyRecord {
   };
 }
 
-function rowToRunBudget(row: any): OrgRunBudgetRecord {
+function rowToRunBudget(r: Record<string, unknown>): OrgRunBudgetRecord {
+  const row = r as {
+    org_id: string; budget_cents: number | string; updated_by_user_id: string; updated_at: string;
+  };
   return {
     orgId: row.org_id,
     budgetCents: Number(row.budget_cents),

@@ -1,32 +1,26 @@
-import { headers } from "next/headers";
+// Thin re-exports over the SELECTED auth provider (see lib/auth-provider/).
+//
+// AgentKitProfile's web tier consumes only the abstract `AgentKitUser`. The
+// concrete backend (WorkOS/AuthKit for the hosted SaaS, or a generic OIDC
+// provider for self-hosted) is selected by `AUTH_PROVIDER`; the pages / API
+// routes here are unaffected by which provider is active.
+//
+// Admin gating is unchanged: `getUserRole(user)` (lib/auth/roles.ts) resolves
+// admin/owner from the AGENTKITPROJECT_ADMIN_EMAILS allowlist by email — and
+// both providers populate `user.email`, so admin works on either path.
 import { redirect } from "next/navigation";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { getAuthProvider } from "@/lib/auth-provider";
 import { getUserRole } from "@/lib/auth/roles";
-import { safeReturnTo } from "@/lib/auth/urls";
+import type { AgentKitUser } from "@/lib/auth-provider/types";
 
-type AuthResult = Awaited<ReturnType<typeof withAuth>>;
+export type { AgentKitUser } from "@/lib/auth-provider/types";
 
-export type AgentKitUser = NonNullable<AuthResult["user"]>;
-
-export async function getCurrentUser() {
-  const { user } = await withAuth();
-  return user ?? null;
+export async function getCurrentUser(): Promise<AgentKitUser | null> {
+  return (await getAuthProvider()).getCurrentUser();
 }
 
-export async function requireUser(returnTo?: string) {
-  const { user } = await withAuth();
-
-  if (!user) {
-    const returnPath = safeReturnTo(returnTo ?? (await getCurrentRequestPath()));
-
-    console.info("[auth] protected route auth missing", {
-      returnTo: returnPath,
-    });
-
-    redirect(`/auth/sign-in?returnTo=${encodeURIComponent(returnPath)}`);
-  }
-
-  return user;
+export async function requireUser(returnTo?: string): Promise<AgentKitUser> {
+  return (await getAuthProvider()).requireUser(returnTo);
 }
 
 export async function requireAdmin() {
@@ -38,20 +32,4 @@ export async function requireAdmin() {
   }
 
   return { user, role };
-}
-
-async function getCurrentRequestPath() {
-  const headersList = await headers();
-  const requestUrl = headersList.get("x-url");
-
-  if (!requestUrl) {
-    return "/account";
-  }
-
-  try {
-    const parsed = new URL(requestUrl);
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return "/account";
-  }
 }
