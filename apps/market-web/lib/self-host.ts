@@ -63,12 +63,15 @@ export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
       docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com",
     };
   }
-  // Self-host: only surface links the operator explicitly configures.
+  // Self-host: only surface links the operator explicitly configures —
+  // EXCEPT Docs, which is the single allowed external link in the sidebar even
+  // on self-host (defaults to the public docs site). Forge/Auto are never
+  // surfaced in nav on self-host.
   return {
     projectUrl: trimmed(env.NEXT_PUBLIC_PROJECT_URL),
     forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL),
     autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL),
     profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL),
-    docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL),
+    docsUrl: trimmed(env.NEXT_PUBLIC_DOCS_URL) ?? "https://docs.agentkitproject.com",
   };
 }

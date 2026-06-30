@@ -32,13 +32,14 @@ describe("getEcosystemLinks", () => {
     assert.equal(links.docsUrl, "https://docs.agentkitproject.com");
   });
 
-  it("self-host with no overrides surfaces NO ecosystem links", () => {
+  it("self-host with no overrides surfaces NO ecosystem links (except Docs, which always defaults)", () => {
     const links = getEcosystemLinks({ AUTH_PROVIDER: "oidc" });
     assert.equal(links.projectUrl, undefined);
     assert.equal(links.forgeUrl, undefined);
     assert.equal(links.autoUrl, undefined);
     assert.equal(links.profileUrl, undefined);
-    assert.equal(links.docsUrl, undefined);
+    // Docs is the single allowed external link in the sidebar even on self-host.
+    assert.equal(links.docsUrl, "https://docs.agentkitproject.com");
   });
 
   it("self-host surfaces ONLY operator-configured links", () => {
@@ -51,6 +52,7 @@ describe("getEcosystemLinks", () => {
     assert.equal(links.autoUrl, "https://auto.internal.example.com");
     assert.equal(links.projectUrl, undefined);
     assert.equal(links.profileUrl, undefined);
-    assert.equal(links.docsUrl, undefined);
+    // Docs still defaults even when other ecosystem links are operator-only.
+    assert.equal(links.docsUrl, "https://docs.agentkitproject.com");
   });
 });

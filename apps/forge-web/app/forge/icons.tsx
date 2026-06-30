@@ -121,6 +121,18 @@ export const GitIcon = (p: IconProps) => (
   </svg>
 );
 
+export const BuildingIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
+    <path d="M10 6h4" />
+    <path d="M10 10h4" />
+    <path d="M10 14h4" />
+    <path d="M10 18h4" />
+  </svg>
+);
+
 export const StoreIcon = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="m2 7 1.6-3.2A2 2 0 0 1 5.39 3h13.22a2 2 0 0 1 1.79 1.1L22 7" />

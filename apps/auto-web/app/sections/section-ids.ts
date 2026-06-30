@@ -16,7 +16,7 @@ export const AUTO_SECTIONS: { id: AutoSectionId; label: string; title: string }[
   { id: "runs", label: "Runs", title: "Run history" },
   { id: "approvals", label: "Approvals", title: "Standing approvals" },
   { id: "schedules", label: "Schedules", title: "Scheduled runs" },
-  { id: "webhooks", label: "Webhooks", title: "Webhook triggers" },
+  { id: "webhooks", label: "Triggers", title: "Triggers" },
   { id: "settings", label: "Settings", title: "Inference & billing" },
 ];
 

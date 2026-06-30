@@ -155,8 +155,10 @@ body {
   min-width: 0;
 }
 
-/* Let the Market gradient body background show through the framework shell. */
-.ak-shell {
+/* Let the Market gradient body background show through the framework shell
+   (SiteShell legacy + AppShell sidebar layout). */
+.ak-shell,
+.ak-app {
   background: transparent;
 }
 

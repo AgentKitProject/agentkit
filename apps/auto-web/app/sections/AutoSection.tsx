@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, BRAND_ACCENTS, Button, Card, Field, Input, Pill, Select, Textarea, brandVars } from "@agentkitforge/ui";
 import type { AutoSectionId } from "./section-ids";
+import { recurrenceToCron, type RecurrenceKind, type DayOfWeek } from "./recurrence";
 import { autoRoutes } from "@agentkitforge/contracts";
 import type { CatalogEntry, MyKitEntry, Notify, PublicProvider } from "./shared";
 import { errMsg } from "./shared";
@@ -331,7 +332,12 @@ export function AutoSection({
   // Schedule state (Phase B).
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [schedKitId, setSchedKitId] = useState("");
-  const [schedCron, setSchedCron] = useState("0 9 * * *");
+  // Friendly recurrence picker (primary). "advanced" reveals the raw cron field.
+  const [schedRepeat, setSchedRepeat] = useState<RecurrenceKind>("daily");
+  const [schedTime, setSchedTime] = useState("09:00"); // HH:MM for daily/weekly/monthly
+  const [schedDow, setSchedDow] = useState<DayOfWeek>(1); // weekly: 0=Sun … 6=Sat
+  const [schedDom, setSchedDom] = useState(1); // monthly: 1–31
+  const [schedCron, setSchedCron] = useState("0 9 * * *"); // raw cron (advanced mode)
   const [schedTz, setSchedTz] = useState(localTimezone());
   const [schedPrompt, setSchedPrompt] = useState("");
   const [schedBudgetUsd, setSchedBudgetUsd] = useState("0.50");
@@ -774,7 +780,13 @@ export function AutoSection({
     if (!kitRef) return notify("That kit is no longer available.", true);
     const approval = approvalForSelection(schedKitId);
     if (!approval) return notify("That kit has no standing approval.", true);
-    if (!schedCron.trim()) return notify("Enter a cron expression.", true);
+    // Resolve the cron string: the friendly picker for known cadences, or the raw
+    // cron field in Advanced mode.
+    const cron =
+      schedRepeat === "advanced"
+        ? schedCron.trim()
+        : recurrenceToCron(schedRepeat, { time: schedTime, dayOfWeek: schedDow, dayOfMonth: schedDom });
+    if (!cron) return notify("Enter a cron expression.", true);
     if (!schedPrompt.trim()) return notify("Enter a task for the schedule.", true);
     const cents = Math.round(parseFloat(schedBudgetUsd) * 100);
     if (!Number.isInteger(cents) || cents <= 0) return notify("Per-run budget is required (positive amount).", true);
@@ -787,7 +799,7 @@ export function AutoSection({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kitRef,
-          cron: schedCron.trim(),
+          cron,
           timezone: schedTz.trim() || "UTC",
           input: { prompt: schedPrompt },
           budgetCents: cents,
@@ -1313,9 +1325,51 @@ export function AutoSection({
             {renderKitOptions(true)}
           </Select>
         </Field>
-        <Field label="Cron (minute hour dom month dow)">
-          <Input type="text" value={schedCron} onChange={(e) => setSchedCron(e.target.value)} placeholder="0 9 * * *" />
+        {/* ---- Friendly recurrence picker (primary) + Advanced cron escape hatch ---- */}
+        <Field label="Repeat">
+          <Select value={schedRepeat} onChange={(e) => setSchedRepeat(e.target.value as RecurrenceKind)}>
+            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="advanced">Advanced (cron)</option>
+          </Select>
         </Field>
+        {(schedRepeat === "daily" || schedRepeat === "weekly" || schedRepeat === "monthly") && (
+          <Field label="At time">
+            <Input type="time" value={schedTime} onChange={(e) => setSchedTime(e.target.value)} />
+          </Field>
+        )}
+        {schedRepeat === "weekly" && (
+          <Field label="On day">
+            <Select value={String(schedDow)} onChange={(e) => setSchedDow(Number(e.target.value) as DayOfWeek)}>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+              <option value="0">Sunday</option>
+            </Select>
+          </Field>
+        )}
+        {schedRepeat === "monthly" && (
+          <Field label="On day of month (1–31)">
+            <Input
+              type="number"
+              min="1"
+              max="31"
+              step="1"
+              value={schedDom}
+              onChange={(e) => setSchedDom(Number(e.target.value))}
+            />
+          </Field>
+        )}
+        {schedRepeat === "advanced" && (
+          <Field label="Cron (minute hour dom month dow)">
+            <Input type="text" value={schedCron} onChange={(e) => setSchedCron(e.target.value)} placeholder="0 9 * * *" />
+          </Field>
+        )}
         <Field label="Timezone (IANA)">
           <Input type="text" value={schedTz} onChange={(e) => setSchedTz(e.target.value)} placeholder="UTC" />
         </Field>
@@ -1370,11 +1424,11 @@ export function AutoSection({
       {section === "webhooks" && (
       <div className="form-layout">
       <div className="form-panel">
-        {/* ---- Webhooks (Phase C) ---- */}
-        <h3 style={{ marginTop: 0 }}>Webhooks</h3>
+        {/* ---- Triggers (webhook-backed; Phase C) ---- */}
+        <h3 style={{ marginTop: 0 }}>Triggers</h3>
         <p className="form-copy">
-          A webhook fires a run when a third-party service POSTs to its URL, authed by a per-webhook secret (no
-          login). Each fire is still gated by the kit&apos;s standing approval and a per-fire budget — a webhook
+          A trigger fires a run when a third-party service POSTs to its webhook URL, authed by a per-trigger secret
+          (no login). Each fire is still gated by the kit&apos;s standing approval and a per-fire budget — a trigger
           never widens consent.
         </p>
         <Field label="Kit (must have an approval)">

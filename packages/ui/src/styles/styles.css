@@ -24,6 +24,12 @@
      <select>/<input> chrome dark). [data-theme="dark"] flips it below. */
   color-scheme: light;
 
+  /* Paint the root element itself with the theme background so the overscroll /
+     rubber-band area (above/below the page) matches the theme instead of showing
+     browser-white in dark mode. --ak-bg flips under [data-theme="dark"], so this
+     follows the theme. Apps still paint their own body/shell on top. */
+  background-color: var(--ak-bg);
+
   /* Text / surfaces (Tailwind slate) */
   --ak-text: #0f172a; /* slate-900 */
   --ak-bg: #f8fafc; /* slate-50  */
@@ -183,6 +189,17 @@
   color: var(--ak-brand);
   background: var(--ak-brand-soft);
 }
+/* Dark mode: the secondary button's surface fill sits very close to the page
+   background, so outline buttons can read as nearly invisible. Lift them to the
+   muted surface with a brighter border so they stay clearly tappable at night. */
+[data-theme="dark"] .ak-btn--secondary {
+  background: var(--ak-surface-muted);
+  border-color: color-mix(in srgb, var(--ak-text) 24%, var(--ak-border));
+}
+[data-theme="dark"] .ak-btn--secondary:hover {
+  background: color-mix(in srgb, var(--ak-text) 8%, var(--ak-surface-muted));
+}
+
 .ak-btn--danger {
   background: var(--ak-error);
   color: #fff;

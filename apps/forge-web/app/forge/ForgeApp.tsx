@@ -13,6 +13,7 @@ import { AppShell, SidebarAccount, BRAND_ACCENTS, type SidebarNavItem } from "@a
 import { getForgeClient } from "@/forge-client";
 import type { MyKitEntry } from "@/forge-client";
 import {
+  BuildingIcon,
   ExportIcon,
   ForgeMark,
   HammerIcon,
@@ -51,7 +52,7 @@ type NavDef = { id: SectionId; label: string; icon: ReactNode };
 const NAV: NavDef[] = [
   { id: "my-kits", label: "My Kits", icon: <PackageIcon size={18} /> },
   { id: "build", label: "Build", icon: <HammerIcon size={18} /> },
-  { id: "use", label: "Use", icon: <PlayIcon size={18} /> },
+  { id: "use", label: "Prepared prompts", icon: <PlayIcon size={18} /> },
   { id: "run", label: "Run / Chat", icon: <SparklesIcon size={18} /> },
   { id: "import", label: "Import", icon: <ImportIcon size={18} /> },
   { id: "package-export", label: "Package / Export", icon: <ExportIcon size={18} /> },
@@ -64,7 +65,7 @@ const NAV: NavDef[] = [
 const SECTION_TITLES: Record<SectionId, { eyebrow: string; title: string }> = {
   "my-kits": { eyebrow: "Library", title: "My Kits" },
   build: { eyebrow: "Create", title: "Build an Agent Kit" },
-  use: { eyebrow: "Run", title: "Use a Kit" },
+  use: { eyebrow: "Prepared prompts", title: "Prepared prompts" },
   run: { eyebrow: "Run", title: "Chat with a Kit" },
   import: { eyebrow: "Bring in", title: "Import a Kit" },
   "package-export": { eyebrow: "Distribute", title: "Package / Export" },
@@ -192,6 +193,17 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     };
     const runIdx = navItems.findIndex((n) => n.label === "Run / Chat");
     navItems.splice(runIdx >= 0 ? runIdx + 1 : navItems.length, 0, autoNavItem);
+  }
+
+  // Organization: link out to the Market orgs page. Shown only when Market is
+  // enabled and a Market URL is configured (self-host without a Market hides it).
+  if (config.marketEnabled && config.links.marketUrl) {
+    navItems.push({
+      label: "Organization",
+      icon: <BuildingIcon size={18} />,
+      href: `${config.links.marketUrl}/orgs`,
+      external: true
+    });
   }
 
   const usageNode =
