@@ -8,10 +8,14 @@ metadata:
     {{- include "agentkitprofile.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    # Run before the app rolls out, on both install and upgrade. The migration
-    # SQL is idempotent (IF NOT EXISTS) and serialized by a pg advisory lock, so
-    # re-running is a no-op.
-    "helm.sh/hook": pre-install,pre-upgrade
+    # POST-sync so the bundled Postgres (a normal sync-phase resource) exists and
+    # is healthy before the migration runs — a pre-sync hook would run before the
+    # in-cluster DB is created and could never connect. The web probe is DB-free
+    # (GET / → sign-in redirect), so web reports healthy and this hook fires; web
+    # serves real requests once the schema lands. Migration SQL is idempotent
+    # (IF NOT EXISTS) + advisory-locked, so re-running on upgrade is a no-op.
+    # (External DATABASE_URL deployments: the DB is already up, so post is fine.)
+    "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
@@ -31,6 +35,17 @@ spec:
         runAsNonRoot: true
         runAsUser: 1001
         fsGroup: 1001
+      {{- if and .Values.postgres.enabled (not .Values.web.secrets.databaseUrl) }}
+      # Wait for the bundled Postgres to accept connections before migrating
+      # (post-sync runs after it's healthy, but guard the brief readiness window).
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image | quote }}
+          command:
+            - sh
+            - -c
+            - 'until pg_isready -h {{ include "agentkitprofile.postgresHost" . }} -p 5432; do echo "waiting for postgres"; sleep 2; done'
+      {{- end }}
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
