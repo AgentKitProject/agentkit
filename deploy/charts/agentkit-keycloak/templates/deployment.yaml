@@ -100,8 +100,15 @@ spec:
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
+                  {{- if .Values.db.existingSecret }}
+                  # External DB password from a separate (e.g. sealed) secret, so
+                  # secrets.generate can still own the admin + client secrets.
+                  name: {{ .Values.db.existingSecret }}
+                  key: {{ .Values.db.existingSecretKey | default "KC_DB_PASSWORD" }}
+                  {{- else }}
                   name: {{ include "agentkit-keycloak.effectiveSecretName" . }}
                   key: KC_DB_PASSWORD
+                  {{- end }}
             {{- if .Values.smtp.enabled }}
             # ---- SMTP (referenced by realm smtpServer via ${env.*}) ----
             - name: KC_SMTP_USER

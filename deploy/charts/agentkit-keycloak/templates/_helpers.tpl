@@ -122,8 +122,12 @@ db.password (required).
 {{- define "agentkit-keycloak.effectiveKcDbPassword" -}}
 {{- if .Values.postgres.enabled -}}
 {{- include "agentkit-keycloak.effectiveDbPassword" . -}}
+{{- else if .Values.db.existingSecret -}}
+{{- /* KC_DB_PASSWORD comes from db.existingSecret at runtime; the chart Secret's
+copy is unused (may be empty). */ -}}
+{{- .Values.db.password -}}
 {{- else -}}
-{{- required "postgres.enabled=false requires db.password (external Postgres)" .Values.db.password -}}
+{{- required "postgres.enabled=false requires db.password or db.existingSecret (external Postgres)" .Values.db.password -}}
 {{- end -}}
 {{- end }}
 
