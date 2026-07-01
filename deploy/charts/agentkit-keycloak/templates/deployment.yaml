@@ -135,6 +135,9 @@ spec:
             httpGet:
               path: /health/ready
               port: 9000
+              # When a TLS cert is configured, Keycloak serves the management
+              # interface (9000) over HTTPS too, so the probe must match.
+              scheme: {{ if and .Values.https.enabled .Values.https.certificateFile }}HTTPS{{ else }}HTTP{{ end }}
             initialDelaySeconds: 20
             periodSeconds: 10
             failureThreshold: 6
@@ -142,6 +145,7 @@ spec:
             httpGet:
               path: /health/live
               port: 9000
+              scheme: {{ if and .Values.https.enabled .Values.https.certificateFile }}HTTPS{{ else }}HTTP{{ end }}
             initialDelaySeconds: 60
             periodSeconds: 20
             failureThreshold: 6
