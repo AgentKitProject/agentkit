@@ -201,6 +201,61 @@ persistence:
   # storageClassName: ""
 
 # ---------------------------------------------------------------------------
+# In-cluster HTTPS (optional, off).
+#
+# For a tailnet "in-cluster IdP" pattern where app pods reach the issuer FQDN
+# DIRECTLY (no public/internal host split) and OIDC discovery requires a valid
+# TLS cert, Keycloak can serve HTTPS itself from a mounted cert Secret. This is
+# ADDITIVE: the plain HTTP port is always kept (browser path via HTTP behind the
+# TLS-terminating ingress); pods reach Keycloak over HTTPS on the FQDN.
+#
+# To use: mount a TLS Secret (see extraVolumes/extraVolumeMounts below) at e.g.
+# /etc/keycloak/tls, then point certificateFile/certificateKeyFile at it and set
+# https.enabled=true. Keycloak serves both HTTP and HTTPS when the cert env is
+# set. Example:
+#   --set https.enabled=true \
+#   --set https.certificateFile=/etc/keycloak/tls/tls.crt \
+#   --set https.certificateKeyFile=/etc/keycloak/tls/tls.key \
+#   --set-json 'extraVolumes=[{"name":"kc-tls","secret":{"secretName":"keycloak-tls"}}]' \
+#   --set-json 'extraVolumeMounts=[{"name":"kc-tls","mountPath":"/etc/keycloak/tls","readOnly":true}]'
+# ---------------------------------------------------------------------------
+https:
+  # Serve HTTPS in-cluster in addition to HTTP. Off by default (backward-compat).
+  enabled: false
+  # HTTPS listen port inside the container (Keycloak default 8443). Added as a
+  # second container port `https` and a `https` Service port when enabled.
+  port: 8443
+  # Path to the TLS cert PEM inside the container (→ KC_HTTPS_CERTIFICATE_FILE).
+  # Typically points into an extraVolumeMount, e.g. /etc/keycloak/tls/tls.crt.
+  certificateFile: ""
+  # Path to the TLS private-key PEM (→ KC_HTTPS_CERTIFICATE_KEY_FILE).
+  certificateKeyFile: ""
+
+# ---------------------------------------------------------------------------
+# Extensibility escape hatches (all default empty → rendered output unchanged).
+# ---------------------------------------------------------------------------
+# Raw env entries appended verbatim to the Keycloak container's `env` (each an
+# object with `name` + `value` or `name` + `valueFrom`), e.g.:
+#   extraEnv:
+#     - name: KC_LOG_LEVEL
+#       value: INFO
+extraEnv: []
+
+# Extra pod volumes appended verbatim to `spec.volumes` (e.g. a TLS cert Secret):
+#   extraVolumes:
+#     - name: kc-tls
+#       secret:
+#         secretName: keycloak-tls
+extraVolumes: []
+
+# Extra container volumeMounts appended verbatim (mount the volumes above):
+#   extraVolumeMounts:
+#     - name: kc-tls
+#       mountPath: /etc/keycloak/tls
+#       readOnly: true
+extraVolumeMounts: []
+
+# ---------------------------------------------------------------------------
 # Secrets.
 # ---------------------------------------------------------------------------
 secrets:

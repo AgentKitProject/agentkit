@@ -72,6 +72,19 @@ spec:
               value: "true"
             - name: KC_HTTP_PORT
               value: {{ .Values.port | quote }}
+            {{- if .Values.https.enabled }}
+            # ---- HTTPS (in-cluster TLS; e.g. tailnet in-cluster IdP) ----
+            - name: KC_HTTPS_PORT
+              value: {{ .Values.https.port | quote }}
+            {{- if .Values.https.certificateFile }}
+            - name: KC_HTTPS_CERTIFICATE_FILE
+              value: {{ .Values.https.certificateFile | quote }}
+            {{- end }}
+            {{- if .Values.https.certificateKeyFile }}
+            - name: KC_HTTPS_CERTIFICATE_KEY_FILE
+              value: {{ .Values.https.certificateKeyFile | quote }}
+            {{- end }}
+            {{- end }}
             # ---- Health + metrics ----
             - name: KC_HEALTH_ENABLED
               value: "true"
@@ -104,10 +117,19 @@ spec:
                   key: SMTP_PASSWORD
                   optional: true
             {{- end }}
+            {{- with .Values.extraEnv }}
+            # ---- Extra env (raw entries appended verbatim) ----
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.port }}
               protocol: TCP
+            {{- if .Values.https.enabled }}
+            - name: https
+              containerPort: {{ .Values.https.port }}
+              protocol: TCP
+            {{- end }}
           # Keycloak exposes management (health/metrics) on port 9000.
           readinessProbe:
             httpGet:
@@ -131,6 +153,9 @@ spec:
             - name: kc-data
               mountPath: /opt/keycloak/data
             {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -141,4 +166,7 @@ spec:
         - name: kc-data
           persistentVolumeClaim:
             claimName: {{ include "agentkit-keycloak.fullname" . }}-data
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}

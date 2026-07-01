@@ -12,3 +12,8 @@ spec:
     - name: http
       port: 80
       targetPort: http
+    {{- if .Values.https.enabled }}
+    - name: https
+      port: {{ .Values.https.port }}
+      targetPort: https
+    {{- end }}

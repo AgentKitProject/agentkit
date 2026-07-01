@@ -107,6 +107,38 @@ helm install keycloak ./charts/agentkit-keycloak \
 | `secrets.generate` | `true` | Auto-generate + persist empty admin/DB/client secrets. |
 | `secrets.existingSecret` | `""` | Source all secrets from an external Secret (see values.yaml for required keys). |
 | `persistence.enabled` / `.size` | `false` / `1Gi` | Small convenience PVC for `/opt/keycloak/data`. |
+| **In-cluster HTTPS (optional, off)** | | |
+| `https.enabled` | `false` | Serve HTTPS in-cluster **in addition to** HTTP (additive; the HTTP port is always kept). |
+| `https.port` | `8443` | HTTPS container port → adds a `https` container port and a `https` Service port. |
+| `https.certificateFile` / `.certificateKeyFile` | `""` | Paths to the TLS cert/key PEM in the container (→ `KC_HTTPS_CERTIFICATE_FILE` / `KC_HTTPS_CERTIFICATE_KEY_FILE`). Point at an `extraVolumeMount`. |
+| **Extensibility (all default empty → output unchanged)** | | |
+| `extraEnv` | `[]` | Raw env entries (`name`/`value` or `name`/`valueFrom`) appended to the Keycloak container `env`. |
+| `extraVolumes` | `[]` | Extra pod volumes appended to `spec.volumes` (e.g. a TLS cert Secret). |
+| `extraVolumeMounts` | `[]` | Extra container `volumeMounts` (mount the volumes above, e.g. at `/etc/keycloak/tls`). |
+
+### In-cluster HTTPS (tailnet in-cluster IdP)
+
+By default this chart terminates TLS at the ingress and serves plain HTTP inside
+the cluster — the standard reverse-proxy pattern. For a **tailnet "in-cluster
+IdP"** pattern where app pods reach the issuer **FQDN directly** (no public /
+internal host split) and OIDC discovery therefore needs a valid TLS cert on the
+in-cluster endpoint, Keycloak can serve HTTPS itself from a mounted cert Secret:
+
+```sh
+helm upgrade --install keycloak ./charts/agentkit-keycloak -f charts/agentkit-keycloak/values-k3s.yaml \
+  --set https.enabled=true \
+  --set https.certificateFile=/etc/keycloak/tls/tls.crt \
+  --set https.certificateKeyFile=/etc/keycloak/tls/tls.key \
+  --set-json 'extraVolumes=[{"name":"kc-tls","secret":{"secretName":"keycloak-tls"}}]' \
+  --set-json 'extraVolumeMounts=[{"name":"kc-tls","mountPath":"/etc/keycloak/tls","readOnly":true}]'
+```
+
+This is **additive**: the plain HTTP port is always kept (browser path via HTTP
+behind the TLS-terminating ingress), and a second `https` port (default `8443`)
+is added to both the container and the Service. Keycloak serves both HTTP and
+HTTPS once the `KC_HTTPS_CERTIFICATE_FILE` env is set. `extraEnv` / `extraVolumes`
+/ `extraVolumeMounts` are generic escape hatches — with their defaults (all
+empty, `https.enabled=false`) the rendered manifests are unchanged.
 
 ### How realm import is wired
 
