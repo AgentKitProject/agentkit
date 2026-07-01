@@ -14,6 +14,6 @@ spec:
       targetPort: http
     {{- if .Values.https.enabled }}
     - name: https
-      port: {{ .Values.https.port }}
+      port: {{ .Values.https.servicePort | default .Values.https.port }}
       targetPort: https
     {{- end }}

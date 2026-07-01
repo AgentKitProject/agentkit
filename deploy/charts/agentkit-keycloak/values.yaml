@@ -222,9 +222,13 @@ persistence:
 https:
   # Serve HTTPS in-cluster in addition to HTTP. Off by default (backward-compat).
   enabled: false
-  # HTTPS listen port inside the container (Keycloak default 8443). Added as a
-  # second container port `https` and a `https` Service port when enabled.
+  # HTTPS listen port inside the container (Keycloak default 8443; non-root, so
+  # keep >=1024). Added as a second container port `https` when enabled.
   port: 8443
+  # HTTPS Service port. Defaults to `port`. Set to 443 for the in-cluster IdP
+  # pattern where pods reach the issuer at https://<host> (implicit :443) via a
+  # CoreDNS rewrite — the Service exposes 443 → targetPort the container's 8443.
+  servicePort: ""
   # Path to the TLS cert PEM inside the container (→ KC_HTTPS_CERTIFICATE_FILE).
   # Typically points into an extraVolumeMount, e.g. /etc/keycloak/tls/tls.crt.
   certificateFile: ""
