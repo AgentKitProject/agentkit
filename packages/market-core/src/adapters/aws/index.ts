@@ -1120,6 +1120,26 @@ export function createDynamoOrgRepository(config: DynamoOrgConfig): OrgRepositor
         .sort((a, b) => a.kitId.localeCompare(b.kitId));
     },
 
+    async countPrivateKitsForOrg(orgId: string): Promise<number> {
+      // Count private kits for the org. Scan is paginated, so accumulate the
+      // per-page Count across LastEvaluatedKey. Select: 'COUNT' returns only the
+      // count (no items), keeping the scan cheap.
+      let count = 0;
+      let lastEvaluatedKey: Record<string, unknown> | undefined;
+      do {
+        const result = await dynamo.send(new ScanCommand({
+          TableName: kitsTableName,
+          Select: 'COUNT',
+          FilterExpression: 'ownerOrgId = :orgId AND visibility = :private',
+          ExpressionAttributeValues: { ':orgId': orgId, ':private': 'private' },
+          ExclusiveStartKey: lastEvaluatedKey,
+        }));
+        count += result.Count ?? 0;
+        lastEvaluatedKey = result.LastEvaluatedKey;
+      } while (lastEvaluatedKey);
+      return count;
+    },
+
     async setOrgProviderKey(orgId, input): Promise<void> {
       const record: OrgProviderKeyRecord = {
         orgId,

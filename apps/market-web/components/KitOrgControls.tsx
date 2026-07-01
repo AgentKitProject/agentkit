@@ -145,9 +145,14 @@ export function KitOrgControls({ kitId, myOrgs }: { kitId: string; myOrgs: Organ
               disabled={settingVis}
             >
               <option value="public">Public — listed in the catalog</option>
-              <option value="private">Private — org members only</option>
+              <option value="private">Private — only you and your org</option>
             </Select>
           </label>
+          {visibility === "private" && (
+            <p className="field-hint">
+              Private — only you and your org&apos;s members can see and use it; hidden from the public catalog.
+            </p>
+          )}
           <Button type="submit" disabled={settingVis}>
             {settingVis ? "Saving…" : "Set visibility"}
           </Button>

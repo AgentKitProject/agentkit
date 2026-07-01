@@ -230,11 +230,11 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
       }
 
       if (request.method === 'POST' && request.resource === '/admin/kits/{kitId}/download-url') {
-        return createKitDownloadUrlById(request, adminRepository, packageUploadService, allowedOrigins, deps.commercial);
+        return createKitDownloadUrlById(request, adminRepository, packageUploadService, allowedOrigins, orgLookup, deps.commercial);
       }
 
       if (request.method === 'POST' && request.resource === '/admin/kits/by-slug/{slug}/download-url') {
-        return createKitDownloadUrlBySlug(request, adminRepository, packageUploadService, allowedOrigins, deps.commercial);
+        return createKitDownloadUrlBySlug(request, adminRepository, packageUploadService, allowedOrigins, orgLookup, deps.commercial);
       }
 
       // --- Organizations (Market Phase 2, Seam B) ---
@@ -327,7 +327,7 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
 
       if (request.method === 'POST' && request.resource === '/admin/kits/{kitId}/visibility') {
         const kitId = request.pathParameters?.kitId ?? '';
-        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setKitVisibilityHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins)),
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setKitVisibilityHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins, deps.userPrivateKitLimit ?? null)),
           () => {
             const b = auditBody();
             const visibility = typeof b?.visibility === 'string' ? (b.visibility as string) : null;
@@ -1028,6 +1028,7 @@ async function createKitDownloadUrlById(
   adminRepository: AdminRepository,
   packageUploadService: PackageUploadService,
   allowedOrigins: string[],
+  orgLookup: OrgLookupClient | undefined,
   commercial?: RouterDeps['commercial'],
 ): Promise<CoreResponse> {
   const kitId = request.pathParameters?.kitId;
@@ -1036,7 +1037,7 @@ async function createKitDownloadUrlById(
   }
 
   const kit = await adminRepository.getKit(kitId);
-  return createKitDownloadUrl(request, adminRepository, packageUploadService, allowedOrigins, kit, commercial);
+  return createKitDownloadUrl(request, adminRepository, packageUploadService, allowedOrigins, orgLookup, kit, commercial);
 }
 
 async function createKitDownloadUrlBySlug(
@@ -1044,6 +1045,7 @@ async function createKitDownloadUrlBySlug(
   adminRepository: AdminRepository,
   packageUploadService: PackageUploadService,
   allowedOrigins: string[],
+  orgLookup: OrgLookupClient | undefined,
   commercial?: RouterDeps['commercial'],
 ): Promise<CoreResponse> {
   const slug = request.pathParameters?.slug;
@@ -1052,7 +1054,7 @@ async function createKitDownloadUrlBySlug(
   }
 
   const kit = await adminRepository.getKitBySlug(slug);
-  return createKitDownloadUrl(request, adminRepository, packageUploadService, allowedOrigins, kit, commercial);
+  return createKitDownloadUrl(request, adminRepository, packageUploadService, allowedOrigins, orgLookup, kit, commercial);
 }
 
 async function createKitDownloadUrl(
@@ -1060,11 +1062,28 @@ async function createKitDownloadUrl(
   adminRepository: AdminRepository,
   packageUploadService: PackageUploadService,
   allowedOrigins: string[],
+  orgLookup: OrgLookupClient | undefined,
   kit: KitRecord | undefined,
   commercial?: RouterDeps['commercial'],
 ): Promise<CoreResponse> {
   if (!kit || !isPublicKit(kit)) {
     return json(request, allowedOrigins, 404, { message: 'Kit not found' });
+  }
+
+  // Private-kit guard: a PUBLISHED PRIVATE kit is not in the public catalog and
+  // must not be downloadable by anyone but the owning org's owner/member. The
+  // actor is the authenticated userId forwarded by the proxy (body actorUserId).
+  // Membership lookups come from Profile (fail-closed: a rejection surfaces as
+  // 500). Public kits are unaffected.
+  if (kit.visibility === 'private') {
+    const body = parseJsonBody(request) as Record<string, unknown> | undefined;
+    const actorUserId = typeof body?.actorUserId === 'string' ? body.actorUserId : undefined;
+    const membership = actorUserId && orgLookup
+      ? await resolveKitMembership(orgLookup, kit, actorUserId)
+      : undefined;
+    if (!membership) {
+      return json(request, allowedOrigins, 403, { message: 'This kit is private.' });
+    }
   }
 
   // Tier-2 guard (commercial-only): a paid, non-downloadable kit must never be
@@ -1509,6 +1528,11 @@ async function setKitVisibilityHandler(
   orgRepository: OrgRepository,
   orgLookup: OrgLookupClient,
   allowedOrigins: string[],
+  /**
+   * Per-org private-kit cap. `null` = unlimited (self-host default). A positive
+   * integer caps the number of private kits an org may hold (cloud sets 25).
+   */
+  privateKitLimit: number | null,
 ): Promise<CoreResponse> {
   const kitId = request.pathParameters?.kitId;
   if (!kitId) {
@@ -1534,8 +1558,29 @@ async function setKitVisibilityHandler(
     return json(request, allowedOrigins, 403, { message: 'Only an owner or admin of the kit can change visibility' });
   }
 
+  // Per-org private-kit cap: enforced BEFORE the mutation, only on the
+  // public→private transition (already-private kits and →public never block).
+  // A `null` limit is unlimited (self-host). A kit with only ownerUserId and no
+  // org can't be counted, so it fails open (skip the cap).
+  const nextVisibility = parsed.data.visibility as KitVisibility;
+  if (
+    privateKitLimit !== null &&
+    nextVisibility === 'private' &&
+    kit.visibility !== 'private' &&
+    kit.ownerOrgId
+  ) {
+    const currentCount = await orgRepository.countPrivateKitsForOrg(kit.ownerOrgId);
+    if (currentCount >= privateKitLimit) {
+      return json(request, allowedOrigins, 409, {
+        message: `Private-kit limit reached (${privateKitLimit}). Make another kit public first, or contact your operator to raise the limit.`,
+        currentCount,
+        limit: privateKitLimit,
+      });
+    }
+  }
+
   // Mutation stays on the kits table (OrgRepository).
-  const updated = await orgRepository.setKitVisibility(kitId, parsed.data.visibility as KitVisibility);
+  const updated = await orgRepository.setKitVisibility(kitId, nextVisibility);
   return json(request, allowedOrigins, 200, {
     item: { kitId, visibility: updated?.visibility ?? parsed.data.visibility, updatedAt: updated?.updatedAt ?? null },
   });

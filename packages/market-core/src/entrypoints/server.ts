@@ -142,6 +142,7 @@ export async function startServer(): Promise<StartServerResult> {
       extraRoutes,
       allowedOrigins,
       adminKey: config.adminKey,
+      userPrivateKitLimit: config.userPrivateKitLimit,
     });
   });
 
@@ -179,6 +180,8 @@ interface ServerDeps {
   extraRoutes?: RoutePattern[];
   allowedOrigins?: string[];
   adminKey: string;
+  /** Per-org private-kit cap; null = unlimited (self-host default). */
+  userPrivateKitLimit?: number | null;
 }
 
 interface LoadedCommercial {

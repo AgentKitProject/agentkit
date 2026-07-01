@@ -45,6 +45,7 @@ import {
   createS3ObjectStore,
 } from '../adapters/aws/index.js';
 import { createProfileOrgLookupClient } from '../adapters/profile/org-lookup-client.js';
+import { parsePrivateKitLimit } from '../core/config.js';
 
 // Re-exported for parity with the original handler module surface (consumed by
 // infra tests and the contracts-provider test).
@@ -65,6 +66,8 @@ interface HandlerOptions {
   commercial?: CommercialRouter;
   allowedOrigins?: string[];
   adminKey?: string;
+  /** Per-org private-kit cap; null = unlimited (self-host default). */
+  userPrivateKitLimit?: number | null;
 }
 
 /**
@@ -111,6 +114,7 @@ export function createHandler(options: HandlerOptions) {
   return async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
     const allowedOrigins = options.allowedOrigins ?? parseAllowedOrigins(process.env.API_ALLOWED_ORIGINS);
     const adminKey = options.adminKey ?? process.env.ADMIN_API_KEY;
+    const userPrivateKitLimit = options.userPrivateKitLimit ?? parsePrivateKitLimit(process.env.USER_PRIVATE_KIT_LIMIT);
 
     // For /admin/* and /users/* routes the original handler lazily built the
     // DynamoDB/S3/SQS services when not injected — and crucially, never read
@@ -146,6 +150,7 @@ export function createHandler(options: HandlerOptions) {
       commercial,
       allowedOrigins,
       adminKey,
+      userPrivateKitLimit,
     });
 
     return {
@@ -422,6 +427,7 @@ function createLazyDynamoOrgRepository(): OrgRepository {
     setKitOwnerOrg(kitId, orgId) { return getRepository().setKitOwnerOrg(kitId, orgId); },
     setKitVisibility(kitId, visibility) { return getRepository().setKitVisibility(kitId, visibility); },
     listKitsForOrg(orgId) { return getRepository().listKitsForOrg(orgId); },
+    countPrivateKitsForOrg(orgId) { return getRepository().countPrivateKitsForOrg(orgId); },
     setOrgProviderKey(orgId, input) { return getRepository().setOrgProviderKey(orgId, input); },
     getOrgProviderKey(orgId, providerType) { return getRepository().getOrgProviderKey(orgId, providerType); },
     listOrgProviderKeys(orgId) { return getRepository().listOrgProviderKeys(orgId); },

@@ -138,6 +138,8 @@ export interface OrgRepository {
   setKitVisibility(kitId: string, visibility: KitVisibility): Promise<KitRecord | undefined>;
   /** All kits owned by an org, including private ones (for the org's own listing). */
   listKitsForOrg(orgId: string): Promise<KitRecord[]>;
+  /** Count of PRIVATE kits owned by an org (for the per-org private-kit cap). */
+  countPrivateKitsForOrg(orgId: string): Promise<number>;
   /**
    * Org shared LLM API keys (open-core; encrypted at rest). An org holds ONE key
    * PER provider, keyed on the composite `(orgId, providerType)`. The repository

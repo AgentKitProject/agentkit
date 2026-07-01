@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   let backendPath = "";
 
   try {
-    await requireForgeUser(request);
+    const user = await requireForgeUser(request);
     slug = (await params).slug;
 
     if (!slug) {
@@ -20,9 +20,11 @@ export async function POST(request: Request, { params }: RouteContext) {
     }
 
     backendPath = `/admin/kits/by-slug/${encodeURIComponent(slug)}/download-url`;
+    // Forward the authenticated userId so the backend can enforce owner/member
+    // access on PRIVATE kits (public kits ignore it).
     const backendResponse = await fetchAdminBackend(backendPath, {
       method: "POST",
-      body: JSON.stringify({})
+      body: JSON.stringify({ actorUserId: user.id })
     });
     const bodyText = await backendResponse.text();
     const payload = parseBackendJson(bodyText);

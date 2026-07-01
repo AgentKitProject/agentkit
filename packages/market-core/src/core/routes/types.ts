@@ -96,4 +96,11 @@ export interface RouterDeps {
   commercial?: CommercialRouter;
   allowedOrigins?: string[];
   adminKey?: string;
+  /**
+   * Per-user/-org private-kit cap. `null` or `undefined` = unlimited (self-host
+   * default). A positive integer caps how many private kits an org may hold
+   * (cloud sets 25 via `USER_PRIVATE_KIT_LIMIT`). Enforced on the
+   * public→private transition in the set-visibility handler.
+   */
+  userPrivateKitLimit?: number | null;
 }

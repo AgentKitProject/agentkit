@@ -58,6 +58,25 @@ export interface SelfHostConfig {
   adminKey: string;
   /** HTTP listen port for the server entrypoint. */
   port: number;
+  /**
+   * Per-org private-kit cap. `null` = unlimited (self-host default; leave
+   * `USER_PRIVATE_KIT_LIMIT` unset/empty). A positive integer caps how many
+   * private kits an org may hold (cloud sets 25). Same code either way.
+   */
+  userPrivateKitLimit: number | null;
+}
+
+/**
+ * Parses the `USER_PRIVATE_KIT_LIMIT` knob to `number | null`.
+ * Unset/empty/non-positive/unparseable ⇒ `null` (unlimited; self-host default).
+ * A positive integer ⇒ the per-org private-kit cap (cloud sets 25).
+ */
+export function parsePrivateKitLimit(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 /**
@@ -88,5 +107,6 @@ export function loadSelfHostConfig(config: ConfigProvider): SelfHostConfig {
     allowedOrigins,
     adminKey: config.get('ADMIN_API_KEY', true)!,
     port: Number.isFinite(port) ? port : 8080,
+    userPrivateKitLimit: parsePrivateKitLimit(config.get('USER_PRIVATE_KIT_LIMIT')),
   };
 }

@@ -1169,6 +1169,14 @@ export function createPostgresOrgRepository(pool: PgPool): OrgRepository {
       return result.rows.map(rowToKit);
     },
 
+    async countPrivateKitsForOrg(orgId: string): Promise<number> {
+      const result = await pool.query(
+        `SELECT COUNT(*) AS count FROM kits WHERE owner_org_id = $1 AND visibility = 'private'`,
+        [orgId],
+      );
+      return Number.parseInt(String(result.rows[0]?.count ?? '0'), 10);
+    },
+
     async setOrgProviderKey(orgId, input): Promise<void> {
       const now = new Date().toISOString();
       await pool.query(
