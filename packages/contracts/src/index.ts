@@ -77,6 +77,7 @@ export {
   recordUserOrgUsageRequestSchema,
   resolvedUserOrgUsageRecordSchema,
   setOrgMonthlyLimitsRequestSchema,
+  orgPrivateKitCapSchema,
   orgMonthlyLimitsRoutes,
   profileOrgUsageRoutes,
   forgeOrgRoutes,
@@ -119,7 +120,8 @@ export {
   type ResolvedUserOrgUsageCheck,
   type RecordUserOrgUsage,
   type ResolvedUserOrgUsageRecord,
-  type SetOrgMonthlyLimitsRequest
+  type SetOrgMonthlyLimitsRequest,
+  type OrgPrivateKitCap
 } from "./orgs.js";
 
 export {

@@ -20,6 +20,8 @@
 
 import {
   profileOrgRoutes,
+  profileOrgUsageRoutes,
+  orgPrivateKitCapSchema,
   type Organization,
   type OrgMembership,
 } from '@agentkitforge/contracts';
@@ -166,6 +168,33 @@ export function createProfileOrgLookupClient(
         throw new ProfileOrgLookupError('Profile ensurePersonalOrg response missing item');
       }
       return org as unknown as Organization;
+    },
+
+    // FAIL-OPEN (private-kits A2): unlike the membership/org lookups above, a
+    // Profile outage must NOT block set-private. Any transport/parse/non-2xx
+    // failure returns undefined so the caller falls back to the env default. A
+    // 200 with `maxPrivateKits: null` is an EXPLICIT "unlimited" and returns null.
+    async getOrgPrivateKitCap(orgId): Promise<number | null | undefined> {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}${profileOrgUsageRoutes.orgPrivateKitCap(orgId)}`, {
+          method: 'GET',
+          headers: headers(),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch {
+        return undefined;
+      }
+      if (!response.ok) {
+        return undefined;
+      }
+      try {
+        const parsed = orgPrivateKitCapSchema.safeParse(await response.json());
+        return parsed.success ? parsed.data.maxPrivateKits : undefined;
+      } catch {
+        return undefined;
+      }
     },
   };
 }

@@ -121,6 +121,12 @@ function visibilityDeps(
   member: OrgMembership,
   privateCount: number,
   userPrivateKitLimit: number | null,
+  /**
+   * The org-configured cap from Profile (getOrgPrivateKitCap). number = configured
+   * cap; null = org explicitly unlimited; undefined = Profile unresolvable (fail-
+   * open → fall to the env default). Defaults to undefined (A1 behaviour).
+   */
+  orgCap: number | null | undefined = undefined,
 ): RouterDeps {
   const adminRepository: Partial<AdminRepository> = {
     getKit: async () => kit,
@@ -132,6 +138,7 @@ function visibilityDeps(
   };
   const orgLookupClient: Partial<OrgLookupClient> = {
     getMembership: async () => member,
+    getOrgPrivateKitCap: async () => orgCap,
   };
   return {
     repository: {} as CatalogRepository,
@@ -174,6 +181,44 @@ describe('per-org private-kit cap', () => {
 
   it('allows set-private under the cap', async () => {
     const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 1, 2);
+    const response = await routeRequest(setPrivateRequest(), deps);
+    expect(response.statusCode).toBe(200);
+  });
+});
+
+// --- Precedence: org-configured cap → env default → unlimited (private-kits A2) ---
+
+describe('per-org private-kit cap precedence', () => {
+  it('org cap OVERRIDES a laxer env default (org=1, env=10, count=1 → 409)', async () => {
+    const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 1, 10, 1);
+    const response = await routeRequest(setPrivateRequest(), deps);
+    expect(response.statusCode).toBe(409);
+    const body = JSON.parse(response.body) as { limit: number };
+    expect(body.limit).toBe(1); // the org cap, not the env default
+  });
+
+  it('org cap OVERRIDES a stricter env default (org=5, env=1, count=2 → 200)', async () => {
+    const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 2, 1, 5);
+    const response = await routeRequest(setPrivateRequest(), deps);
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('org cap null (explicit unlimited) overrides a strict env default (env=1, count=99 → 200)', async () => {
+    const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 99, 1, null);
+    const response = await routeRequest(setPrivateRequest(), deps);
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('FAIL-OPEN: org cap undefined (Profile down) falls back to the env default (env=2, count=2 → 409)', async () => {
+    const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 2, 2, undefined);
+    const response = await routeRequest(setPrivateRequest(), deps);
+    expect(response.statusCode).toBe(409);
+    const body = JSON.parse(response.body) as { limit: number };
+    expect(body.limit).toBe(2); // env default applies when Profile is unresolvable
+  });
+
+  it('org cap undefined + env unlimited → allowed (count high, both unlimited)', async () => {
+    const deps = visibilityDeps(publishedKit({ visibility: 'public' }), activeMember, 999, null, undefined);
     const response = await routeRequest(setPrivateRequest(), deps);
     expect(response.statusCode).toBe(200);
   });

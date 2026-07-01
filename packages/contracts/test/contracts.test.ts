@@ -75,7 +75,8 @@ import {
   resolvedUserOrgUsageCheckSchema,
   recordUserOrgUsageRequestSchema,
   resolvedUserOrgUsageRecordSchema,
-  setOrgMonthlyLimitsRequestSchema
+  setOrgMonthlyLimitsRequestSchema,
+  orgPrivateKitCapSchema
 } from "../dist/index.js";
 
 const fixture = (name: string) =>
@@ -257,6 +258,7 @@ describe("contracts", () => {
     assert.equal(profileOrgUsageRoutes.orgUsage("org1"), u.orgUsage.replace("{orgId}", "org1"));
     assert.equal(profileOrgUsageRoutes.checkOrgUsage("org1"), u.checkOrgUsage.replace("{orgId}", "org1"));
     assert.equal(profileOrgUsageRoutes.recordOrgUsage("org1"), u.recordOrgUsage.replace("{orgId}", "org1"));
+    assert.equal(profileOrgUsageRoutes.orgPrivateKitCap("org1"), u.orgPrivateKitCap.replace("{orgId}", "org1"));
     assert.equal(orgMonthlyLimitsRoutes.orgMonthlyLimits("org1"), "/api/orgs/org1/monthly-limits");
     assert.equal(orgMonthlyLimitsRoutes.orgUsage("org1"), "/api/orgs/org1/usage");
   });
@@ -266,19 +268,24 @@ describe("contracts", () => {
       poolCents: null,
       poolMinutes: null,
       memberCapCents: null,
-      memberCapMinutes: null
+      memberCapMinutes: null,
+      maxPrivateKits: null
     });
     orgMonthlyLimitsSchema.parse({
       poolCents: 0,
       poolMinutes: 100,
       memberCapCents: 5000,
-      memberCapMinutes: 60
+      memberCapMinutes: 60,
+      maxPrivateKits: 25
     });
     assert.throws(() =>
-      orgMonthlyLimitsSchema.parse({ poolCents: -1, poolMinutes: null, memberCapCents: null, memberCapMinutes: null })
+      orgMonthlyLimitsSchema.parse({ poolCents: -1, poolMinutes: null, memberCapCents: null, memberCapMinutes: null, maxPrivateKits: null })
     );
     assert.throws(() =>
-      orgMonthlyLimitsSchema.parse({ poolCents: 1.5, poolMinutes: null, memberCapCents: null, memberCapMinutes: null })
+      orgMonthlyLimitsSchema.parse({ poolCents: 1.5, poolMinutes: null, memberCapCents: null, memberCapMinutes: null, maxPrivateKits: null })
+    );
+    assert.throws(() =>
+      orgMonthlyLimitsSchema.parse({ poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null, maxPrivateKits: -1 })
     );
     // actorUserId is optional on the request schema variant.
     setOrgMonthlyLimitsRequestSchema.parse({
@@ -286,8 +293,16 @@ describe("contracts", () => {
       poolMinutes: null,
       memberCapCents: 100,
       memberCapMinutes: null,
+      maxPrivateKits: 10,
       actorUserId: "u1"
     });
+  });
+
+  it("orgPrivateKitCapSchema accepts a non-negative int or null", () => {
+    orgPrivateKitCapSchema.parse({ maxPrivateKits: null });
+    orgPrivateKitCapSchema.parse({ maxPrivateKits: 25 });
+    assert.throws(() => orgPrivateKitCapSchema.parse({ maxPrivateKits: -1 }));
+    assert.throws(() => orgPrivateKitCapSchema.parse({ maxPrivateKits: 1.5 }));
   });
 
   it("orgUsagePeriodSchema enforces YYYY-MM", () => {

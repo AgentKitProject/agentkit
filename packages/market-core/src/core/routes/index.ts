@@ -148,7 +148,13 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
       // Org/membership lookups for the kit-coupling paths come from Profile when
       // an OrgLookupClient is injected (P2 — AgentKitProfile is the org system of
       // record; fail-closed), else fall back to the local OrgRepository (pre-P2).
-      const orgLookup = deps.orgLookupClient ?? deps.orgRepository;
+      // The OrgRepository fallback doesn't store the Profile-owned per-org
+      // private-kit cap, so its `getOrgPrivateKitCap` returns undefined (fail-open
+      // → the env default applies).
+      const orgLookup: OrgLookupClient | undefined = deps.orgLookupClient
+        ?? (deps.orgRepository
+          ? { ...deps.orgRepository, getOrgPrivateKitCap: async () => undefined }
+          : undefined);
 
       if (request.method === 'POST' && request.resource === '/admin/submissions/upload-url') {
         return createSubmissionUploadUrl(request, adminRepository, packageUploadService, allowedOrigins, orgLookup);
@@ -1560,22 +1566,27 @@ async function setKitVisibilityHandler(
 
   // Per-org private-kit cap: enforced BEFORE the mutation, only on the
   // public→private transition (already-private kits and →public never block).
-  // A `null` limit is unlimited (self-host). A kit with only ownerUserId and no
-  // org can't be counted, so it fails open (skip the cap).
+  // A kit with only ownerUserId and no org can't be counted, so it fails open
+  // (skip the cap).
+  //
+  // Effective-cap precedence (private-kits A2): org-configured max → env default →
+  // unlimited. `getOrgPrivateKitCap` FAILS OPEN: `undefined` (Profile
+  // unreachable/off) falls through to the env default; an explicit `null` (org
+  // configured "unlimited") overrides the env default with unlimited. `null`
+  // effective cap = unlimited.
   const nextVisibility = parsed.data.visibility as KitVisibility;
-  if (
-    privateKitLimit !== null &&
-    nextVisibility === 'private' &&
-    kit.visibility !== 'private' &&
-    kit.ownerOrgId
-  ) {
-    const currentCount = await orgRepository.countPrivateKitsForOrg(kit.ownerOrgId);
-    if (currentCount >= privateKitLimit) {
-      return json(request, allowedOrigins, 409, {
-        message: `Private-kit limit reached (${privateKitLimit}). Make another kit public first, or contact your operator to raise the limit.`,
-        currentCount,
-        limit: privateKitLimit,
-      });
+  if (nextVisibility === 'private' && kit.visibility !== 'private' && kit.ownerOrgId) {
+    const orgCap = await orgLookup.getOrgPrivateKitCap(kit.ownerOrgId);
+    const effectiveCap = orgCap !== undefined ? orgCap : privateKitLimit;
+    if (effectiveCap !== null) {
+      const currentCount = await orgRepository.countPrivateKitsForOrg(kit.ownerOrgId);
+      if (currentCount >= effectiveCap) {
+        return json(request, allowedOrigins, 409, {
+          message: `Private-kit limit reached (${effectiveCap}). Make another kit public first, or contact your operator to raise the limit.`,
+          currentCount,
+          limit: effectiveCap,
+        });
+      }
     }
   }
 

@@ -570,6 +570,7 @@ const NULL_MONTHLY_LIMITS = {
   poolMinutes: null,
   memberCapCents: null,
   memberCapMinutes: null,
+  maxPrivateKits: null,
 } as const;
 
 /**
@@ -620,10 +621,26 @@ export async function setOrgMonthlyLimits(
       poolMinutes: parsed.data.poolMinutes,
       memberCapCents: parsed.data.memberCapCents,
       memberCapMinutes: parsed.data.memberCapMinutes,
+      maxPrivateKits: parsed.data.maxPrivateKits,
     },
     updatedByUserId: actorUserId,
   });
   return { status: 200, body: { ok: true } };
+}
+
+/**
+ * GET /orgs/{orgId}/private-kit-cap — service-context read of the org's configured
+ * max private-kit count (private-kits A2). NO role gate: the asserted service
+ * caller (market-core) passes orgId directly. Returns
+ * `{ maxPrivateKits: number | null }` (null = unlimited / no org-configured cap;
+ * also null when the org has no monthly-limits row at all).
+ */
+export async function orgPrivateKitCap(store: OrgStore, orgId: string): Promise<HandlerResult> {
+  if (!orgId) {
+    throw new ApiError(400, "Missing orgId");
+  }
+  const record = await store.getOrgMonthlyLimits(orgId);
+  return { status: 200, body: { maxPrivateKits: record ? record.limits.maxPrivateKits : null } };
 }
 
 /** DELETE /orgs/{orgId}/monthly-limits — clear the org's monthly caps (owner/admin). */

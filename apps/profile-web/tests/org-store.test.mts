@@ -11,6 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, "..", "db", "migrations");
 const schemaSql = readFileSync(join(migrationsDir, "0002_orgs.sql"), "utf8");
 const monthlyLimitsSql = readFileSync(join(migrationsDir, "0003_org_monthly_limits.sql"), "utf8");
+const privateKitLimitSql = readFileSync(join(migrationsDir, "0004_org_private_kit_limit.sql"), "utf8");
 
 async function freshStore(): Promise<PostgresOrgStore> {
   const db = newDb();
@@ -18,6 +19,7 @@ async function freshStore(): Promise<PostgresOrgStore> {
   const pool = new Pool() as unknown as PgPool;
   await pool.query(schemaSql);
   await pool.query(monthlyLimitsSql);
+  await pool.query(privateKitLimitSql);
   return new PostgresOrgStore(pool);
 }
 
@@ -201,7 +203,7 @@ test("monthly limits round-trip (nullable caps) + clear", async () => {
   assert.equal(await store.getOrgMonthlyLimits(org.orgId), undefined);
 
   await store.setOrgMonthlyLimits(org.orgId, {
-    limits: { poolCents: 10000, poolMinutes: null, memberCapCents: 2500, memberCapMinutes: 60 },
+    limits: { poolCents: 10000, poolMinutes: null, memberCapCents: 2500, memberCapMinutes: 60, maxPrivateKits: 25 },
     updatedByUserId: "u_owner",
   });
   const rec = await store.getOrgMonthlyLimits(org.orgId);
@@ -210,11 +212,12 @@ test("monthly limits round-trip (nullable caps) + clear", async () => {
     poolMinutes: null,
     memberCapCents: 2500,
     memberCapMinutes: 60,
+    maxPrivateKits: 25,
   });
 
-  // Upsert overwrites.
+  // Upsert overwrites (including maxPrivateKits back to null = unlimited).
   await store.setOrgMonthlyLimits(org.orgId, {
-    limits: { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null },
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null, maxPrivateKits: null },
     updatedByUserId: "u_owner",
   });
   assert.deepEqual((await store.getOrgMonthlyLimits(org.orgId))?.limits, {
@@ -222,6 +225,7 @@ test("monthly limits round-trip (nullable caps) + clear", async () => {
     poolMinutes: null,
     memberCapCents: null,
     memberCapMinutes: null,
+    maxPrivateKits: null,
   });
 
   await store.clearOrgMonthlyLimits(org.orgId);
@@ -273,7 +277,7 @@ test("checkOrgUsageRemaining: computes remaining per capped unit/scope", async (
   const store = await freshStore();
   const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
   await store.setOrgMonthlyLimits(org.orgId, {
-    limits: { poolCents: 1000, poolMinutes: null, memberCapCents: 300, memberCapMinutes: 60 },
+    limits: { poolCents: 1000, poolMinutes: null, memberCapCents: 300, memberCapMinutes: 60, maxPrivateKits: null },
     updatedByUserId: "u_owner",
   });
   // Member uses some; another member contributes to the pool.
@@ -292,7 +296,7 @@ test("checkOrgUsageRemaining: exhausting any capped unit blocks (allowed=false)"
   const store = await freshStore();
   const org = await store.createOrg({ displayName: "Team", ownerUserId: "u_owner" });
   await store.setOrgMonthlyLimits(org.orgId, {
-    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null, maxPrivateKits: null },
     updatedByUserId: "u_owner",
   });
   await store.recordOrgUsage(org.orgId, "u_owner", "2026-06", 100, 0);
@@ -313,15 +317,17 @@ test("usage + monthly limits handlers: gate + service paths", async () => {
     poolMinutes: null,
     memberCapCents: 100,
     memberCapMinutes: null,
+    maxPrivateKits: null,
   });
   assert.equal(denied.status, 403);
 
-  // Owner can.
+  // Owner can (and can set maxPrivateKits alongside the monthly caps).
   const ok = await handlers.setOrgMonthlyLimits(store, org.orgId, "u_owner", {
     poolCents: null,
     poolMinutes: null,
     memberCapCents: 100,
     memberCapMinutes: null,
+    maxPrivateKits: 5,
   });
   assert.equal(ok.status, 200);
 
@@ -333,7 +339,13 @@ test("usage + monthly limits handlers: gate + service paths", async () => {
     poolMinutes: null,
     memberCapCents: 100,
     memberCapMinutes: null,
+    maxPrivateKits: 5,
   });
+
+  // Service private-kit-cap read reflects the configured cap.
+  const cap = await handlers.orgPrivateKitCap(store, org.orgId);
+  assert.equal(cap.status, 200);
+  assert.deepEqual(cap.body, { maxPrivateKits: 5 });
 
   // Service record + check (no role gate).
   const recorded = await handlers.recordOrgUsage(store, org.orgId, {
@@ -380,7 +392,7 @@ test("user-keyed org-usage check/record resolve the single org with monthly limi
 
   // Set a member cap on the org → exactly one matching org now resolves.
   await store.setOrgMonthlyLimits(org.orgId, {
-    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null, maxPrivateKits: null },
     updatedByUserId: "u_owner",
   });
 
@@ -408,7 +420,7 @@ test("user-keyed org-usage check/record resolve the single org with monthly limi
   // Ambiguous (>1 org with limits) → not-found / not-recorded (fail-open).
   const org2 = await store.createOrg({ displayName: "Team Two", ownerUserId: "u_owner" });
   await store.setOrgMonthlyLimits(org2.orgId, {
-    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null },
+    limits: { poolCents: null, poolMinutes: null, memberCapCents: 100, memberCapMinutes: null, maxPrivateKits: null },
     updatedByUserId: "u_owner",
   });
   assert.deepEqual(

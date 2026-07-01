@@ -18,6 +18,8 @@
 
 import {
   profileOrgRoutes,
+  profileOrgUsageRoutes,
+  orgPrivateKitCapSchema,
   type Organization,
   type OrgMembership,
 } from "@agentkitforge/contracts";
@@ -29,6 +31,8 @@ export interface OrgLookupClient {
   getOrg(orgId: string): Promise<Organization | undefined>;
   getOrgBySlug(slug: string): Promise<Organization | undefined>;
   ensurePersonalOrg(userId: string, displayName?: string): Promise<Organization>;
+  /** Org's configured max private-kit count. FAIL-OPEN: undefined on any error (private-kits A2). */
+  getOrgPrivateKitCap(orgId: string): Promise<number | null | undefined>;
 }
 
 class ProfileOrgLookupError extends Error {
@@ -126,6 +130,28 @@ export function buildProfileOrgLookupClient(): OrgLookupClient | undefined {
       const org = unwrapItem(payload);
       if (!org) throw new ProfileOrgLookupError("Profile ensurePersonalOrg response missing item");
       return org as unknown as Organization;
+    },
+    // FAIL-OPEN (private-kits A2): a Profile outage must not block set-private, so
+    // any error returns undefined (caller falls back to the env default).
+    async getOrgPrivateKitCap(orgId) {
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}${profileOrgUsageRoutes.orgPrivateKitCap(orgId)}`, {
+          method: "GET",
+          headers: headers(),
+          cache: "no-store",
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch {
+        return undefined;
+      }
+      if (!response.ok) return undefined;
+      try {
+        const parsed = orgPrivateKitCapSchema.safeParse(await response.json());
+        return parsed.success ? parsed.data.maxPrivateKits : undefined;
+      } catch {
+        return undefined;
+      }
     },
   };
 }

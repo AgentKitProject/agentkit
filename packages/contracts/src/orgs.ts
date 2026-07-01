@@ -615,7 +615,14 @@ export const orgMonthlyLimitsSchema = z.object({
   poolCents: nullableNonNegInt,
   poolMinutes: nullableNonNegInt,
   memberCapCents: nullableNonNegInt,
-  memberCapMinutes: nullableNonNegInt
+  memberCapMinutes: nullableNonNegInt,
+  /**
+   * Max number of PRIVATE kits the org may hold (private-kits A2). null =
+   * unlimited (no org-configured cap). This is NOT a monthly/usage cap — it lives
+   * on the same org-limits row for storage convenience, and is enforced by
+   * market-core at set-private time (precedence: org cap → env default → unlimited).
+   */
+  maxPrivateKits: nullableNonNegInt
 });
 export type OrgMonthlyLimits = z.infer<typeof orgMonthlyLimitsSchema>;
 
@@ -757,5 +764,24 @@ export const profileOrgUsageRoutes = {
    * Body: recordOrgUsageRequestSchema.
    */
   recordOrgUsage: (orgId: string) =>
-    `/orgs/${encodeURIComponent(orgId)}/usage/record`
+    `/orgs/${encodeURIComponent(orgId)}/usage/record`,
+  /**
+   * GET /orgs/{orgId}/private-kit-cap — service-context read of an org's
+   * configured max private-kit count (private-kits A2). Returns
+   * `orgPrivateKitCapSchema` (`{ maxPrivateKits: number | null }`; null =
+   * unlimited / no org-configured cap). market-core calls this at set-private time
+   * to override the env default.
+   */
+  orgPrivateKitCap: (orgId: string) =>
+    `/orgs/${encodeURIComponent(orgId)}/private-kit-cap`
 } as const;
+
+/**
+ * Response of GET /orgs/{orgId}/private-kit-cap (private-kits A2). `maxPrivateKits`
+ * is the org's configured private-kit cap, or null when the org has none set (=
+ * unlimited / defer to the env default).
+ */
+export const orgPrivateKitCapSchema = z.object({
+  maxPrivateKits: nullableNonNegInt
+});
+export type OrgPrivateKitCap = z.infer<typeof orgPrivateKitCapSchema>;

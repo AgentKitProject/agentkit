@@ -739,13 +739,14 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
   const [poolMinutes, setPoolMinutes] = useState("");
   const [memberCapUsd, setMemberCapUsd] = useState("");
   const [memberCapMinutes, setMemberCapMinutes] = useState("");
+  const [maxPrivateKits, setMaxPrivateKits] = useState("");
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
   const [usage, setUsage] = useState<Loadable<OrgUsageSummary>>({ status: "loading" });
 
-  const emptyLimits: OrgMonthlyLimits = { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null };
+  const emptyLimits: OrgMonthlyLimits = { poolCents: null, poolMinutes: null, memberCapCents: null, memberCapMinutes: null, maxPrivateKits: null };
 
   const loadStatus = useCallback(() => {
     setStatus({ status: "loading" });
@@ -759,6 +760,7 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
         setPoolMinutes(data.poolMinutes !== null ? String(data.poolMinutes) : "");
         setMemberCapUsd(data.memberCapCents !== null ? (data.memberCapCents / 100).toFixed(2) : "");
         setMemberCapMinutes(data.memberCapMinutes !== null ? String(data.memberCapMinutes) : "");
+        setMaxPrivateKits(data.maxPrivateKits !== null ? String(data.maxPrivateKits) : "");
       })
       .catch((err: unknown) => {
         setStatus({ status: "failed", message: err instanceof Error ? err.message : "Could not load the monthly limits." });
@@ -820,6 +822,7 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
         poolMinutes: parseMinutes(poolMinutes),
         memberCapCents: parseUsd(memberCapUsd),
         memberCapMinutes: parseMinutes(memberCapMinutes),
+        maxPrivateKits: parseMinutes(maxPrivateKits),
       };
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Invalid input.");
@@ -848,6 +851,7 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
       setPoolMinutes("");
       setMemberCapUsd("");
       setMemberCapMinutes("");
+      setMaxPrivateKits("");
       setFormNotice("Organization monthly limits cleared.");
       loadStatus();
     } catch (err) {
@@ -864,7 +868,7 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
   const current = status.status === "loaded" ? status.data : null;
   const anySet =
     current !== null &&
-    (current.poolCents !== null || current.poolMinutes !== null || current.memberCapCents !== null || current.memberCapMinutes !== null);
+    (current.poolCents !== null || current.poolMinutes !== null || current.memberCapCents !== null || current.memberCapMinutes !== null || current.maxPrivateKits !== null);
 
   return (
     <div className="grid gap-4">
@@ -908,6 +912,11 @@ export function OrgMonthlyLimitsPanel({ orgId, viewerUserId }: { orgId: string; 
           <label className={LABEL}>
             Per-member cap — minutes / month
             <Input type="number" min="0" step="1" value={memberCapMinutes} onChange={(e) => setMemberCapMinutes(e.target.value)} placeholder="Unlimited" disabled={saving} />
+            <span className={MUTED}>Leave blank for unlimited.</span>
+          </label>
+          <label className={LABEL}>
+            Max private kits
+            <Input type="number" min="0" step="1" value={maxPrivateKits} onChange={(e) => setMaxPrivateKits(e.target.value)} placeholder="Unlimited" disabled={saving} />
             <span className={MUTED}>Leave blank for unlimited.</span>
           </label>
         </div>

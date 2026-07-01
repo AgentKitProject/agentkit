@@ -64,7 +64,8 @@
     "orgMonthlyLimits": "/orgs/{orgId}/monthly-limits",
     "orgUsage": "/orgs/{orgId}/usage",
     "checkOrgUsage": "/orgs/{orgId}/usage/check",
-    "recordOrgUsage": "/orgs/{orgId}/usage/record"
+    "recordOrgUsage": "/orgs/{orgId}/usage/record",
+    "orgPrivateKitCap": "/orgs/{orgId}/private-kit-cap"
   },
   "marketBackendPricing": {
     "adminSetKitPricing": "/admin/kits/{kitId}/pricing",

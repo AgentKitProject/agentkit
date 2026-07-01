@@ -176,6 +176,7 @@ function rowToMonthlyLimits(r: Record<string, unknown>): OrgMonthlyLimitsRecord 
     pool_minutes: number | string | null;
     member_cap_cents: number | string | null;
     member_cap_minutes: number | string | null;
+    max_private_kits: number | string | null;
     updated_by_user_id: string;
     updated_at: string;
   };
@@ -186,6 +187,7 @@ function rowToMonthlyLimits(r: Record<string, unknown>): OrgMonthlyLimitsRecord 
       poolMinutes: numOrNull(row.pool_minutes),
       memberCapCents: numOrNull(row.member_cap_cents),
       memberCapMinutes: numOrNull(row.member_cap_minutes),
+      maxPrivateKits: numOrNull(row.max_private_kits),
     },
     updatedByUserId: row.updated_by_user_id,
     updatedAt: row.updated_at,
@@ -532,19 +534,20 @@ export class PostgresOrgStore implements OrgStore {
     input: { limits: OrgMonthlyLimits; updatedByUserId: string },
   ): Promise<void> {
     const now = new Date().toISOString();
-    const { poolCents, poolMinutes, memberCapCents, memberCapMinutes } = input.limits;
+    const { poolCents, poolMinutes, memberCapCents, memberCapMinutes, maxPrivateKits } = input.limits;
     await this.pool.query(
       `INSERT INTO org_monthly_limits
-         (org_id, pool_cents, pool_minutes, member_cap_cents, member_cap_minutes, updated_by_user_id, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+         (org_id, pool_cents, pool_minutes, member_cap_cents, member_cap_minutes, max_private_kits, updated_by_user_id, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (org_id) DO UPDATE SET
          pool_cents = EXCLUDED.pool_cents,
          pool_minutes = EXCLUDED.pool_minutes,
          member_cap_cents = EXCLUDED.member_cap_cents,
          member_cap_minutes = EXCLUDED.member_cap_minutes,
+         max_private_kits = EXCLUDED.max_private_kits,
          updated_by_user_id = EXCLUDED.updated_by_user_id,
          updated_at = EXCLUDED.updated_at`,
-      [orgId, poolCents, poolMinutes, memberCapCents, memberCapMinutes, input.updatedByUserId, now],
+      [orgId, poolCents, poolMinutes, memberCapCents, memberCapMinutes, maxPrivateKits, input.updatedByUserId, now],
     );
   }
 

@@ -193,6 +193,16 @@ export interface OrgLookupClient {
   getOrgBySlug(slug: string): Promise<Organization | undefined>;
   /** Idempotently ensure (and return) the user's personal org. */
   ensurePersonalOrg(userId: string, displayName?: string): Promise<Organization>;
+  /**
+   * An org's CONFIGURED max private-kit count (private-kits A2). Resolution:
+   *   - `number`    — the org's configured cap.
+   *   - `null`      — the org explicitly has NO cap set (= unlimited).
+   *   - `undefined` — UNRESOLVABLE (Profile unreachable/off/errored). This method
+   *     FAILS OPEN (unlike the other OrgLookupClient methods): it must NEVER throw,
+   *     so a Profile outage never blocks set-private. The caller falls back to the
+   *     env default when this returns undefined.
+   */
+  getOrgPrivateKitCap(orgId: string): Promise<number | null | undefined>;
 }
 
 /**
