@@ -45,6 +45,24 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // baking) so the top nav drops the hosted ecosystem tabs on a self-host instance.
   const selfHost = isSelfHost();
   const ecosystemLinks = getEcosystemLinks();
+  // AuthKitProvider is a WorkOS CLIENT provider — it errors under AUTH_PROVIDER=oidc
+  // (no AuthKit middleware/session). SiteChrome gets signedIn/userEmail as
+  // server-computed props, so it needs no client auth context; skip the provider
+  // under OIDC. (Both providers resolve the user server-side via getCurrentUser.)
+  const useWorkosProvider =
+    (process.env.AUTH_PROVIDER ?? "workos").trim().toLowerCase() !== "oidc";
+
+  const chrome = (
+    <SiteChrome
+      signedIn={Boolean(user)}
+      userEmail={user?.email}
+      showAdmin={showAdmin}
+      selfHost={selfHost}
+      ecosystemLinks={ecosystemLinks}
+    >
+      {children}
+    </SiteChrome>
+  );
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -55,17 +73,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script defer src="https://analytics.agentkitproject.com/script.js" data-website-id="9682fe00-aa23-4345-b1a7-8dc7f6ab7364" data-domains="agentkitproject.com,market.agentkitproject.com,profile.agentkitproject.com,auto.agentkitproject.com,webapp.forge.agentkitproject.com" />
       </head>
       <body>
-        <AuthKitProvider>
-          <SiteChrome
-            signedIn={Boolean(user)}
-            userEmail={user?.email}
-            showAdmin={showAdmin}
-            selfHost={selfHost}
-            ecosystemLinks={ecosystemLinks}
-          >
-            {children}
-          </SiteChrome>
-        </AuthKitProvider>
+        {useWorkosProvider ? <AuthKitProvider>{chrome}</AuthKitProvider> : chrome}
       </body>
     </html>
   );

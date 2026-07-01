@@ -87,14 +87,14 @@ async function handleSignIn(request: NextRequest): Promise<Response> {
   response.cookies.set(OIDC_PKCE_COOKIE, codeVerifier, {
     httpOnly: true,
     secure,
-    sameSite: "lax",
+    sameSite: secure ? "none" : "lax",
     path: "/",
     maxAge: TX_COOKIE_MAX_AGE
   });
   response.cookies.set(OIDC_STATE_COOKIE, `${state}|${returnTo}`, {
     httpOnly: true,
     secure,
-    sameSite: "lax",
+    sameSite: secure ? "none" : "lax",
     path: "/",
     maxAge: TX_COOKIE_MAX_AGE
   });
