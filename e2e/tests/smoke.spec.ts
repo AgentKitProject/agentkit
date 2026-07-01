@@ -25,11 +25,10 @@ test.describe("public app shells", () => {
     expect(res?.status(), "market /kits HTTP status").toBeLessThan(400);
   });
 
-  test("Forge (desktop) home loads", async ({ page }) => {
-    const res = await page.goto(targets.forge, { waitUntil: "domcontentloaded" });
-    expect(res?.status(), "forge HTTP status").toBeLessThan(400);
-    await expect(page).toHaveTitle(/AgentKitForge/);
-  });
+  // NOTE: the "Forge (desktop) home loads" check was removed when the desktop app
+  // was retired — forge.agentkitproject.com now 301-redirects to web Forge, which
+  // is covered by the "Web Forge redirects anonymous users to sign-in" test below.
+  // TODO: add a proper web-Forge home/redirect assertion when we revisit the suite.
 });
 
 // Anonymous access to a protected app must land on the sign-in flow — either the
