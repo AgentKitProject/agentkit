@@ -14,14 +14,14 @@ const SIDEBAR_INIT_SCRIPT = sidebarInitScript();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://profile.agentkitproject.com"),
-  title: "AgentKitProject Account",
-  description: "Manage your AgentKitProject profile and product access.",
+  title: "AgentKitProfile",
+  description: "Your shared AgentKitProject identity — profile, security, and connected apps.",
   manifest: "/site.webmanifest",
   openGraph: {
-    siteName: "AgentKitProject",
+    siteName: "AgentKitProfile",
     type: "website",
     locale: "en_US",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "AgentKitProject Account" }],
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "AgentKitProfile" }],
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },
   icons: {

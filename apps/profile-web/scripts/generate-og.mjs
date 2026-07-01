@@ -25,7 +25,7 @@ const templatePath = join(__dirname, "og-card.template.svg");
 
 // Per-app card + favicon source.
 const config = {
-  title: "AgentKitProject Account",
+  title: "AgentKitProfile",
   tagline: "Shared identity for the AgentKitProject ecosystem.",
   accent: "#2f8f89", // Profile teal
   faviconSource: join(publicDir, "icon.svg"),

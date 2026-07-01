@@ -13,7 +13,6 @@ import { AppShell, SidebarAccountFooter, BRAND_ACCENTS, buildAppSwitcher, type S
 import { getForgeClient } from "@/forge-client";
 import type { MyKitEntry } from "@/forge-client";
 import {
-  BuildingIcon,
   ExportIcon,
   ForgeMark,
   HammerIcon,
@@ -170,17 +169,8 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
     }
   }));
 
-  // Organization: link out to the AgentKitProfile orgs page (Profile is now the
-  // system of record for org management). Shown only when a Profile URL is
-  // configured (self-host without a Profile hides it).
-  if (config.links.profileUrl) {
-    navItems.push({
-      label: "Organization",
-      icon: <BuildingIcon size={18} />,
-      href: `${config.links.profileUrl}/account/orgs`,
-      external: true
-    });
-  }
+  // Organizations are managed ONLY in AgentKitProfile; no redundant link here —
+  // users reach Profile via the standard app-switcher.
 
   // Docs: external link to this app's docs page. Always present (docsUrl always
   // defaults, even on self-host). Kept LAST in the functional nav.

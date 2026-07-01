@@ -159,18 +159,10 @@ export function SiteChrome({
     active: isActive(pathname, r.prefix),
   }));
 
-  // Organizations now live in AgentKitProfile (the system of record for org
-  // management). Surface it as an EXTERNAL link to Profile's /orgs, gated on a
-  // Profile URL being configured (self-host without a Profile hides it).
+  // Organizations are managed ONLY in AgentKitProfile (the system of record); we
+  // no longer surface a redundant Organizations link here — users reach Profile
+  // via the standard app-switcher.
   const nav: SidebarNavItem[] = [...localNav];
-  if (links.profileUrl) {
-    nav.push({
-      label: "Organizations",
-      href: `${links.profileUrl}/account/orgs`,
-      icon: ICONS.orgs,
-      external: true,
-    });
-  }
 
   // Docs is an allowed external link (hosted + self-host). Forge/Auto
   // cross-links are intentionally NOT surfaced in the sidebar.

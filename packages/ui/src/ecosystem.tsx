@@ -58,7 +58,7 @@ const APP_ORDER: { id: EcosystemAppId; label: string }[] = [
   { id: "forge", label: "Forge" },
   { id: "market", label: "Market" },
   { id: "auto", label: "Auto" },
-  { id: "profile", label: "Account" },
+  { id: "profile", label: "Profile" },
 ];
 
 /**

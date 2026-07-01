@@ -16,7 +16,7 @@ function ProfileMark({ size = 38 }: { size?: number }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-label="AgentKitProject account"
+      aria-label="AgentKitProfile"
     >
       <rect x="8" y="8" width="48" height="48" rx="14" fill="#E6F4F2" stroke="#2F8F89" strokeWidth="4" />
       <circle cx="32" cy="27" r="7" fill="#2F8F89" />
@@ -132,7 +132,7 @@ export function SiteChrome({
       logo={<ProfileMark size={38} />}
       brand={
         <>
-          AgentKit<span style={{ color: "var(--ak-brand)" }}>Project</span>
+          AgentKit<span style={{ color: "var(--ak-brand)" }}>Profile</span>
         </>
       }
       brandHref="/"
