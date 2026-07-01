@@ -2,7 +2,7 @@ apiVersion: v2
 name: agentkitmarket
 description: Self-hosted AgentKit Market (web UI + API server + worker)
 type: application
-version: 0.8.1
+version: 0.8.2
 appVersion: "0.2.0"
 keywords:
   - agentkit
