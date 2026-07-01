@@ -2,18 +2,19 @@
 //
 // DEFAULTS by deployment type (overridable):
 //   - HOSTED (public marketplace): PUBLIC catalog — browse without sign-in.
-//   - SELF-HOST (AUTH_PROVIDER=oidc or SELF_HOST=true): PRIVATE by default —
-//     a self-hosted Market should never be open to anonymous users just because
-//     the operator didn't set a flag.
+//   - SELF-HOST (SELF_HOST=true): PRIVATE by default — a self-hosted Market
+//     should never be open to anonymous users just because the operator didn't
+//     set a flag.
 // An explicit REQUIRE_LOGIN always wins: "true" forces private (even hosted),
 // "false" forces public (even self-host). When private, EVERY request must carry
 // an authenticated cookie session or it is sent to sign-in (pages) / 401'd (API).
 
 // Self-host signal — kept inline (not imported from ./self-host) so this module
 // stays dependency-free for the bare `node --test` runner. Mirrors
-// lib/self-host.ts isSelfHost: AUTH_PROVIDER=oidc OR SELF_HOST truthy.
+// lib/self-host.ts isSelfHost: the explicit SELF_HOST flag only (OIDC is just an
+// auth mechanism usable by both hosted and self-host, so it does NOT imply
+// self-host).
 function isSelfHostEnv(env: NodeJS.ProcessEnv): boolean {
-  if ((env.AUTH_PROVIDER ?? "").trim().toLowerCase() === "oidc") return true;
   const v = (env.SELF_HOST ?? "").trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes";
 }

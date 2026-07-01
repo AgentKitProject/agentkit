@@ -65,12 +65,13 @@ web:
 
   # --- Authentication (pluggable) ------------------------------------------
   auth:
-    # "workos" (hosted SaaS default) | "oidc" (generic OpenID Connect self-host).
-    # AUTH_PROVIDER=oidc ALSO marks the instance self-hosted (Market default OFF,
-    # BYO-LLM only, ecosystem links hidden unless configured).
+    # "workos" (hosted SaaS default) | "oidc" (generic OpenID Connect). OIDC is
+    # just an auth mechanism — usable by BOTH the hosted SaaS and self-host — so
+    # provider=oidc does NOT by itself mark the instance self-hosted.
     provider: "workos"
-    # Explicit self-host opt-in for an OIDC-less self-host (SELF_HOST=true). Not
-    # needed when provider=oidc (which implies self-host).
+    # Explicit self-host opt-in — the SOLE signal for self-host (SELF_HOST=true:
+    # Market default OFF, BYO-LLM only, ecosystem links hidden unless configured).
+    # Set this to true for any self-host deployment, regardless of auth provider.
     selfHost: false
     # Generic OIDC settings (used when provider=oidc). The client SECRET is in
     # web.secrets.oidcClientSecret (not here).

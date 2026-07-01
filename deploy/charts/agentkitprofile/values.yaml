@@ -50,6 +50,12 @@ web:
   # Non-secret runtime config (ConfigMap). Set appUrl / workosRedirectUri to your
   # public origin so auth redirects resolve correctly.
   config:
+    # Explicit self-host opt-in (SELF_HOST=true) — the SOLE signal for self-host.
+    # OIDC is just an auth mechanism usable by BOTH hosted and self-host, so
+    # authProvider=oidc does NOT by itself mark the instance self-hosted. On
+    # self-host the ecosystem nav links are hidden unless the operator configures
+    # the matching NEXT_PUBLIC_*_URL. Set to true for any self-host deployment.
+    selfHost: false
     # Profile backend selector; only "postgres" is implemented.
     profileStore: "postgres"
     # Server-side Profile API base URL (PROFILE_API_BASE_URL). Empty → this web

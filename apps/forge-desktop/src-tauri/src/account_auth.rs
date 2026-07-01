@@ -1,7 +1,26 @@
+//! AgentKitProject account device-login for the desktop app.
+//!
+//! The OAuth 2.0 device grant here is **OIDC-generic**: instead of hardcoding
+//! WorkOS endpoints, it reads an issuer base URL from `AGENTKITPROJECT_OIDC_ISSUER`
+//! (e.g. `https://auth.agentkitproject.com/realms/agentkit`), fetches that
+//! issuer's `/.well-known/openid-configuration`, and uses the discovered
+//! `device_authorization_endpoint` + `token_endpoint`. This works with any
+//! standards-compliant IdP (Keycloak, WorkOS, etc.). The discovery document is
+//! fetched once and cached for the process lifetime.
+//!
+//! **Fallback:** if `AGENTKITPROJECT_OIDC_ISSUER` is unset, or discovery fails
+//! (network error / malformed doc / missing endpoints), we fall back to the
+//! legacy hardcoded WorkOS endpoints below. This keeps existing installs working
+//! pre-config, so nothing breaks before an OIDC issuer is provisioned.
+//!
+//! The client id prefers the provider-neutral `AGENTKITPROJECT_OIDC_CLIENT_ID`
+//! and falls back to the legacy `AGENTKITPROJECT_WORKOS_CLIENT_ID` for
+//! backward-compat. The device client is a PUBLIC OIDC client (no secret).
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -10,16 +29,21 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::{secure_storage, settings};
 
+/// Legacy hardcoded WorkOS endpoints, used only as a fallback when no OIDC
+/// issuer is configured or discovery fails.
 const WORKOS_DEVICE_AUTH_URL: &str = "https://api.workos.com/user_management/authorize/device";
 const WORKOS_DEVICE_TOKEN_URL: &str = "https://api.workos.com/user_management/authenticate";
 const AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY: &str = "AGENTKITPROJECT_WORKOS_CLIENT_ID";
+/// Provider-neutral OIDC configuration keys (preferred over the WorkOS keys).
+const AGENTKITPROJECT_OIDC_ISSUER_KEY: &str = "AGENTKITPROJECT_OIDC_ISSUER";
+const AGENTKITPROJECT_OIDC_CLIENT_ID_KEY: &str = "AGENTKITPROJECT_OIDC_CLIENT_ID";
 const DEVICE_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_DEVICE_INTERVAL_SECONDS: u64 = 5;
 const MAX_DEVICE_INTERVAL_SECONDS: u64 = 30;
-/// WorkOS User Management issues a refresh token only when `offline_access`
-/// is requested. Without it, every access token expires (~5 min) with no way
-/// to refresh, forcing the user to sign out/in repeatedly.
-const WORKOS_DEVICE_AUTH_SCOPE: &str = "openid profile email offline_access";
+/// OIDC IdPs (WorkOS, Keycloak, ...) issue a refresh token only when
+/// `offline_access` is requested. Without it, every access token expires
+/// (~5 min) with no way to refresh, forcing the user to sign out/in repeatedly.
+const DEVICE_AUTH_SCOPE: &str = "openid profile email offline_access";
 /// Refresh proactively when the access token is within this many seconds of
 /// expiry (or already expired), instead of waiting for a 401.
 const ACCESS_TOKEN_REFRESH_BUFFER_SECONDS: u64 = 60;
@@ -85,8 +109,27 @@ pub struct AccountAuthConfigDiagnostics {
     profile_base_url: &'static str,
     market_base_url: &'static str,
     forge_base_url: &'static str,
-    device_authorization_endpoint: &'static str,
+    device_authorization_endpoint: String,
 }
+
+/// Resolved OAuth device-grant endpoints for this process. Either discovered
+/// from the configured OIDC issuer or the legacy WorkOS fallback.
+#[derive(Debug, Clone)]
+struct DeviceEndpoints {
+    device_authorization_endpoint: String,
+    token_endpoint: String,
+}
+
+/// The subset of an OIDC discovery document we consume.
+#[derive(Debug, Deserialize)]
+struct OidcDiscoveryDocument {
+    device_authorization_endpoint: Option<String>,
+    token_endpoint: Option<String>,
+}
+
+/// Process-lifetime cache of the resolved endpoints. Discovery runs at most
+/// once; the cached result (discovered or fallback) is reused thereafter.
+static DEVICE_ENDPOINTS: OnceLock<DeviceEndpoints> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
 struct DeviceAuthorizationResponse {
@@ -131,23 +174,24 @@ pub fn begin_device_login<R: Runtime>(
     app: &tauri::AppHandle<R>,
     login_state: &AccountLoginState,
 ) -> Result<DeviceLoginStart, String> {
-    let Some(client_id) = workos_client_id() else {
+    let Some(client_id) = device_client_id() else {
         let message = missing_auth_config_message();
         let _ = settings::save_account_error(app, message);
         return Err(message.to_string());
     };
 
-    eprintln!("AgentKitForge AgentKitProject login: starting WorkOS device authorization.");
+    eprintln!("AgentKitForge AgentKitProject login: starting OIDC device authorization.");
+    let endpoints = device_endpoints();
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("Unable to prepare AgentKitProject login request: {error}"))?;
     let response = client
-        .post(WORKOS_DEVICE_AUTH_URL)
+        .post(&endpoints.device_authorization_endpoint)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&[
             ("client_id", client_id.as_str()),
-            ("scope", WORKOS_DEVICE_AUTH_SCOPE),
+            ("scope", DEVICE_AUTH_SCOPE),
         ])
         .send()
         .map_err(|error| format!("Unable to reach AgentKitProject login service: {error}"))?;
@@ -206,7 +250,7 @@ pub fn complete_device_login<R: Runtime>(
     login_state: &AccountLoginState,
     input: CompleteDeviceLoginInput,
 ) -> Result<settings::PublicSettings, String> {
-    let Some(client_id) = workos_client_id() else {
+    let Some(client_id) = device_client_id() else {
         return Err(missing_auth_config_message().to_string());
     };
     let pending = login_state
@@ -403,7 +447,7 @@ pub fn mark_reconnect_required<R: Runtime>(app: &tauri::AppHandle<R>) -> String 
 /// is returned. Network failures return a descriptive error without
 /// touching the stored session.
 pub fn refresh_access_token<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<String, String> {
-    let Some(client_id) = workos_client_id() else {
+    let Some(client_id) = device_client_id() else {
         return Err(missing_auth_config_message().to_string());
     };
     let session_json = match secure_storage::load_account_session() {
@@ -425,6 +469,7 @@ pub fn refresh_access_token<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Str
     };
 
     eprintln!("AgentKitForge AgentKitProject session: refreshing expired access token.");
+    let endpoints = device_endpoints();
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -432,7 +477,7 @@ pub fn refresh_access_token<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Str
             format!("Unable to prepare AgentKitProject session refresh request: {error}")
         })?;
     let response = client
-        .post(WORKOS_DEVICE_TOKEN_URL)
+        .post(&endpoints.token_endpoint)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&[
             ("grant_type", "refresh_token"),
@@ -530,17 +575,17 @@ pub fn account_session_diagnostics<R: Runtime>(
 
 pub fn account_auth_config_diagnostics() -> AccountAuthConfigDiagnostics {
     AccountAuthConfigDiagnostics {
-        configured: workos_client_id().is_some(),
-        missing_public_config_keys: if workos_client_id().is_some() {
+        configured: device_client_id().is_some(),
+        missing_public_config_keys: if device_client_id().is_some() {
             Vec::new()
         } else {
-            vec![AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY]
+            vec![AGENTKITPROJECT_OIDC_CLIENT_ID_KEY]
         },
-        client_id_source: workos_client_id_source(),
+        client_id_source: device_client_id_source(),
         profile_base_url: "https://profile.agentkitproject.com",
         market_base_url: "https://market.agentkitproject.com",
         forge_base_url: "https://forge.agentkitproject.com",
-        device_authorization_endpoint: WORKOS_DEVICE_AUTH_URL,
+        device_authorization_endpoint: device_endpoints().device_authorization_endpoint.clone(),
     }
 }
 
@@ -548,6 +593,7 @@ fn poll_for_device_token(
     client_id: &str,
     pending: &PendingDeviceLogin,
 ) -> Result<DeviceTokenResponse, String> {
+    let endpoints = device_endpoints();
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -555,7 +601,7 @@ fn poll_for_device_token(
     let mut interval = pending.interval_seconds;
     while epoch_seconds() < pending.expires_at_epoch_seconds {
         let response = client
-            .post(WORKOS_DEVICE_TOKEN_URL)
+            .post(&endpoints.token_endpoint)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&[
                 ("grant_type", DEVICE_CODE_GRANT),
@@ -631,10 +677,19 @@ fn account_connection_from_user(
     }
 }
 
-fn workos_client_id() -> Option<String> {
-    std::env::var(AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
+/// The public OIDC device client id. Prefers the provider-neutral
+/// `AGENTKITPROJECT_OIDC_CLIENT_ID` (runtime env, then compile-time env), then
+/// falls back to the legacy `AGENTKITPROJECT_WORKOS_CLIENT_ID` for
+/// backward-compat with builds configured before the OIDC rename. For Keycloak
+/// this is `agentkitforge-desktop` (a public client — no secret).
+fn device_client_id() -> Option<String> {
+    non_empty_env(AGENTKITPROJECT_OIDC_CLIENT_ID_KEY)
+        .or_else(|| {
+            option_env!("AGENTKITPROJECT_OIDC_CLIENT_ID")
+                .map(str::to_string)
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| non_empty_env(AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY))
         .or_else(|| {
             option_env!("AGENTKITPROJECT_WORKOS_CLIENT_ID")
                 .map(str::to_string)
@@ -642,23 +697,103 @@ fn workos_client_id() -> Option<String> {
         })
 }
 
-fn workos_client_id_source() -> Option<&'static str> {
-    if std::env::var(AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY)
-        .ok()
+fn device_client_id_source() -> Option<&'static str> {
+    if non_empty_env(AGENTKITPROJECT_OIDC_CLIENT_ID_KEY).is_some() {
+        Some("oidc-runtime-env")
+    } else if option_env!("AGENTKITPROJECT_OIDC_CLIENT_ID")
         .is_some_and(|value| !value.trim().is_empty())
     {
-        Some("runtime-env")
+        Some("oidc-compile-time-env")
+    } else if non_empty_env(AGENTKITPROJECT_WORKOS_CLIENT_ID_KEY).is_some() {
+        Some("workos-runtime-env")
     } else if option_env!("AGENTKITPROJECT_WORKOS_CLIENT_ID")
         .is_some_and(|value| !value.trim().is_empty())
     {
-        Some("compile-time-env")
+        Some("workos-compile-time-env")
     } else {
         None
     }
 }
 
+/// A non-empty runtime env var value, trimmed of surrounding whitespace but
+/// otherwise returned verbatim.
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// The configured OIDC issuer base URL (runtime env, then compile-time env),
+/// with any trailing slash removed. `None` means no issuer is configured, in
+/// which case the caller falls back to the hardcoded WorkOS endpoints.
+fn oidc_issuer() -> Option<String> {
+    non_empty_env(AGENTKITPROJECT_OIDC_ISSUER_KEY)
+        .or_else(|| {
+            option_env!("AGENTKITPROJECT_OIDC_ISSUER")
+                .map(str::to_string)
+                .filter(|value| !value.trim().is_empty())
+        })
+        .map(|issuer| issuer.trim().trim_end_matches('/').to_string())
+}
+
+/// Resolves the device-grant endpoints once for the process lifetime.
+///
+/// When an OIDC issuer is configured, fetch `{issuer}/.well-known/openid-configuration`
+/// and use its `device_authorization_endpoint` + `token_endpoint`. If the issuer
+/// is unset, or discovery fails for any reason (network error, malformed doc,
+/// missing endpoints), fall back to the legacy hardcoded WorkOS endpoints so
+/// pre-config installs keep working.
+fn device_endpoints() -> &'static DeviceEndpoints {
+    DEVICE_ENDPOINTS.get_or_init(resolve_device_endpoints)
+}
+
+fn resolve_device_endpoints() -> DeviceEndpoints {
+    let fallback = DeviceEndpoints {
+        device_authorization_endpoint: WORKOS_DEVICE_AUTH_URL.to_string(),
+        token_endpoint: WORKOS_DEVICE_TOKEN_URL.to_string(),
+    };
+    let Some(issuer) = oidc_issuer() else {
+        return fallback;
+    };
+    match discover_device_endpoints(&issuer) {
+        Some(endpoints) => {
+            eprintln!("AgentKitForge AgentKitProject login: using OIDC discovery from {issuer}.");
+            endpoints
+        }
+        None => {
+            eprintln!(
+                "AgentKitForge AgentKitProject login: OIDC discovery for {issuer} failed; falling back to WorkOS endpoints."
+            );
+            fallback
+        }
+    }
+}
+
+fn discover_device_endpoints(issuer: &str) -> Option<DeviceEndpoints> {
+    let discovery_url = format!("{issuer}/.well-known/openid-configuration");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .ok()?;
+    let response = client.get(&discovery_url).send().ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let document = response.json::<OidcDiscoveryDocument>().ok()?;
+    let device_authorization_endpoint = document
+        .device_authorization_endpoint
+        .filter(|value| !value.trim().is_empty())?;
+    let token_endpoint = document
+        .token_endpoint
+        .filter(|value| !value.trim().is_empty())?;
+    Some(DeviceEndpoints {
+        device_authorization_endpoint,
+        token_endpoint,
+    })
+}
+
 fn missing_auth_config_message() -> &'static str {
-    "Forge account connection is not configured in this build. Missing public config key: AGENTKITPROJECT_WORKOS_CLIENT_ID."
+    "Forge account connection is not configured in this build. Missing public config key: AGENTKITPROJECT_OIDC_CLIENT_ID."
 }
 
 fn metadata_string(user: &WorkosUser, key: &str) -> Option<String> {
@@ -788,7 +923,7 @@ fn token_needs_refresh(exp_seconds: Option<u64>, now_seconds: u64, buffer_second
 /// bridge (core seeds its `WorkosConfig` from this and defaults the WorkOS
 /// device/token URLs to the same values used here).
 pub fn market_workos_client_id() -> Option<String> {
-    workos_client_id()
+    device_client_id()
 }
 
 /// The raw stored AgentKitProject session JSON, used to seed the in-memory
@@ -988,17 +1123,32 @@ mod tests {
 
     #[test]
     fn device_auth_scope_requests_offline_access_for_refresh_tokens() {
-        // Without offline_access WorkOS never issues a refresh token, so
+        // Without offline_access the IdP never issues a refresh token, so
         // refresh can never work. This guards the root-cause fix.
-        assert!(WORKOS_DEVICE_AUTH_SCOPE.contains("offline_access"));
+        assert!(DEVICE_AUTH_SCOPE.contains("offline_access"));
     }
 
     #[test]
     fn client_id_can_be_absent_without_faking_connected_state() {
-        if std::env::var("AGENTKITPROJECT_WORKOS_CLIENT_ID").is_err()
+        if std::env::var("AGENTKITPROJECT_OIDC_CLIENT_ID").is_err()
+            && option_env!("AGENTKITPROJECT_OIDC_CLIENT_ID").is_none()
+            && std::env::var("AGENTKITPROJECT_WORKOS_CLIENT_ID").is_err()
             && option_env!("AGENTKITPROJECT_WORKOS_CLIENT_ID").is_none()
         {
-            assert!(workos_client_id().is_none());
+            assert!(device_client_id().is_none());
+        }
+    }
+
+    #[test]
+    fn discovery_falls_back_to_workos_when_issuer_unset() {
+        // With no issuer configured, endpoint resolution must yield the legacy
+        // WorkOS endpoints so pre-config installs keep working.
+        if std::env::var("AGENTKITPROJECT_OIDC_ISSUER").is_err()
+            && option_env!("AGENTKITPROJECT_OIDC_ISSUER").is_none()
+        {
+            let endpoints = resolve_device_endpoints();
+            assert_eq!(endpoints.device_authorization_endpoint, WORKOS_DEVICE_AUTH_URL);
+            assert_eq!(endpoints.token_endpoint, WORKOS_DEVICE_TOKEN_URL);
         }
     }
 }

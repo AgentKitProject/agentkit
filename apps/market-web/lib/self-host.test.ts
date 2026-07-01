@@ -9,13 +9,13 @@ describe("isSelfHost", () => {
   it("hosted by default (no flags)", () => {
     assert.equal(isSelfHost({}), false);
   });
-  it("true when AUTH_PROVIDER=oidc", () => {
-    assert.equal(isSelfHost({ AUTH_PROVIDER: "oidc" }), true);
-  });
   it("true when SELF_HOST is truthy", () => {
     assert.equal(isSelfHost({ SELF_HOST: "true" }), true);
     assert.equal(isSelfHost({ SELF_HOST: "1" }), true);
     assert.equal(isSelfHost({ SELF_HOST: "yes" }), true);
+  });
+  it("false for AUTH_PROVIDER=oidc alone (OIDC does not imply self-host)", () => {
+    assert.equal(isSelfHost({ AUTH_PROVIDER: "oidc" }), false);
   });
   it("false for an unrelated AUTH_PROVIDER", () => {
     assert.equal(isSelfHost({ AUTH_PROVIDER: "workos" }), false);
@@ -33,7 +33,7 @@ describe("getEcosystemLinks", () => {
   });
 
   it("self-host with no overrides surfaces NO ecosystem links (except Docs, which always defaults)", () => {
-    const links = getEcosystemLinks({ AUTH_PROVIDER: "oidc" });
+    const links = getEcosystemLinks({ SELF_HOST: "true" });
     assert.equal(links.projectUrl, undefined);
     assert.equal(links.forgeUrl, undefined);
     assert.equal(links.autoUrl, undefined);

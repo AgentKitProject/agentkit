@@ -45,8 +45,8 @@ describe("requireLoginEnabled", () => {
     }
   });
 
-  it("defaults ON for self-host when REQUIRE_LOGIN is unset", () => {
-    for (const env of [{ AUTH_PROVIDER: "oidc" }, { SELF_HOST: "true" }]) {
+  it("defaults ON for self-host (SELF_HOST truthy) when REQUIRE_LOGIN is unset", () => {
+    for (const env of [{ SELF_HOST: "true" }, { SELF_HOST: "1" }]) {
       assert.equal(
         requireLoginEnabled(env as unknown as NodeJS.ProcessEnv),
         true,
@@ -55,10 +55,17 @@ describe("requireLoginEnabled", () => {
     }
   });
 
+  it("stays OFF for AUTH_PROVIDER=oidc alone (OIDC does not imply self-host)", () => {
+    assert.equal(
+      requireLoginEnabled({ AUTH_PROVIDER: "oidc" } as unknown as NodeJS.ProcessEnv),
+      false,
+    );
+  });
+
   it("explicit REQUIRE_LOGIN=false wins even on self-host", () => {
     assert.equal(
       requireLoginEnabled({
-        AUTH_PROVIDER: "oidc",
+        SELF_HOST: "true",
         REQUIRE_LOGIN: "false",
       } as unknown as NodeJS.ProcessEnv),
       false,

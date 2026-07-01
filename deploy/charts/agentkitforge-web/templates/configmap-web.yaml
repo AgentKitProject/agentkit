@@ -3,8 +3,10 @@
 {{- /* Auto-default in-cluster service URLs so the secret only needs the genuinely-secret values. */ -}}
 {{- $appUrl := .Values.web.config.appUrl -}}
 {{- $isOidc := eq .Values.web.auth.provider "oidc" -}}
-{{- /* Self-host is signaled by AUTH_PROVIDER=oidc OR an explicit selfHost flag. */ -}}
-{{- $selfHost := or $isOidc .Values.web.auth.selfHost -}}
+{{- /* Self-host is signaled ONLY by the explicit selfHost flag. OIDC is just an
+       auth mechanism usable by BOTH hosted and self-host, so provider==oidc does
+       NOT imply self-host. */ -}}
+{{- $selfHost := .Values.web.auth.selfHost -}}
 {{- /* The auth callback URI (WorkOS or OIDC) — defaults to {APP_URL}/auth/callback. */ -}}
 {{- $redirect := .Values.web.config.redirectUri -}}
 {{- if and (not $redirect) $appUrl -}}

@@ -22,14 +22,14 @@ describe("self-host signal", () => {
     expect(isSelfHost({ AUTH_PROVIDER: "workos" })).toBe(false);
   });
 
-  it("self-host via AUTH_PROVIDER=oidc", () => {
-    expect(isSelfHost({ AUTH_PROVIDER: "oidc" })).toBe(true);
-  });
-
   it("self-host via explicit SELF_HOST=true", () => {
     expect(isSelfHost({ SELF_HOST: "true" })).toBe(true);
     expect(isSelfHost({ SELF_HOST: "1" })).toBe(true);
     expect(isSelfHost({ SELF_HOST: "false" })).toBe(false);
+  });
+
+  it("AUTH_PROVIDER=oidc alone does NOT imply self-host (OIDC is usable by hosted too)", () => {
+    expect(isSelfHost({ AUTH_PROVIDER: "oidc" })).toBe(false);
   });
 });
 
@@ -46,13 +46,12 @@ describe("Market base URL resolution", () => {
   });
 
   it("SELF-HOST never falls back to the hosted Market (disabled when unset)", () => {
-    expect(getMarketBaseUrl({ AUTH_PROVIDER: "oidc" })).toBeUndefined();
-    expect(isMarketEnabled({ AUTH_PROVIDER: "oidc" })).toBe(false);
     expect(getMarketBaseUrl({ SELF_HOST: "true" })).toBeUndefined();
+    expect(isMarketEnabled({ SELF_HOST: "true" })).toBe(false);
   });
 
   it("SELF-HOST can point at its OWN Market", () => {
-    const env = { AUTH_PROVIDER: "oidc", AGENTKITMARKET_BASE_URL: "https://market.acme.internal" };
+    const env = { SELF_HOST: "true", AGENTKITMARKET_BASE_URL: "https://market.acme.internal" };
     expect(getMarketBaseUrl(env)).toBe("https://market.acme.internal");
     expect(isMarketEnabled(env)).toBe(true);
   });
@@ -69,7 +68,6 @@ describe("managed inference + credits gating", () => {
   });
 
   it("SELF-HOST disables managed inference (BYO-key only)", () => {
-    expect(isManagedInferenceEnabled({ AUTH_PROVIDER: "oidc" })).toBe(false);
     expect(isManagedInferenceEnabled({ SELF_HOST: "true" })).toBe(false);
   });
 
@@ -77,7 +75,7 @@ describe("managed inference + credits gating", () => {
     expect(isCreditsUiEnabled({})).toBe(false); // no Stripe key
     expect(isCreditsUiEnabled({ STRIPE_SECRET_KEY: "sk_test_x" })).toBe(true);
     // Self-host never shows credits even with a Stripe key.
-    expect(isCreditsUiEnabled({ AUTH_PROVIDER: "oidc", STRIPE_SECRET_KEY: "sk_test_x" })).toBe(false);
+    expect(isCreditsUiEnabled({ SELF_HOST: "true", STRIPE_SECRET_KEY: "sk_test_x" })).toBe(false);
   });
 });
 
@@ -92,7 +90,7 @@ describe("ecosystem links", () => {
   });
 
   it("SELF-HOST omits unconfigured links (no link back into our ecosystem)", () => {
-    const links = getEcosystemLinks({ AUTH_PROVIDER: "oidc" });
+    const links = getEcosystemLinks({ SELF_HOST: "true" });
     expect(links.projectUrl).toBeUndefined();
     expect(links.marketUrl).toBeUndefined();
     expect(links.forgeUrl).toBeUndefined();
@@ -102,8 +100,10 @@ describe("ecosystem links", () => {
 
   it("SELF-HOST surfaces operator-configured links", () => {
     const env = {
-      AUTH_PROVIDER: "oidc",
-      AGENTKITMARKET_BASE_URL: "https://market.acme.internal",
+      SELF_HOST: "true",
+      // The Market browser link comes from NEXT_PUBLIC_MARKET_URL only (never the
+      // in-cluster AGENTKITMARKET_BASE_URL, which isn't browser-reachable).
+      NEXT_PUBLIC_MARKET_URL: "https://market.acme.internal",
       NEXT_PUBLIC_PROFILE_URL: "https://id.acme.internal",
       NEXT_PUBLIC_AUTO_URL: "https://auto.acme.internal"
     };
@@ -126,18 +126,21 @@ describe("getPublicConfig snapshot", () => {
         marketUrl: HOSTED_MARKET,
         forgeUrl: "https://forge.agentkitproject.com",
         profileUrl: "https://profile.agentkitproject.com",
-        autoUrl: "https://auto.agentkitproject.com"
+        autoUrl: "https://auto.agentkitproject.com",
+        docsUrl: "https://docs.agentkitproject.com"
       },
       allowedProviders: null
     });
   });
 
   it("SELF-HOST snapshot disables Market + credits and drops links", () => {
-    const cfg = getPublicConfig({ AUTH_PROVIDER: "oidc" });
+    const cfg = getPublicConfig({ SELF_HOST: "true" });
     expect(cfg.selfHost).toBe(true);
     expect(cfg.marketEnabled).toBe(false);
     expect(cfg.creditsEnabled).toBe(false);
-    expect(cfg.links).toEqual({});
+    // Only Docs remains (always-defaulted external link); all other cross-app
+    // links are dropped on self-host unless the operator configures them.
+    expect(cfg.links).toEqual({ docsUrl: "https://docs.agentkitproject.com" });
     expect(cfg.allowedProviders).toBeNull();
   });
 

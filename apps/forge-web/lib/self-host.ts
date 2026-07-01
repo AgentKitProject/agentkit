@@ -1,11 +1,11 @@
 // Self-host vs hosted-SaaS configuration — the single source of truth for which
 // ecosystem integrations are active on a given Web Forge instance.
 //
-// SELF-HOST SIGNAL (any of):
-//   - AUTH_PROVIDER=oidc   — a generic-OIDC instance is self-hosted by definition
-//                            (the WorkOS-bound hosted SaaS always runs `workos`).
-//   - SELF_HOST=true       — explicit opt-in for an OIDC-less self-host (e.g. a
-//                            company running their own IdP through a proxy).
+// SELF-HOST SIGNAL:
+//   - SELF_HOST=true       — the explicit, sole signal that this instance is
+//                            self-hosted. OIDC is just an auth mechanism usable by
+//                            BOTH hosted and self-host, so AUTH_PROVIDER=oidc alone
+//                            does NOT imply self-host (the hosted SaaS may run OIDC).
 //
 // HOSTED (the default — AUTH_PROVIDER unset/`workos` and SELF_HOST unset) behaves
 // EXACTLY as before: it phones home to https://market.agentkitproject.com, runs
@@ -83,9 +83,8 @@ function trimmed(value: string | undefined): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
-/** True when this instance is self-hosted (OIDC auth OR explicit SELF_HOST). */
+/** True when this instance is self-hosted (explicit SELF_HOST only). */
 export function isSelfHost(env: Env = process.env): boolean {
-  if ((env.AUTH_PROVIDER ?? "").trim().toLowerCase() === "oidc") return true;
   return truthy(env.SELF_HOST);
 }
 

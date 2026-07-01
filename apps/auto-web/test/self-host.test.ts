@@ -22,14 +22,14 @@ describe("self-host signal", () => {
     expect(isSelfHost({ AUTH_PROVIDER: "workos" })).toBe(false);
   });
 
-  it("self-host via AUTH_PROVIDER=oidc", () => {
-    expect(isSelfHost({ AUTH_PROVIDER: "oidc" })).toBe(true);
-  });
-
   it("self-host via explicit SELF_HOST=true", () => {
     expect(isSelfHost({ SELF_HOST: "true" })).toBe(true);
     expect(isSelfHost({ SELF_HOST: "1" })).toBe(true);
     expect(isSelfHost({ SELF_HOST: "false" })).toBe(false);
+  });
+
+  it("AUTH_PROVIDER=oidc alone does NOT imply self-host (OIDC is usable by hosted too)", () => {
+    expect(isSelfHost({ AUTH_PROVIDER: "oidc" })).toBe(false);
   });
 });
 
@@ -46,13 +46,12 @@ describe("Market base URL resolution", () => {
   });
 
   it("SELF-HOST never falls back to the hosted Market (disabled when unset)", () => {
-    expect(getMarketBaseUrl({ AUTH_PROVIDER: "oidc" })).toBeUndefined();
-    expect(isMarketEnabled({ AUTH_PROVIDER: "oidc" })).toBe(false);
     expect(getMarketBaseUrl({ SELF_HOST: "true" })).toBeUndefined();
+    expect(isMarketEnabled({ SELF_HOST: "true" })).toBe(false);
   });
 
   it("SELF-HOST can point at its OWN Market", () => {
-    const env = { AUTH_PROVIDER: "oidc", AGENTKITMARKET_BASE_URL: "https://market.acme.internal" };
+    const env = { SELF_HOST: "true", AGENTKITMARKET_BASE_URL: "https://market.acme.internal" };
     expect(getMarketBaseUrl(env)).toBe("https://market.acme.internal");
     expect(isMarketEnabled(env)).toBe(true);
   });
@@ -73,20 +72,19 @@ describe("managed inference + billing gating", () => {
   });
 
   it("SELF-HOST (free, default) disables managed inference + platform ledger", () => {
-    expect(isManagedInferenceEnabled({ AUTH_PROVIDER: "oidc" })).toBe(false);
     expect(isManagedInferenceEnabled({ SELF_HOST: "true" })).toBe(false);
-    expect(isSelfHostManagedBilling({ AUTH_PROVIDER: "oidc" })).toBe(false);
-    expect(usesPlatformCreditLedger({ AUTH_PROVIDER: "oidc" })).toBe(false);
+    expect(isSelfHostManagedBilling({ SELF_HOST: "true" })).toBe(false);
+    expect(usesPlatformCreditLedger({ SELF_HOST: "true" })).toBe(false);
     // Free billing → the inert free ledger (even on the Postgres backend).
-    expect(creditLedgerBackend({ AUTH_PROVIDER: "oidc" })).toBe("free");
+    expect(creditLedgerBackend({ SELF_HOST: "true" })).toBe("free");
     expect(
-      creditLedgerBackend({ AUTH_PROVIDER: "oidc", KITSTORE_BACKEND: "selfhost" })
+      creditLedgerBackend({ SELF_HOST: "true", KITSTORE_BACKEND: "selfhost" })
     ).toBe("free");
   });
 
   it("SELF-HOST managed billing uses the Postgres ledger (never the Dynamo platform ledger)", () => {
     const env = {
-      AUTH_PROVIDER: "oidc",
+      SELF_HOST: "true",
       KITSTORE_BACKEND: "selfhost",
       AUTO_SELFHOST_BILLING: "managed"
     };
@@ -137,7 +135,7 @@ describe("ecosystem links", () => {
   });
 
   it("SELF-HOST omits unconfigured links (no link back into our ecosystem)", () => {
-    const links = getEcosystemLinks({ AUTH_PROVIDER: "oidc" });
+    const links = getEcosystemLinks({ SELF_HOST: "true" });
     expect(links.projectUrl).toBeUndefined();
     expect(links.marketUrl).toBeUndefined();
     expect(links.forgeUrl).toBeUndefined();
@@ -146,7 +144,7 @@ describe("ecosystem links", () => {
 
   it("SELF-HOST surfaces operator-configured links", () => {
     const env = {
-      AUTH_PROVIDER: "oidc",
+      SELF_HOST: "true",
       // marketUrl is the BROWSER url (NEXT_PUBLIC_MARKET_URL), not the in-cluster
       // server-side AGENTKITMARKET_BASE_URL — the app-switcher links must be
       // browser-reachable.
@@ -181,7 +179,7 @@ describe("getPublicConfig snapshot", () => {
   });
 
   it("SELF-HOST snapshot disables Market + managed billing and drops links", () => {
-    const cfg = getPublicConfig({ AUTH_PROVIDER: "oidc" });
+    const cfg = getPublicConfig({ SELF_HOST: "true" });
     expect(cfg.selfHost).toBe(true);
     expect(cfg.marketEnabled).toBe(false);
     expect(cfg.managedBilling).toBe(false);

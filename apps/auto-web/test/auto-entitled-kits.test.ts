@@ -106,7 +106,7 @@ describe("listEntitledKitsViaService — server-to-service entitled-kit listing"
   });
 
   it("fails CLOSED (empty, no fetch) when Market is disabled (self-host, no Market)", async () => {
-    process.env.AUTH_PROVIDER = "oidc"; // self-host signal
+    process.env.SELF_HOST = "true"; // self-host signal
     delete process.env.AGENTKITMARKET_BASE_URL; // no own Market → disabled
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -185,7 +185,7 @@ describe("GET /api/auto/entitled-kits route", () => {
   });
 
   it("returns an empty list (gated) when Market is disabled, without calling out", async () => {
-    process.env.AUTH_PROVIDER = "oidc";
+    process.env.SELF_HOST = "true";
     delete process.env.AGENTKITMARKET_BASE_URL;
     const auth = await import("@/lib/auth");
     vi.spyOn(auth, "requireUserForApi").mockResolvedValue({ id: USER, email: "b@example.test" } as never);

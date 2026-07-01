@@ -36,7 +36,10 @@ test.describe("public app shells", () => {
 // app's own /auth/sign-in route or (after WorkOS AuthKit hands off) the hosted
 // authkit.app login. Either counts as "auth enforced"; the app rendering its own
 // content anonymously would NOT match and correctly fails the gate.
-const SIGN_IN = /\/auth\/sign-in|authkit\.app/;
+// IdP-agnostic: the app's own /auth/sign-in route, WorkOS AuthKit (authkit.app),
+// or a generic OIDC authorize redirect (Keycloak & others expose
+// /realms/<realm>/protocol/openid-connect/auth). Any counts as "auth enforced".
+const SIGN_IN = /\/auth\/sign-in|authkit\.app|\/protocol\/openid-connect\/auth|\/realms\//;
 
 test.describe("auth is enforced on protected apps", () => {
   test("Auto redirects anonymous users to sign-in", async ({ page }) => {

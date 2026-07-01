@@ -29,8 +29,14 @@ data:
   NODE_ENV: "production"
   PORT: {{ .Values.web.port | quote }}
   HOSTNAME: "0.0.0.0"
-  # Auth provider: "workos" (hosted default) or "oidc" (self-host).
+  # Auth provider: "workos" (hosted default) or "oidc" (generic OpenID Connect,
+  # usable by both hosted and self-host).
   AUTH_PROVIDER: {{ .Values.web.authProvider | quote }}
+  {{- if .Values.web.config.selfHost }}
+  # Explicit self-host signal (SELF_HOST=true). The SOLE self-host signal —
+  # NOT implied by authProvider=oidc.
+  SELF_HOST: "true"
+  {{- end }}
   # Profile backend selector — only "postgres" is implemented.
   PROFILE_STORE: {{ .Values.web.config.profileStore | quote }}
   # Profile API base URL — server-side self-call into this same web tier.
