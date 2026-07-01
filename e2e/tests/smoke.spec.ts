@@ -58,3 +58,35 @@ test.describe("cross-app in-cluster health", () => {
     expect(res.status(), "auto sign-in status").toBeLessThan(400);
   });
 });
+
+// Deeper public journeys — real navigations an anonymous visitor makes. Kit slug
+// is discovered at runtime from the catalog (never hardcoded) so it survives
+// content churn; each self-skips if the anchor isn't present.
+test.describe("public journeys", () => {
+  test("a catalog kit opens its detail page", async ({ page }) => {
+    await page.goto(`${targets.market}/kits`, { waitUntil: "networkidle" });
+    // Kit cards navigate via the router, so the slug lives in the rendered
+    // payload rather than an <a href>. Discover one from the page content.
+    const html = await page.content();
+    const match = html.match(/\/kits\/([a-z0-9][a-z0-9-]{6,})/i);
+    test.skip(!match, "no public kits in catalog");
+    const res = await page.goto(`${targets.market}${match![0]}`, { waitUntil: "domcontentloaded" });
+    expect(res?.status(), "kit detail status").toBeLessThan(400);
+    await expect(page).toHaveTitle(/AgentKitMarket/);
+  });
+
+  test("a public profile page renders", async ({ request }) => {
+    const handle = process.env.E2E_PUBLIC_HANDLE ?? "jag8765";
+    const res = await request.get(`${targets.profile}/u/${handle}`);
+    test.skip(res.status() === 404, `no public profile for @${handle}`);
+    expect(res.status(), "public profile status").toBeLessThan(400);
+  });
+
+  test("ecosystem site + docs are reachable", async ({ request }) => {
+    const site = process.env.E2E_SITE_URL ?? "https://agentkitproject.com";
+    expect((await request.get(site)).status(), "site apex").toBeLessThan(400);
+    // Canonical docs path (bare /docs 301s through an http downgrade the client
+    // may not follow; users land on /docs/).
+    expect((await request.get(`${site}/docs/`)).status(), "site /docs/").toBeLessThan(400);
+  });
+});
