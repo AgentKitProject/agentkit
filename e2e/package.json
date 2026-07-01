@@ -1,0 +1,17 @@
+{
+  "name": "agentkit-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Playwright E2E smoke suite for the hosted AgentKitProject apps. Intentionally OUTSIDE the pnpm workspace (see pnpm-workspace.yaml globs) so it never affects the monorepo install/build graph.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --project=smoke",
+    "test:authed": "playwright test --project=authed",
+    "install:browsers": "playwright install --with-deps chromium",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

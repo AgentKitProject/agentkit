@@ -1,0 +1,60 @@
+name: E2E (Playwright)
+
+# Runs the standalone e2e/ smoke suite against DEPLOYED apps.
+#   - workflow_dispatch: run on demand (defaults to hosted prod).
+#   - workflow_call: invoked by the hosting repo's deploy-verify-rollback gate.
+on:
+  workflow_dispatch:
+    inputs:
+      profile_url:
+        description: Profile base URL
+        default: https://profile.agentkitproject.com
+      market_url:
+        description: Market base URL
+        default: https://market.agentkitproject.com
+      forge_url:
+        description: Forge (desktop) base URL
+        default: https://forge.agentkitproject.com
+      webforge_url:
+        description: Web Forge base URL
+        default: https://webapp.forge.agentkitproject.com
+      auto_url:
+        description: Auto base URL
+        default: https://auto.agentkitproject.com
+  workflow_call:
+    inputs:
+      profile_url: { type: string, required: false, default: https://profile.agentkitproject.com }
+      market_url: { type: string, required: false, default: https://market.agentkitproject.com }
+      forge_url: { type: string, required: false, default: https://forge.agentkitproject.com }
+      webforge_url: { type: string, required: false, default: https://webapp.forge.agentkitproject.com }
+      auto_url: { type: string, required: false, default: https://auto.agentkitproject.com }
+    secrets:
+      E2E_STORAGE_STATE_JSON:
+        required: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    env:
+      E2E_PROFILE_URL: ${{ inputs.profile_url }}
+      E2E_MARKET_URL: ${{ inputs.market_url }}
+      E2E_FORGE_URL: ${{ inputs.forge_url }}
+      E2E_WEBFORGE_URL: ${{ inputs.webforge_url }}
+      E2E_AUTO_URL: ${{ inputs.auto_url }}
+      E2E_STORAGE_STATE_JSON: ${{ secrets.E2E_STORAGE_STATE_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14
