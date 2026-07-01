@@ -154,9 +154,13 @@ export async function getAutoStorage(): Promise<AutoStorageDeps> {
   if (storageSingleton) return storageSingleton;
   const backend = autoBackend();
   if (backend === "selfhost") {
-    // Reuse the KitStore's Postgres pool so Auto rows live in the same database.
-    const { getSelfHostPgPool } = await import("@/server/store/selfhost-user-settings");
-    const pool = await getSelfHostPgPool();
+    // Auto's run storage uses its OWN database (DATABASE_URL), NOT the KitStore
+    // pool — the KitStore may be pointed at a SHARED kit DB (KITSTORE_DATABASE_URL)
+    // so Auto reads Forge-built kits, but Auto's runs/schedules/approvals must
+    // stay in this app's own DB. When KITSTORE_DATABASE_URL is unset both are the
+    // same DB (unchanged). See getAutoRunPgPool().
+    const { getAutoRunPgPool } = await import("@/server/store/selfhost-user-settings");
+    const pool = await getAutoRunPgPool();
     // Ensure the four Auto tables exist (idempotent CREATE TABLE IF NOT EXISTS).
     // The app creates them next to the rest of its self-host schema; the k8s
     // worker also ensures them on boot, so either side bootstrapping is safe.

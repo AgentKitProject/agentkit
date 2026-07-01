@@ -89,7 +89,10 @@ let poolSingleton: PgPool | null = null;
 
 export async function getSelfHostPgPool(): Promise<PgPool> {
   if (poolSingleton) return poolSingleton;
-  const connectionString = process.env.DATABASE_URL;
+  // KITSTORE_DATABASE_URL (when set) points the KitStore at a SHARED kit DB so
+  // Forge + Auto see the same kits; unset → DATABASE_URL (unchanged).
+  const connectionString =
+    process.env.KITSTORE_DATABASE_URL?.trim() || process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required for KITSTORE_BACKEND=selfhost.");
   const { Pool } = await import("pg");
   poolSingleton = new Pool({ connectionString }) as unknown as PgPool;

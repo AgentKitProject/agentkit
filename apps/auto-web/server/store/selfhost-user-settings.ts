@@ -85,13 +85,36 @@ export class SelfHostUserSettingsStore implements UserSettingsStore {
 // --- pg pool factory --------------------------------------------------------
 // Lazily import `pg` so the package isn't required unless the self-host backend
 // is actually selected (AWS/local deployments never load it).
+//
+// The KitStore pool follows KITSTORE_DATABASE_URL when set, else DATABASE_URL.
+// This lets the KitStore (kit_metadata + user_settings + kit_usage) point at a
+// SHARED kit DB so Auto reads the user's Forge-built kits directly — no Market
+// upload for personal use. Unset (default) → DATABASE_URL, i.e. unchanged. NOTE:
+// Auto's own run storage uses getAutoRunPgPool() (DATABASE_URL) so a shared kit
+// DB never moves Auto's runs/schedules/approvals off its own database.
 let poolSingleton: PgPool | null = null;
 
 export async function getSelfHostPgPool(): Promise<PgPool> {
   if (poolSingleton) return poolSingleton;
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString =
+    process.env.KITSTORE_DATABASE_URL?.trim() || process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required for KITSTORE_BACKEND=selfhost.");
   const { Pool } = await import("pg");
   poolSingleton = new Pool({ connectionString }) as unknown as PgPool;
   return poolSingleton;
+}
+
+// Auto's OWN run storage pool — ALWAYS DATABASE_URL (this app's own database),
+// independent of KITSTORE_DATABASE_URL. When KITSTORE_DATABASE_URL is unset both
+// pools point at the same DB (unchanged behavior); when the KitStore is pointed
+// at a shared kit DB, Auto's runs/schedules/approvals stay here.
+let autoRunPoolSingleton: PgPool | null = null;
+
+export async function getAutoRunPgPool(): Promise<PgPool> {
+  if (autoRunPoolSingleton) return autoRunPoolSingleton;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required for KITSTORE_BACKEND=selfhost.");
+  const { Pool } = await import("pg");
+  autoRunPoolSingleton = new Pool({ connectionString }) as unknown as PgPool;
+  return autoRunPoolSingleton;
 }
