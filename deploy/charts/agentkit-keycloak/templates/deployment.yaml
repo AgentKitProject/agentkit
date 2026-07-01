@@ -124,6 +124,15 @@ spec:
                   key: SMTP_PASSWORD
                   optional: true
             {{- end }}
+            {{- if .Values.google.enabled }}
+            # ---- Google broker secret (referenced by realm IdP via ${env.*}) ----
+            - name: KC_GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.google.existingSecret | default (include "agentkit-keycloak.effectiveSecretName" .) }}
+                  key: {{ .Values.google.existingSecretKey | default "GOOGLE_CLIENT_SECRET" }}
+                  optional: true
+            {{- end }}
             {{- with .Values.extraEnv }}
             # ---- Extra env (raw entries appended verbatim) ----
             {{- toYaml . | nindent 12 }}

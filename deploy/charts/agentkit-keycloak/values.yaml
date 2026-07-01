@@ -197,6 +197,24 @@ smtp:
   password: ""
 
 # ---------------------------------------------------------------------------
+# Optional Google identity broker (social login). When enabled, the realm
+# import declares a `google` identityProvider. The OAuth client id is public
+# (set clientId below); the client secret is a real secret, so it is NEVER put
+# in values — it is referenced by the realm JSON via ${env.KC_GOOGLE_CLIENT_SECRET}
+# and injected into the pod from a Secret key GOOGLE_CLIENT_SECRET (existingSecret
+# below, else the chart's effective Secret). Like SMTP, the realm import only
+# applies on a FRESH realm (import-strategy IGNORE_EXISTING); on a running realm
+# the broker already lives in the DB. This block makes a from-scratch rebuild
+# reproduce it. Add other brokers (GitHub, etc.) the same way.
+# ---------------------------------------------------------------------------
+google:
+  enabled: false
+  clientId: ""
+  # Secret carrying key GOOGLE_CLIENT_SECRET. Empty → chart's effective Secret.
+  existingSecret: ""
+  existingSecretKey: "GOOGLE_CLIENT_SECRET"
+
+# ---------------------------------------------------------------------------
 # Persistence for Keycloak's own /opt/keycloak/data (theme cache, etc.). The
 # authoritative state lives in Postgres; this is a small convenience PVC.
 # ---------------------------------------------------------------------------

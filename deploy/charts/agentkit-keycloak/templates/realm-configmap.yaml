@@ -109,6 +109,22 @@ JSON with `toJson` so quoting/escaping is always valid.
       "user" "${env.KC_SMTP_USER}"
       "password" "${env.KC_SMTP_PASSWORD}") -}}
 {{- end -}}
+{{- if .Values.google.enabled -}}
+  {{- $_ := set $realm "identityProviders" (list (dict
+      "alias" "google"
+      "providerId" "google"
+      "enabled" true
+      "trustEmail" true
+      "storeToken" false
+      "linkOnly" false
+      "addReadTokenRoleOnCreate" false
+      "firstBrokerLoginFlowAlias" "first broker login"
+      "config" (dict
+        "clientId" .Values.google.clientId
+        "clientSecret" "${env.KC_GOOGLE_CLIENT_SECRET}"
+        "useJwksUrl" "true"
+        "syncMode" "IMPORT"))) -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

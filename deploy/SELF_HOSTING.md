@@ -96,11 +96,11 @@ commit sha. A versioned release retags the already-built, already-tested multi-a
 
 | Chart | Image | Pin to |
 |---|---|---|
-| `agentkitmarket` (api/worker) | `ghcr.io/agentkitproject/agentkitmarket-core` | `v0.8.4` |
-| `agentkitmarket` (web) | `ghcr.io/agentkitproject/agentkitmarket-app` | `v0.8.4` |
-| `agentkitforge-web` (web) | `ghcr.io/agentkitproject/agentkitforge-web` | `v0.8.4` |
-| `agentkitauto` (web) | `ghcr.io/agentkitproject/agentkitauto-app` | `v0.8.4` |
-| `agentkitauto` (worker) | `ghcr.io/agentkitproject/agentkitauto-worker` | `v0.8.4` |
+| `agentkitmarket` (api/worker) | `ghcr.io/agentkitproject/agentkitmarket-core` | `v0.9.0` |
+| `agentkitmarket` (web) | `ghcr.io/agentkitproject/agentkitmarket-app` | `v0.9.0` |
+| `agentkitforge-web` (web) | `ghcr.io/agentkitproject/agentkitforge-web` | `v0.9.0` |
+| `agentkitauto` (web) | `ghcr.io/agentkitproject/agentkitauto-app` | `v0.9.0` |
+| `agentkitauto` (worker) | `ghcr.io/agentkitproject/agentkitauto-worker` | `v0.9.0` |
 
 All images are **public** on GHCR — no pull secret is required.
 
@@ -108,12 +108,12 @@ All images are **public** on GHCR — no pull secret is required.
 workflows (`image-*.yml`) build and push `sha-<sha>` and `latest` on every push to
 `main` (and on manual dispatch). A versioned release is cut by the **manual**
 `release-selfhost` workflow (Actions → *release-selfhost* → Run workflow →
-`version=v0.8.4`), which promotes one of those already-built builds to the `vX.Y.Z`
+`version=v0.9.0`), which promotes one of those already-built builds to the `vX.Y.Z`
 tag with `docker buildx imagetools` (a retag — no rebuild). So `vX.Y.Z` is the exact
 multi-arch image CI already tested. Pin to it.
 
 The chart **default** tags are still `:latest` (which tracks `main`); every install
-example below overrides them to `v0.8.4`.
+example below overrides them to `v0.9.0`.
 
 The five **app** images above are the only ones the versioned release pins. The
 bundled **data-service** images (`postgres:16.14`, a pinned `minio/minio:RELEASE.*`, `redis:7.4.9-alpine` — pinned in the chart defaults) are
@@ -385,10 +385,10 @@ plain Secrets, chart-generated credentials) plus a small override file.
 ```yaml
 # market-values.yaml  (keep out of git)
 image:
-  tag: "v0.8.4"
+  tag: "v0.9.0"
 web:
   image:
-    tag: "v0.8.4"
+    tag: "v0.9.0"
   config:
     appUrl: https://market.example.com
     adminEmails: "you@example.com"      # optional admin allowlist
@@ -420,7 +420,7 @@ lock and auto-creates the MinIO bucket.
 # forge-values.yaml  (keep out of git)
 web:
   image:
-    tag: "v0.8.4"
+    tag: "v0.9.0"
   config:
     appUrl: https://forge.example.com
     # Wire to the in-cluster Market (see §7). Leave empty for Market OFF.
@@ -455,7 +455,7 @@ generated and persisted. The app auto-creates its MinIO bucket on startup.
 # auto-values.yaml  (keep out of git)
 web:
   image:
-    tag: "v0.8.4"
+    tag: "v0.9.0"
   config:
     appUrl: https://auto.example.com
     # Wire to the in-cluster Market (see §7). Leave empty for Market OFF.
@@ -472,7 +472,7 @@ web:
     host: auto.example.com
 auto:
   enabled: true
-  workerImage: "ghcr.io/agentkitproject/agentkitauto-worker:v0.8.4"
+  workerImage: "ghcr.io/agentkitproject/agentkitauto-worker:v0.9.0"
   billing: "free"                       # BYO key, no metering
   anthropicApiKey: "sk-ant-..."         # REQUIRED — operator BYO LLM key
 ```
@@ -521,7 +521,7 @@ Postgres, set `PROFILE_DB_SSL=disable` (no TLS).
 ```yaml
 # profile-values.yaml  (keep out of git)
 image:
-  tag: "v0.8.4"
+  tag: "v0.9.0"
 web:
   authProvider: oidc
   config:
