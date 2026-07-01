@@ -1,0 +1,31 @@
+agentkit-keycloak has been deployed as "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Keycloak (realm "{{ .Values.realm.name }}") is reachable in-cluster at:
+  http://{{ include "agentkit-keycloak.fullname" . }}:80
+{{- if .Values.ingress.enabled }}{{ with .Values.ingress.host }}
+Externally (once DNS + TLS resolve):
+  https://{{ . }}
+{{- end }}{{- end }}
+
+OIDC issuer for the apps:
+  {{ if .Values.hostname }}{{ trimSuffix "/" .Values.hostname }}{{ else if .Values.ingress.host }}https://{{ .Values.ingress.host }}{{ else }}https://<your-keycloak-host>{{ end }}/realms/{{ .Values.realm.name }}
+
+{{- if not .Values.secrets.existingSecret }}
+
+Read the bootstrap admin password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "agentkit-keycloak.secretName" . }} \
+    -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d ; echo
+
+Per-app client secrets to wire into each app chart's web.secrets.oidcClientSecret:
+{{- range $key, $c := .Values.realm.clients }}
+{{- if index $.Values.realm.appUrls $key }}
+  {{ $c.clientId }}:
+    kubectl -n {{ $.Release.Namespace }} get secret {{ include "agentkit-keycloak.secretName" $ }} \
+      -o jsonpath='{.data.{{ include "agentkit-keycloak.clientSecretKey" $c.clientId }}}' | base64 -d ; echo
+{{- end }}
+{{- end }}
+{{- end }}
+
+This chart is OPTIONAL. To use your own OIDC IdP instead, do not install it —
+just point each app's OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET at your IdP.
+See the chart README for the full integration table.

@@ -1,0 +1,68 @@
+# ===========================================================================
+# values-k3s.yaml — self-host preset for a single-node k3s / homelab cluster.
+#
+# OPTIONAL bundled Keycloak: batteries-included reference IdP with a BUNDLED
+# single-node Postgres and chart-generated credentials (no "changeme"). Mirrors
+# the bundled-Postgres pattern used by the app charts. For prod on a managed PG,
+# use the default values.yaml (postgres.enabled=false + external db.*).
+#
+# Quickstart:
+#   helm install keycloak ./charts/agentkit-keycloak -f values-k3s.yaml \
+#     --set ingress.enabled=true \
+#     --set ingress.className=traefik \
+#     --set ingress.host=auth.example.com \
+#     --set hostname=https://auth.example.com \
+#     --set realm.appUrls.market=https://market.example.com \
+#     --set realm.appUrls.profile=https://profile.example.com \
+#     --set realm.appUrls.auto=https://auto.example.com \
+#     --set realm.appUrls.forgeWeb=https://forge.example.com
+#
+# Then read each client secret back from the chart Secret and wire it into the
+# matching app chart's web.secrets.oidcClientSecret (see README → Integration).
+# ===========================================================================
+
+image:
+  repository: quay.io/keycloak/keycloak
+  tag: "26.4"
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+# Bundled single-node Postgres. Credentials are chart-generated + persisted.
+postgres:
+  enabled: true
+  storage:
+    size: 5Gi
+
+# Small convenience PVC for /opt/keycloak/data.
+persistence:
+  enabled: true
+  size: 1Gi
+
+ingress:
+  enabled: true
+  className: "traefik"
+  host: ""       # set to your public Keycloak hostname
+  annotations: {}
+  tls: []
+
+realm:
+  name: "agentkit"
+  registrationAllowed: true
+  resetPasswordAllowed: true
+  # SMTP is off by default → keep verifyEmail false until you configure smtp.*.
+  verifyEmail: false
+  adminGroup: "admins"
+  appUrls:
+    market: ""
+    profile: ""
+    auto: ""
+    forgeWeb: ""
+  desktopClient:
+    enabled: true
+    clientId: "agentkitforge-desktop"
+
+secrets:
+  # Generate the admin password, bundled-DB password, and per-app client secrets;
+  # persisted across upgrades. Read client secrets back to wire into the apps.
+  generate: true

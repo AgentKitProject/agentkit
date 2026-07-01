@@ -1,0 +1,218 @@
+# ===========================================================================
+# agentkit-keycloak — OPTIONAL bundled Keycloak reference IdP.
+#
+# Generic OIDC (bring-your-own IdP) is the FIRST-CLASS contract for AgentKit
+# self-hosting. This chart is a convenience: a batteries-included Keycloak that
+# serves ONE OIDC realm ("agentkit") wired for all the apps. Point the apps at
+# ANY OIDC IdP instead and skip this chart entirely.
+#
+# This default values.yaml is the PRODUCTION shape: an EXTERNAL managed Postgres.
+# For a homelab / single-node cluster use values-k3s.yaml (bundled Postgres,
+# chart-generated credentials).
+#
+# Quickstart (external Postgres):
+#   helm install keycloak ./charts/agentkit-keycloak \
+#     --set ingress.enabled=true \
+#     --set ingress.host=auth.example.com \
+#     --set hostname=https://auth.example.com \
+#     --set postgres.enabled=false \
+#     --set db.url="jdbc:postgresql://pg.internal:5432/keycloak" \
+#     --set db.username=keycloak --set db.password=... \
+#     --set 'realm.appUrls.market=https://market.example.com' \
+#     --set 'realm.appUrls.profile=https://profile.example.com' \
+#     --set 'realm.appUrls.auto=https://auto.example.com' \
+#     --set 'realm.appUrls.forgeWeb=https://forge.example.com'
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Image — the OFFICIAL Keycloak distribution.
+# ---------------------------------------------------------------------------
+image:
+  repository: quay.io/keycloak/keycloak
+  # Pin a recent stable major (26.x). Override for reproducible deploys.
+  tag: "26.4"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicas: 1
+
+# HTTP listen port inside the container (Keycloak default 8080).
+port: 8080
+
+# Public hostname Keycloak advertises (KC_HOSTNAME). REQUIRED in production so
+# issuer/redirect URLs, the admin console, and OIDC discovery are correct. Set to
+# the full external origin, e.g. https://auth.example.com. When empty the chart
+# derives it from ingress.host (https://<ingress.host>) if that is set.
+hostname: ""
+
+# Keycloak runs behind the ingress/reverse proxy and trusts X-Forwarded-* headers.
+# Leave as "xforwarded" for standard ingress/LB TLS termination.
+proxyHeaders: "xforwarded"
+
+# Start mode. "start" runs a production server; "start-dev" is HTTP-only dev mode
+# (no hostname/proxy strictness). Keep "start" for anything real.
+startCommand: "start"
+# Emit the full startup log auto-build (recommended). Set true only if you bake a
+# pre-optimized image and want `--optimized` to skip the build step.
+optimized: false
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# ---------------------------------------------------------------------------
+# Bootstrap admin (temporary admin created on first boot). Used to reach the
+# admin console; create real admin users in the console afterward.
+# ---------------------------------------------------------------------------
+admin:
+  username: "admin"
+  # Leave empty to let the chart generate + persist a strong password
+  # (secrets.generate=true). Read it from the chart Secret after install:
+  #   kubectl get secret <release>-secret -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d
+  password: ""
+
+# ---------------------------------------------------------------------------
+# Ingress (optional). cert-manager annotations pass through verbatim.
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  #   cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls: []
+  #  - secretName: agentkit-keycloak-tls
+  #    hosts:
+  #      - auth.example.com
+
+# ---------------------------------------------------------------------------
+# DATABASE
+#
+# Two mutually-exclusive modes:
+#   * postgres.enabled=true  → bundled single-node Postgres (see below). For
+#                              homelab/dev. Credentials chart-generated.
+#   * postgres.enabled=false → EXTERNAL managed Postgres via db.* below (prod).
+# ---------------------------------------------------------------------------
+
+# External Postgres (used when postgres.enabled=false).
+db:
+  # JDBC URL, e.g. jdbc:postgresql://pg.internal:5432/keycloak
+  url: ""
+  username: "keycloak"
+  # REQUIRED when postgres.enabled=false (unless sourced via existingSecret).
+  password: ""
+
+# Bundled in-cluster Postgres (used when enabled=true). Disable for prod.
+postgres:
+  enabled: false
+  image: postgres:16.14
+  database: keycloak
+  user: keycloak
+  # Leave empty to let the chart generate + persist a strong password.
+  password: ""
+  storage:
+    size: 5Gi
+    # storageClassName: ""
+
+# ---------------------------------------------------------------------------
+# REALM (declarative import via --import-realm).
+#
+# Every value below is templated into a realm JSON that Keycloak imports on
+# first boot. Client ids, app URLs (→ redirect URIs), secrets, the realm name,
+# and registration/verify flags are all values-driven.
+# ---------------------------------------------------------------------------
+realm:
+  name: "agentkit"
+  displayName: "AgentKit"
+
+  # Self-service registration + account flows.
+  registrationAllowed: true
+  resetPasswordAllowed: true
+  # Require users to verify their email before first use. Needs SMTP configured.
+  verifyEmail: false
+  # Login with email address (instead of username).
+  loginWithEmailAllowed: true
+
+  # Admin group whose members receive the "admins" value in the `groups` claim.
+  # Set each app's ADMIN_OIDC_GROUP to this to grant admin.
+  adminGroup: "admins"
+
+  # Public origin of each app. Drives that client's redirect URIs
+  # (<appUrl>/auth/callback) and post-logout redirect. Leave an app empty to
+  # omit its client from the realm.
+  appUrls:
+    market: ""
+    profile: ""
+    auto: ""
+    forgeWeb: ""
+
+  # Confidential clients (authorization-code flow), one per app. clientId MUST
+  # match each app's OIDC_CLIENT_ID; secret MUST match its OIDC_CLIENT_SECRET.
+  # Leave secret empty to let the chart generate + persist one (read it back
+  # from the chart Secret; see README).
+  clients:
+    market:
+      clientId: "agentkitmarket"
+      secret: ""
+    profile:
+      clientId: "agentkitprofile"
+      secret: ""
+    auto:
+      clientId: "agentkitauto"
+      secret: ""
+    forgeWeb:
+      clientId: "agentkitforge-web"
+      secret: ""
+
+  # Public OAuth 2.0 device-flow client for the Forge desktop app / CLI.
+  desktopClient:
+    enabled: true
+    clientId: "agentkitforge-desktop"
+
+# ---------------------------------------------------------------------------
+# SMTP (optional) — for email verification / password reset. Off by default.
+# Host/port/from are non-secret realm config; user/password come from the
+# chart Secret (or existingSecret keys SMTP_USER / SMTP_PASSWORD).
+# ---------------------------------------------------------------------------
+smtp:
+  enabled: false
+  host: ""
+  port: "587"
+  from: ""
+  fromDisplayName: "AgentKit"
+  ssl: false
+  starttls: true
+  auth: true
+  user: ""
+  password: ""
+
+# ---------------------------------------------------------------------------
+# Persistence for Keycloak's own /opt/keycloak/data (theme cache, etc.). The
+# authoritative state lives in Postgres; this is a small convenience PVC.
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: false
+  size: 1Gi
+  # storageClassName: ""
+
+# ---------------------------------------------------------------------------
+# Secrets.
+# ---------------------------------------------------------------------------
+secrets:
+  # Auto-generate any empty admin/DB/client secrets with a strong random value,
+  # persisted into the chart Secret on first install and preserved across
+  # upgrades (via lookup). Set values explicitly to pin them. No "changeme".
+  generate: true
+  # Source ALL secrets from an externally-managed Secret (e.g. synced by
+  # Infisical / Sealed Secrets). When set the chart Secret is NOT rendered and
+  # containers envFrom this Secret. Required keys:
+  #   KC_BOOTSTRAP_ADMIN_PASSWORD, KC_DB_PASSWORD,
+  #   CLIENT_SECRET_AGENTKITMARKET, CLIENT_SECRET_AGENTKITPROFILE,
+  #   CLIENT_SECRET_AGENTKITAUTO, CLIENT_SECRET_AGENTKITFORGE_WEB,
+  #   and (if smtp.enabled) SMTP_USER / SMTP_PASSWORD.
+  existingSecret: ""

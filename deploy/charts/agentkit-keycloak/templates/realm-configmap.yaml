@@ -1,0 +1,121 @@
+{{- /*
+Declarative realm import. Rendered into /opt/keycloak/data/import/agentkit.json
+(mounted from this ConfigMap) and applied by `--import-realm` on boot.
+
+All identity-bearing values (client ids, redirect URIs from each app URL, the
+realm name, registration/verify flags, the admin group, the device client, and
+SMTP) are templated from values — nothing is hardcoded. Client secrets are the
+SAME "effective" values emitted into the chart Secret so they match each app's
+OIDC_CLIENT_SECRET.
+
+We build the client list in Go-template space, then render the whole realm as
+JSON with `toJson` so quoting/escaping is always valid.
+*/ -}}
+{{- $adminGroup := .Values.realm.adminGroup -}}
+{{- $clients := list -}}
+{{- range $key, $c := .Values.realm.clients -}}
+  {{- $appUrl := index $.Values.realm.appUrls $key -}}
+  {{- if $appUrl -}}
+    {{- $appUrl = trimSuffix "/" $appUrl -}}
+    {{- $secret := include "agentkit-keycloak.effectiveClientSecret" (list $ $c) -}}
+    {{- $mappers := list
+        (dict "name" "email" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+          "config" (dict "user.attribute" "email" "claim.name" "email" "jsonType.label" "String"
+            "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+        (dict "name" "given name" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+          "config" (dict "user.attribute" "firstName" "claim.name" "given_name" "jsonType.label" "String"
+            "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+        (dict "name" "family name" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+          "config" (dict "user.attribute" "lastName" "claim.name" "family_name" "jsonType.label" "String"
+            "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+        (dict "name" "full name" "protocol" "openid-connect" "protocolMapper" "oidc-full-name-mapper"
+          "config" (dict "claim.name" "name" "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+        (dict "name" "username" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+          "config" (dict "user.attribute" "username" "claim.name" "preferred_username" "jsonType.label" "String"
+            "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+        (dict "name" "groups" "protocol" "openid-connect" "protocolMapper" "oidc-group-membership-mapper"
+          "config" (dict "claim.name" "groups" "full.path" "false"
+            "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+    -}}
+    {{- $client := dict
+        "clientId" $c.clientId
+        "name" $c.clientId
+        "enabled" true
+        "protocol" "openid-connect"
+        "publicClient" false
+        "secret" $secret
+        "standardFlowEnabled" true
+        "directAccessGrantsEnabled" false
+        "serviceAccountsEnabled" false
+        "redirectUris" (list (printf "%s/auth/callback" $appUrl))
+        "webOrigins" (list $appUrl)
+        "attributes" (dict "post.logout.redirect.uris" $appUrl)
+        "protocolMappers" $mappers
+    -}}
+    {{- $clients = append $clients $client -}}
+  {{- end -}}
+{{- end -}}
+{{- if .Values.realm.desktopClient.enabled -}}
+  {{- $desktopMappers := list
+      (dict "name" "email" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+        "config" (dict "user.attribute" "email" "claim.name" "email" "jsonType.label" "String"
+          "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+      (dict "name" "full name" "protocol" "openid-connect" "protocolMapper" "oidc-full-name-mapper"
+        "config" (dict "claim.name" "name" "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+      (dict "name" "username" "protocol" "openid-connect" "protocolMapper" "oidc-usermodel-property-mapper"
+        "config" (dict "user.attribute" "username" "claim.name" "preferred_username" "jsonType.label" "String"
+          "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+      (dict "name" "groups" "protocol" "openid-connect" "protocolMapper" "oidc-group-membership-mapper"
+        "config" (dict "claim.name" "groups" "full.path" "false"
+          "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
+  -}}
+  {{- $desktop := dict
+      "clientId" .Values.realm.desktopClient.clientId
+      "name" .Values.realm.desktopClient.clientId
+      "enabled" true
+      "protocol" "openid-connect"
+      "publicClient" true
+      "standardFlowEnabled" false
+      "directAccessGrantsEnabled" false
+      "serviceAccountsEnabled" false
+      "attributes" (dict "oauth2.device.authorization.grant.enabled" "true")
+      "protocolMappers" $desktopMappers
+  -}}
+  {{- $clients = append $clients $desktop -}}
+{{- end -}}
+{{- $realm := dict
+    "realm" .Values.realm.name
+    "enabled" true
+    "displayName" .Values.realm.displayName
+    "registrationAllowed" .Values.realm.registrationAllowed
+    "registrationEmailAsUsername" false
+    "resetPasswordAllowed" .Values.realm.resetPasswordAllowed
+    "verifyEmail" .Values.realm.verifyEmail
+    "loginWithEmailAllowed" .Values.realm.loginWithEmailAllowed
+    "duplicateEmailsAllowed" false
+    "sslRequired" "external"
+    "groups" (list (dict "name" $adminGroup))
+    "clients" $clients
+-}}
+{{- if .Values.smtp.enabled -}}
+  {{- $_ := set $realm "smtpServer" (dict
+      "host" .Values.smtp.host
+      "port" (.Values.smtp.port | toString)
+      "from" .Values.smtp.from
+      "fromDisplayName" .Values.smtp.fromDisplayName
+      "ssl" (.Values.smtp.ssl | toString)
+      "starttls" (.Values.smtp.starttls | toString)
+      "auth" (.Values.smtp.auth | toString)
+      "user" "${env.KC_SMTP_USER}"
+      "password" "${env.KC_SMTP_PASSWORD}") -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentkit-keycloak.realmConfigmapName" . }}
+  labels:
+    {{- include "agentkit-keycloak.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+data:
+  agentkit-realm.json: |
+    {{- $realm | toJson | nindent 4 }}

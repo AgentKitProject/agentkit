@@ -1,0 +1,19 @@
+apiVersion: v2
+name: agentkit-keycloak
+description: >-
+  Optional bundled Keycloak reference IdP for self-hosted AgentKit. Serves one
+  OIDC realm ("agentkit") with a confidential client per app plus a public
+  device-flow client for Forge desktop. Skip this chart entirely to bring your
+  own IdP (Authentik / Auth0 / Okta / Dex / any OIDC provider).
+type: application
+version: 0.1.0
+appVersion: "26.4"
+keywords:
+  - agentkit
+  - keycloak
+  - oidc
+  - idp
+  - auth
+home: https://agentkitproject.com
+sources:
+  - https://github.com/AgentKitProject/agentkit

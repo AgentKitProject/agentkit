@@ -1,0 +1,144 @@
+{{- /* Resolve the DB JDBC URL: bundled Postgres Service, or external db.url. */ -}}
+{{- $dbUrl := .Values.db.url -}}
+{{- $dbUser := .Values.db.username -}}
+{{- if .Values.postgres.enabled -}}
+  {{- $dbUrl = printf "jdbc:postgresql://%s-postgres:5432/%s" (include "agentkit-keycloak.fullname" .) .Values.postgres.database -}}
+  {{- $dbUser = .Values.postgres.user -}}
+{{- else -}}
+  {{- if not $dbUrl -}}
+    {{- fail "postgres.enabled=false requires db.url (external Postgres JDBC URL)" -}}
+  {{- end -}}
+{{- end -}}
+{{- /* Resolve the advertised hostname: explicit hostname, else derive from ingress.host. */ -}}
+{{- $hostname := .Values.hostname -}}
+{{- if and (not $hostname) .Values.ingress.host -}}
+  {{- $hostname = printf "https://%s" .Values.ingress.host -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentkit-keycloak.fullname" . }}
+  labels:
+    {{- include "agentkit-keycloak.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentkit-keycloak.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentkit-keycloak.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when the realm import changes.
+        checksum/realm: {{ include (print $.Template.BasePath "/realm-configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: keycloak
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - {{ .Values.startCommand | quote }}
+            {{- if .Values.optimized }}
+            - "--optimized"
+            {{- end }}
+            - "--import-realm"
+          env:
+            # ---- Bootstrap admin ----
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.admin.username | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentkit-keycloak.effectiveSecretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            # ---- Hostname / proxy ----
+            {{- if $hostname }}
+            - name: KC_HOSTNAME
+              value: {{ $hostname | quote }}
+            {{- end }}
+            - name: KC_PROXY_HEADERS
+              value: {{ .Values.proxyHeaders | quote }}
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HTTP_PORT
+              value: {{ .Values.port | quote }}
+            # ---- Health + metrics ----
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+            # ---- Database ----
+            - name: KC_DB
+              value: "postgres"
+            - name: KC_DB_URL
+              value: {{ $dbUrl | quote }}
+            - name: KC_DB_USERNAME
+              value: {{ $dbUser | quote }}
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentkit-keycloak.effectiveSecretName" . }}
+                  key: KC_DB_PASSWORD
+            {{- if .Values.smtp.enabled }}
+            # ---- SMTP (referenced by realm smtpServer via ${env.*}) ----
+            - name: KC_SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentkit-keycloak.effectiveSecretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: KC_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentkit-keycloak.effectiveSecretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          # Keycloak exposes management (health/metrics) on port 9000.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: kc-data
+              mountPath: /opt/keycloak/data
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: realm-import
+          configMap:
+            name: {{ include "agentkit-keycloak.realmConfigmapName" . }}
+        {{- if .Values.persistence.enabled }}
+        - name: kc-data
+          persistentVolumeClaim:
+            claimName: {{ include "agentkit-keycloak.fullname" . }}-data
+        {{- end }}
