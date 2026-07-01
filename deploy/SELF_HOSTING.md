@@ -125,18 +125,30 @@ if you need fully reproducible data-tier images.
 
 ## 4. OIDC IdP setup
 
-All three apps authenticate against **one** generic OpenID Connect IdP using the
-authorization-code flow. Register **one client per app** (recommended — distinct
-redirect URIs and secrets), or share a single client across apps if your IdP allows
-multiple redirect URIs on one client.
+The apps authenticate against **one** generic OpenID Connect IdP using the
+authorization-code flow. **Use any OIDC-compliant provider** — Keycloak, Authentik,
+Zitadel, Auth0, Okta, Google, Dex, and so on. This bring-your-own-IdP path is the
+first-class, supported contract; nothing ties you to a specific vendor.
 
-For each app:
+Two ways to get an IdP:
+
+- **Option A — bring your own** (any of the above). Register clients as below.
+- **Option B — the bundled Keycloak** (batteries-included reference IdP). If you
+  don't already run one, enable the optional `agentkit-keycloak` chart and it stands
+  up Keycloak with the realm + clients preconfigured. See *Option B* below.
+
+### Option A — register clients in your own IdP
+
+Register **one client per app** (recommended — distinct redirect URIs and secrets),
+or share a single client across apps if your IdP allows multiple redirect URIs on one
+client.
 
 | App | Suggested client id | Redirect URI |
 |---|---|---|
 | Market | `agentkitmarket` | `https://market.example.com/auth/callback` |
 | Web Forge | `agentkitforge-web` | `https://forge.example.com/auth/callback` |
 | Auto | `agentkitauto` | `https://auto.example.com/auth/callback` |
+| Profile (optional) | `agentkitprofile` | `https://profile.example.com/auth/callback` |
 
 The redirect URI is always **`<appUrl>/auth/callback`** (derived automatically from
 `web.config.appUrl`; override with the per-chart `redirectUri` value if needed).
@@ -148,6 +160,43 @@ The redirect URI is always **`<appUrl>/auth/callback`** (derived automatically f
 - **Issuer:** must serve `<issuer>/.well-known/openid-configuration`. Use the **HTTPS**
   issuer URL. (`OIDC_ALLOW_INSECURE=true` exists for an `http://` dev IdP only — never
   in production.)
+
+### Option B — the bundled Keycloak reference IdP
+
+If you don't already run an IdP, the ecosystem ships an **optional** Keycloak chart
+that gives you a production-grade OIDC provider with the realm, per-app clients,
+self-registration, and an admin group already wired — the same batteries-included
+pattern as the bundled Postgres/MinIO. **It's entirely optional**: skip it and use
+Option A if you already have an IdP.
+
+```bash
+# 1) Deploy Keycloak (bundled Postgres preset shown; set your app URLs so the
+#    per-app clients get the right redirect URIs).
+helm install agentkit-keycloak deploy/charts/agentkit-keycloak \
+  -f deploy/charts/agentkit-keycloak/values-k3s.yaml \
+  --set ingress.host=auth.example.com \
+  --set realm.appUrls.market=https://market.example.com \
+  --set realm.appUrls.forgeWeb=https://forge.example.com \
+  --set realm.appUrls.auto=https://auto.example.com \
+  --set realm.appUrls.profile=https://profile.example.com
+```
+
+- **Issuer** for the apps is then `https://auth.example.com/realms/agentkit`.
+- **Client secrets** are generated (and persisted) by the chart. Read each app's
+  secret from the chart's Secret (`CLIENT_SECRET_AGENTKITMARKET`, `…FORGE_WEB`,
+  `…AUTO`, `…PROFILE`) and set it as that app's `OIDC_CLIENT_SECRET` — they must
+  byte-match (see *Client-secret coordination* below; the chart guarantees the realm
+  and the Secret carry the identical values).
+- **Database:** bundled Postgres via the `values-k3s.yaml` preset (homelab), or point
+  at an external/managed Postgres (`postgres.enabled=false` + `db.url`/`db.username`/
+  `db.password`) for larger installs.
+- **Email** (verification / password reset) is off by default — set `smtp.*` to enable.
+- **Desktop/CLI Forge** login uses the public `agentkitforge-desktop` device-flow
+  client the chart also creates.
+
+Full knobs + the app-wiring table are in `deploy/charts/agentkit-keycloak/README.md`.
+Everything below (Users & admins, client-secret coordination) applies to **both**
+options.
 
 ### Users & admins
 
