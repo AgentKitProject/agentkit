@@ -46,9 +46,10 @@ beforeEach(() => {
     authkitMiddleware: vi.fn(() => vi.fn())
   }));
 
-  // Stub the selfhost pool accessor (never actually connects).
+  // Stub the selfhost pool accessors (never actually connect).
   vi.doMock("@/server/store/selfhost-user-settings", () => ({
-    getSelfHostPgPool: vi.fn(async () => ({}))
+    getSelfHostPgPool: vi.fn(async () => ({})),
+    getAutoRunPgPool: vi.fn(async () => ({}))
   }));
 });
 

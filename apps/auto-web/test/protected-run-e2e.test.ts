@@ -646,6 +646,7 @@ describe("M6 S2 — protected run end-to-end (boundary holds)", () => {
     process.env.KITSTORE_BACKEND = "selfhost";
     vi.doMock("@/server/store/selfhost-user-settings", () => ({
       getSelfHostPgPool: vi.fn(async () => ({})),
+      getAutoRunPgPool: vi.fn(async () => ({})),
     }));
     const runs = new InMemoryRunRepo();
     const approvals = new InMemoryApprovalRepo(APPROVAL);
