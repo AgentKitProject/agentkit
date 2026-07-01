@@ -1,11 +1,15 @@
 "use client";
 
 import { Button } from "@agentkitforge/ui";
-import { buildForgeImportDeepLink, getForgeWebUrl } from "@/lib/forge-link";
+import { buildRunInForgeWebLink } from "@/lib/forge-link";
 
-export function OpenInForgeButton({ marketBaseUrl, slug }: { marketBaseUrl: string; slug: string }) {
-  const deepLink = buildForgeImportDeepLink({ marketBaseUrl, slug });
-  const forgeWebUrl = getForgeWebUrl();
+export function OpenInForgeButton({ slug }: { slug: string }) {
+  // Web Forge (the desktop app is retired). Hidden when no Forge is configured
+  // (e.g. self-host with no Forge deployment).
+  const forgeUrl = buildRunInForgeWebLink({ slug });
+  if (!forgeUrl) {
+    return null;
+  }
 
   return (
     <div className="forge-import-actions">
@@ -13,16 +17,11 @@ export function OpenInForgeButton({ marketBaseUrl, slug }: { marketBaseUrl: stri
         className="full-width"
         type="button"
         onClick={() => {
-          window.location.href = deepLink;
+          window.location.href = forgeUrl;
         }}
       >
         Open in Forge
       </Button>
-      {forgeWebUrl ? (
-        <a className="secondary-link" href={forgeWebUrl}>
-          Forge not installed?
-        </a>
-      ) : null}
     </div>
   );
 }

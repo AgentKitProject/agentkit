@@ -1,26 +1,8 @@
 const DEFAULT_MARKET_BASE_URL = "https://market.agentkitproject.com";
-const FORGE_BASE_URL = "https://forge.agentkitproject.com";
+// Web Forge (the desktop app is retired). The short apex forge.agentkitproject.com
+// 301-redirects here but drops query params, so link straight to the app.
+const FORGE_BASE_URL = "https://webapp.forge.agentkitproject.com";
 const AUTO_BASE_URL = "https://auto.agentkitproject.com";
-const FORGE_PROTOCOL_BASE = "agentkitforge://market/import";
-
-export type ForgeImportLinkInput = {
-  slug: string;
-  kitId?: string;
-  marketBaseUrl?: string;
-};
-
-export function buildForgeImportDeepLink({ slug, kitId, marketBaseUrl = getMarketBaseUrl() }: ForgeImportLinkInput) {
-  const url = new URL(FORGE_PROTOCOL_BASE);
-
-  url.searchParams.set("market", normalizedMarketBaseUrl(marketBaseUrl));
-  url.searchParams.set("kit", slug);
-
-  if (kitId) {
-    url.searchParams.set("kitId", kitId);
-  }
-
-  return url.toString();
-}
 
 export function getForgeWebUrl(): string | undefined {
   // Operator override (any deployment) takes precedence.
@@ -87,8 +69,4 @@ export function buildRunInForgeWebLink({ slug, kitId }: { slug: string; kitId?: 
   url.searchParams.set("kit", `market:${slug}`);
   if (kitId) url.searchParams.set("kitId", kitId);
   return url.toString();
-}
-
-function normalizedMarketBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
 }

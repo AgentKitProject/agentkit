@@ -216,7 +216,7 @@ describe("market-api public listing gate", () => {
     assert.match(source, /Sign in to download/);
     assert.match(source, /KitDownloadButton slug=\{slug\}/);
     assert.match(source, /OpenInForgeButton/);
-    assert.match(source, /Import into AgentKitForge/);
+    assert.match(source, /Open in AgentKitForge/);
     assert.match(source, /SHA-256/);
     assert.doesNotMatch(source, /downloadUrl/);
     assert.doesNotMatch(source, /packageS3Key/);

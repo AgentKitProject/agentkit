@@ -35,10 +35,17 @@ port: 8080
 
 # The DigitalOcean Spaces CDN native endpoint the proxy targets (caching is
 # served here). NOT a custom domain — the public host is handled by the ingress.
+# Ignored when redirectTo is set.
 cdnHost: agentkit-forge-releases.nyc3.cdn.digitaloceanspaces.com
 
-# Public host served by the ingress (hard-coded into shipped Tauri binaries via
-# the updater URL — must never change).
+# Redirect mode. When set, this front door STOPS proxying the Spaces download
+# site and 301s every request to this URL — used to retire the desktop download
+# site + updater/releases and point the short apex host at web Forge. Leave empty
+# for the legacy Spaces-proxy behavior.
+redirectTo: ""
+
+# Public host served by the ingress (originally hard-coded into shipped Tauri
+# binaries via the updater URL; desktop is retired, so this now fronts a redirect).
 host: forge.agentkitproject.com
 
 # ingress-nginx class + the cert-manager ClusterIssuer that mints the TLS cert

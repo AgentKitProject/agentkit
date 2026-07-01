@@ -9,7 +9,7 @@ import { CommercialAcquire } from "@/components/CommercialAcquire";
 import { LicenseDisclosure } from "@/components/LicenseDisclosure";
 import { OpenInForgeButton } from "@/components/OpenInForgeButton";
 import { canDownloadKit, getCurrentUser, isAdminEmail } from "@/lib/auth";
-import { getMarketBaseUrl, getAutoWebUrl, getForgeWebUrl } from "@/lib/forge-link";
+import { getAutoWebUrl, getForgeWebUrl } from "@/lib/forge-link";
 import { getKitBySlug, isPublicCatalogKit } from "@/lib/market-api";
 import { effectiveLicenseText, effectiveLicenseVersion, priceLabel } from "@/lib/kit-license";
 
@@ -81,7 +81,6 @@ export default async function KitDetailPage({
   const version = kit.currentVersion ?? "Version pending";
   const packageMetadata = kit.packageMetadata ?? {};
   const packageFileName = packageMetadata.fileName ?? fallbackPackageFileName(slug, kit.currentVersion);
-  const marketBaseUrl = getMarketBaseUrl();
 
   const isPaid = kit.pricing === "paid";
   // Paid kits are online-only unless explicitly enabled; free kits are downloadable.
@@ -306,10 +305,10 @@ export default async function KitDetailPage({
           ) : null}
         </div>
         <div className="sidebar-card forge-panel">
-          <span className="section-label">Import into AgentKitForge</span>
-          <strong>Launch AgentKitForge and import this kit.</strong>
-          <p>Forge handles authentication, download, and local import after launch.</p>
-          <OpenInForgeButton marketBaseUrl={marketBaseUrl} slug={slug} />
+          <span className="section-label">Open in AgentKitForge</span>
+          <strong>Open this kit in AgentKitForge on the web.</strong>
+          <p>Forge handles authentication and loads this kit for you.</p>
+          <OpenInForgeButton slug={slug} />
           <p className="privacy-note">Manual download is also available for signed-in users.</p>
         </div>
         <div className="sidebar-card">

@@ -23,6 +23,12 @@ data:
   default.conf: |
     server {
       listen {{ .Values.port }};
+    {{- if .Values.redirectTo }}
+      # Desktop retired: the download site + updater/releases (DO Spaces) are gone.
+      # This front door now 301s the short apex host straight to web Forge. Old
+      # Tauri installs hitting /updates|/releases just get redirected (no update).
+      location / { return 301 {{ .Values.redirectTo }}; }
+    {{- else }}
       resolver {{ .Values.resolvers }} valid=300s ipv6=off;
       set $cdn "{{ .Values.cdnHost }}";
       location /releases/ { return 302 https://{{ .Values.cdnHost }}$request_uri; }
@@ -32,4 +38,5 @@ data:
         rewrite ^(.*)/$ $1/index.html break;
         proxy_pass https://$cdn;
       }
+    {{- end }}
     }
