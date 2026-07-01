@@ -90,7 +90,6 @@ export function buildSessionFromTokens(
   const expiresIn = tokens.expiresIn();
   return {
     user,
-    accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
     expiresAt: typeof expiresIn === "number" ? Date.now() + expiresIn * 1000 : undefined
