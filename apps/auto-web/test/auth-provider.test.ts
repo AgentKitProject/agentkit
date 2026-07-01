@@ -74,21 +74,26 @@ describe("mapOidcClaims → CurrentUser", () => {
   });
 });
 
-describe("OIDC disables WorkOS-bound seams", () => {
-  it("requireForgeUser returns NOT_SUPPORTED (501) under oidc", async () => {
+describe("OIDC routes WorkOS-bound seams to the OIDC verifier", () => {
+  it("requireForgeUser enters the OIDC path (not 501) under oidc", async () => {
+    // Full OIDC verification happy/failure paths are covered in
+    // forge-auth.test.ts (mocked jose + fetch). Here we only assert the branch:
+    // with OIDC selected but OIDC_ISSUER unconfigured it surfaces
+    // SERVER_CONFIG_ERROR (500) — no longer a 501 short-circuit — and never
+    // touches the network.
     process.env.AUTH_PROVIDER = "oidc";
+    delete process.env.OIDC_ISSUER;
     const { requireForgeUser, ForgeAuthError } = await import("@/lib/forge-auth");
     const request = new Request("https://self-host.example/api/forge/auto/runs", {
       headers: { authorization: "Bearer whatever" }
     });
-    await expect(requireForgeUser(request)).rejects.toMatchObject({
-      name: "ForgeAuthError",
-      code: "NOT_SUPPORTED",
-      status: 501
-    });
-    // Sanity: the thrown error is the typed ForgeAuthError.
     const err = await requireForgeUser(request).catch((e) => e);
     expect(err).toBeInstanceOf(ForgeAuthError);
+    expect(err).toMatchObject({
+      name: "ForgeAuthError",
+      code: "SERVER_CONFIG_ERROR",
+      status: 500
+    });
   });
 
   it("getWorkosAccessToken no-ops to null under oidc (no WorkOS call)", async () => {

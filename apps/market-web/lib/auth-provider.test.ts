@@ -110,18 +110,23 @@ describe("resolveOidcRole → admin gating (self-hosted)", () => {
   });
 });
 
-describe("OIDC disables the WorkOS-bound device-auth seam", () => {
-  it("requireForgeUser returns NOT_SUPPORTED (501) under AUTH_PROVIDER=oidc", async () => {
+describe("OIDC routes the device-auth seam to the OIDC verifier", () => {
+  it("requireForgeUser enters the OIDC path (not 501) under AUTH_PROVIDER=oidc", async () => {
+    // The full OIDC verification happy/failure paths are covered in
+    // forge-auth.test.ts against a local JWKS server. Here we only assert the
+    // branch: with OIDC selected but OIDC_ISSUER unconfigured, it surfaces a
+    // SERVER_CONFIG_ERROR (500) — proving it no longer short-circuits to 501.
     process.env.AUTH_PROVIDER = "oidc";
+    delete process.env.OIDC_ISSUER;
     const { requireForgeUser, ForgeAuthError } = await import("./forge-auth.ts");
     const request = new Request("https://self-host.example/api/forge/x", {
       headers: { authorization: "Bearer whatever" }
     });
     const error = await requireForgeUser(request).catch((e) => e);
     assert.ok(error instanceof ForgeAuthError);
-    assert.equal(error.code, "NOT_SUPPORTED");
-    assert.equal(error.status, 501);
-    assert.equal(error.failureStage, "provider_not_supported");
+    assert.equal(error.code, "SERVER_CONFIG_ERROR");
+    assert.equal(error.status, 500);
+    assert.notEqual(error.status, 501);
   });
 
   it("requireForgeUser still verifies the bearer token under workos (default)", async () => {
