@@ -33,6 +33,37 @@ export interface AgentKitPromptManifest {
   description: string;
 }
 
+export interface AgentKitAutomationScheduleTrigger {
+  type: "schedule";
+  config?: {
+    cron?: string;
+    timezone?: string;
+  };
+}
+
+export interface AgentKitAutomationEventTrigger {
+  type: "event";
+  config?: {
+    eventName?: string;
+  };
+}
+
+export type AgentKitAutomationTrigger =
+  | AgentKitAutomationScheduleTrigger
+  | AgentKitAutomationEventTrigger;
+
+/**
+ * A suggested automation declared by the kit author. Suggestions only:
+ * entries never carry approvals, budgets, destinations, or connections —
+ * the human completes those in the Auto wizard.
+ */
+export interface AgentKitAutomation {
+  name: string;
+  description?: string;
+  trigger: AgentKitAutomationTrigger;
+  promptTemplate: string;
+}
+
 export interface AgentKitManifest {
   schemaVersion: string;
   kind: string;
@@ -59,6 +90,7 @@ export interface AgentKitManifest {
   };
   skills: AgentKitSkillManifest[];
   prompts?: AgentKitPromptManifest[];
+  automations?: AgentKitAutomation[];
   scripts?: Array<string | { id?: string; path: string; description?: string }>;
   [key: string]: unknown;
 }

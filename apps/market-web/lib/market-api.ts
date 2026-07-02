@@ -1,3 +1,5 @@
+import { normalizeKitAutomations, type KitAutomationSummary } from "./kit-automations.ts";
+
 export type TrustBadge = "Validated" | "Reviewed" | "Verified Publisher" | "Featured" | string;
 
 export type ValidationStatus = "Validated" | "Pending" | "Failed" | "Unknown" | string;
@@ -79,6 +81,13 @@ export type MarketKitDetail = MarketKitListItem & {
   packageMetadata?: KitPackageMetadata;
   validationSummary?: PublicValidationSummary;
   versionMetadata?: Record<string, string | number | boolean | null>;
+  /**
+   * Suggested automations declared in the kit manifest (`automations:` block,
+   * see @agentkitforge/core SPEC.md). Optional: present only when the Market
+   * backend surfaces the summaries in the public kit-detail payload; the UI
+   * degrades gracefully (hides the card) when absent.
+   */
+  automations?: KitAutomationSummary[];
 };
 
 export type PublicValidationSummary = {
@@ -299,6 +308,9 @@ function logDevelopmentCatalogCount(count: number) {
 export function normalizeKitDetail(raw: JsonObject): MarketKitDetail {
   const detailSource = detailSourceFrom(raw);
   const item = normalizeKitListItem(detailSource);
+  const automations = normalizeKitAutomations(
+    detailSource.automations ?? detailSource.automationSummaries
+  );
 
   return {
     ...item,
@@ -307,7 +319,8 @@ export function normalizeKitDetail(raw: JsonObject): MarketKitDetail {
     packageMetadata: normalizePackageMetadata(detailSource),
     validationSummary: normalizePublicValidationSummary(detailSource.validationSummary ?? detailSource.validation),
     versionMetadata: normalizeVersionMetadata(detailSource.versionMetadata ?? detailSource.currentVersionMetadata),
-    licenseText: asOptionalString(detailSource.licenseText)
+    licenseText: asOptionalString(detailSource.licenseText),
+    automations: automations.length > 0 ? automations : undefined
   };
 }
 

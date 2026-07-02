@@ -1,4 +1,11 @@
-export { agentKitManifestSchema, agentKitSkillSchema } from "./schema/agentkit.js";
+export {
+  agentKitAutomationSchema,
+  agentKitAutomationTriggerSchema,
+  agentKitAutomationsSchema,
+  agentKitManifestSchema,
+  agentKitSkillSchema
+} from "./schema/agentkit.js";
+export { getKitAutomations } from "./app/automations.js";
 export { createAgentKitDraftRequest } from "./builder/draftRequest.js";
 export { createAgentKitDraftRevisionRequest } from "./builder/revisionRequest.js";
 export {
@@ -138,6 +145,10 @@ export type {
   PreparedPromptRenderResult
 } from "./prompts/prompts.js";
 export type {
+  AgentKitAutomation,
+  AgentKitAutomationEventTrigger,
+  AgentKitAutomationScheduleTrigger,
+  AgentKitAutomationTrigger,
   AgentKitManifest,
   AgentKitSkillManifest,
   AgentKitValidationProfile,

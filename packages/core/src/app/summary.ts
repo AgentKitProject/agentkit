@@ -3,6 +3,7 @@ import path from "node:path";
 import { readAgentKit } from "../package/reader.js";
 import { listPreparedPrompts } from "../prompts/prompts.js";
 import { validateAgentKit } from "../validation/validator.js";
+import { getKitAutomations } from "./automations.js";
 
 export interface AgentKitSummary {
   id: string;
@@ -28,11 +29,13 @@ export async function getAgentKitSummary(kitPath: string): Promise<AgentKitSumma
   }
 
   const prompts = await listPreparedPrompts(kit.rootPath);
+  const automations = getKitAutomations(kit.manifest);
   const validation = await validateAgentKit(kit.rootPath, "local-valid");
   const directories = ["policies", "templates", "examples", "workflows", "references", "evals", "scripts"];
   const counts: Record<string, number> = {
     skills: kit.manifest.skills.length,
-    preparedPrompts: prompts.length
+    preparedPrompts: prompts.length,
+    automations: automations.length
   };
   const lists: Record<string, unknown[]> = {
     skills: kit.manifest.skills.map((skill) => ({
@@ -46,6 +49,12 @@ export async function getAgentKitSummary(kitPath: string): Promise<AgentKitSumma
       description: prompt.description,
       inputCount: prompt.inputs.length,
       documentLikeOutput: prompt.documentLikeOutput === true
+    })),
+    automations: automations.map((automation) => ({
+      name: automation.name,
+      description: automation.description,
+      trigger: automation.trigger,
+      promptTemplate: automation.promptTemplate
     }))
   };
 

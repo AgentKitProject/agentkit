@@ -128,6 +128,57 @@ Supported input types:
 - `number`
 - `boolean`
 
+## Suggested Automations
+
+Kit authors may declare suggested automations in the manifest. They describe
+recurring or event-driven runs of the kit that a consumer can enable in
+AgentKitAuto. They are suggestions only: Core never schedules or executes
+anything, and enabling an automation always goes through a human-completed
+wizard.
+
+The `automations:` manifest block is optional and additive — kits that carry
+it keep `schemaVersion: "0.1"` (the same policy as the optional `prompts` and
+`scripts` blocks). When present it is validated under every profile; a
+malformed block fails validation (including `publishable`), while absence is
+always fine.
+
+```yaml
+automations:
+  - name: Daily financial summary
+    description: Summarize yesterday's transactions every morning.
+    trigger:
+      type: schedule
+      config:
+        cron: "0 9 * * *"
+        timezone: America/New_York
+    promptTemplate: |
+      Use the financial-review skill to summarize the last 24 hours of
+      transactions and highlight anomalies.
+  - name: New invoice triage
+    trigger:
+      type: event
+      config:
+        eventName: invoice.received
+    promptTemplate: Triage the incoming invoice and draft a review note.
+```
+
+Constraints:
+
+- At most 10 entries per kit.
+- `name` — required, 1–80 characters.
+- `description` — optional, at most 300 characters.
+- `trigger.type` — required, `schedule` or `event`.
+- `trigger.config` — optional. For `schedule`: suggested `cron` and
+  `timezone` only. For `event`: a suggested `eventName` only.
+- `promptTemplate` — required, 1–4000 characters. This is the instruction
+  source the consumer reviews before enabling the automation.
+
+Safety rule: automation suggestions may NEVER carry approvals, budgets,
+destinations, or connections — the human completes those in the Auto wizard.
+Validation enforces this structurally: automation entries and trigger configs
+are strict schemas, so any unknown key (for example `approvalId`, `budget`,
+`destinations`, or `connectionId`) is rejected.
+
 ## Validation Profiles
 
 `local-valid` requires:

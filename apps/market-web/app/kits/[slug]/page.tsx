@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Badge, TrustBadge } from "@/components/Badge";
 import { CatalogUnavailable } from "@/components/CatalogStatus";
 import { ChecksumCopy } from "@/components/ChecksumCopy";
+import { KitAutomationsCard } from "@/components/KitAutomationsCard";
 import { KitDownloadButton } from "@/components/KitDownloadButton";
 import { CommercialAcquire } from "@/components/CommercialAcquire";
 import { LicenseDisclosure } from "@/components/LicenseDisclosure";
@@ -158,6 +159,8 @@ export default async function KitDetailPage({
             <p>No public skill summaries are available yet.</p>
           )}
         </div>
+
+        <KitAutomationsCard automations={kit.automations} slug={slug} autoBaseUrl={getAutoWebUrl()} />
 
         {kit.versionMetadata ? (
           <div className="detail-panel">

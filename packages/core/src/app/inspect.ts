@@ -1,7 +1,9 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { readAgentKit } from "../package/reader.js";
 import { validateAgentKit } from "../validation/validator.js";
-import type { ValidationReport } from "../types.js";
+import type { AgentKitAutomation, ValidationReport } from "../types.js";
+import { getKitAutomations } from "./automations.js";
 
 export interface AgentKitCandidateInspection {
   path: string;
@@ -12,6 +14,8 @@ export interface AgentKitCandidateInspection {
   missingRequiredFolders: string[];
   foundFiles: string[];
   foundSkills: string[];
+  /** Suggested automations declared in the candidate's manifest (empty when absent or unreadable). */
+  automations: AgentKitAutomation[];
   recommendedFixes: string[];
   validationReport?: ValidationReport;
   friendlySummary: string;
@@ -29,6 +33,7 @@ export async function inspectAgentKitCandidate(inputPath: string): Promise<Agent
       missingRequiredFolders: ["skills"],
       foundFiles: [],
       foundSkills: [],
+      automations: [],
       recommendedFixes: ["Select an existing Agent Kit folder."],
       friendlySummary: `This folder does not exist: ${rootPath}`
     };
@@ -45,6 +50,7 @@ export async function inspectAgentKitCandidate(inputPath: string): Promise<Agent
       missingRequiredFolders: ["skills"],
       foundFiles: [],
       foundSkills: [],
+      automations: [],
       recommendedFixes: ["Select a folder that contains the Agent Kit files."],
       friendlySummary: "This path exists but is not a directory."
     };
@@ -62,6 +68,7 @@ export async function inspectAgentKitCandidate(inputPath: string): Promise<Agent
 
   const looksLikeAgentKit = missingRequiredFiles.length === 0 && missingRequiredFolders.length === 0;
   const validationReport = looksLikeAgentKit ? await validateAgentKit(rootPath, "local-valid") : undefined;
+  const automations = looksLikeAgentKit ? await readManifestAutomations(rootPath) : [];
   const missing = [...missingRequiredFiles, ...missingRequiredFolders];
 
   return {
@@ -73,6 +80,7 @@ export async function inspectAgentKitCandidate(inputPath: string): Promise<Agent
     missingRequiredFolders,
     foundFiles,
     foundSkills,
+    automations,
     recommendedFixes: looksLikeAgentKit
       ? []
       : ["Place the Agent Kit files at the repository root or select a subfolder that contains the kit."],
@@ -81,6 +89,15 @@ export async function inspectAgentKitCandidate(inputPath: string): Promise<Agent
       ? "This folder looks like an Agent Kit."
       : `This repository does not look like an Agent Kit. It is missing ${joinFriendly(missing)}. Place the Agent Kit files at the repository root or select a subfolder that contains the kit.`
   };
+}
+
+async function readManifestAutomations(rootPath: string): Promise<AgentKitAutomation[]> {
+  try {
+    const kit = await readAgentKit(rootPath);
+    return kit.manifest ? getKitAutomations(kit.manifest) : [];
+  } catch {
+    return [];
+  }
 }
 
 async function findRootFiles(rootPath: string): Promise<string[]> {
