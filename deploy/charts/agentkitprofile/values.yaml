@@ -86,6 +86,9 @@ web:
       redirectUri: ""
       # Allow non-HTTPS issuers (OIDC_ALLOW_INSECURE=true) — dev/test only.
       allowInsecure: false
+      # IdP group whose members get profile ADMIN (ADMIN_OIDC_GROUP), e.g. the
+      # bundled Keycloak realm's "admins". Works alongside adminEmails.
+      adminGroup: ""
   # Secret runtime config. Either set these inline (use a --values secrets.yaml
   # NOT committed to git), source them from an existing Secret via existingSecret,
   # or leave generate-able ones empty and let the chart generate them.

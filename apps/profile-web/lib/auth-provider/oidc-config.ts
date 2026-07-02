@@ -79,7 +79,26 @@ export function mapOidcClaims(claims: Record<string, unknown>): AgentKitUser {
     firstName = parts[0] ?? null;
     lastName = parts.length > 1 ? parts.slice(1).join(" ") : lastName;
   }
-  return { id: sub, email, firstName, lastName };
+  return { id: sub, email, firstName, lastName, groups: claimGroups(claims) };
+}
+
+/** Extract group/role membership from common OIDC claim shapes (mirrors the
+ *  market-web helper) so admin gating can honor an IdP admins group. */
+export function claimGroups(claims: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of ["groups", "roles"]) {
+    const value = claims[key];
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === "string" && entry.trim()) {
+          out.push(entry.trim());
+        }
+      }
+    } else if (typeof value === "string" && value.trim()) {
+      out.push(value.trim());
+    }
+  }
+  return out;
 }
 
 /** Build the OidcSessionData from a token-endpoint response + claims. */

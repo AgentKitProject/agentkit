@@ -69,6 +69,11 @@ data:
   {{- if .Values.web.config.oidc.allowInsecure }}
   OIDC_ALLOW_INSECURE: "true"
   {{- end }}
+  {{- with .Values.web.config.oidc.adminGroup }}
+  # IdP group whose members get profile admin (org creation on self-host, …) —
+  # honored in ADDITION to the adminEmails allowlist. Mirrors market-web.
+  ADMIN_OIDC_GROUP: {{ . | quote }}
+  {{- end }}
   {{- else }}
   # ---- WorkOS (hosted default) ----
   {{- if .Values.web.config.workosClientId }}

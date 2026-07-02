@@ -8,7 +8,19 @@ export function getUserRole(user?: AgentKitUser | null): UserRole {
   }
 
   const allowlistRole = user.email ? getAllowlistedRole(user.email) : null;
-  return allowlistRole ?? "user";
+  if (allowlistRole) {
+    return allowlistRole;
+  }
+
+  // OIDC group claim: a self-host operator can grant admin by putting users in
+  // an IdP group (ADMIN_OIDC_GROUP, e.g. Keycloak's `admins`) instead of — or
+  // in addition to — the email allowlist. Mirrors market-web's admin gating.
+  const adminGroup = process.env.ADMIN_OIDC_GROUP?.trim();
+  if (adminGroup && (user.groups ?? []).includes(adminGroup)) {
+    return "admin";
+  }
+
+  return "user";
 }
 
 export function isAdminEmail(email?: string | null) {

@@ -24,6 +24,10 @@ export type AgentKitUser = {
   email: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  /** Group/role memberships from the IdP (OIDC `groups`/`roles` claims). Lets
+   *  self-host admin gating honor an IdP admins group (ADMIN_OIDC_GROUP) in
+   *  addition to the email allowlist. Absent on the WorkOS path. */
+  groups?: string[] | null;
 };
 
 export class UnauthorizedError extends Error {
