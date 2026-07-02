@@ -25,6 +25,7 @@
 import { autoErrorCodeSchema, autoInternalServiceKeyHeader } from "@agentkitforge/contracts";
 import { timingSafeEqual } from "node:crypto";
 import { runScheduleSweep } from "@/server/core/auto";
+import { runTriggerScheduleSweep } from "@/server/core/auto-events";
 
 export const dynamic = "force-dynamic";
 
@@ -71,5 +72,22 @@ export async function POST(request: Request) {
     `[auto] schedule sweep processed=${summary.processed} dispatched=${summary.dispatched} skipped=${summary.skipped} errors=${summary.errors.length}`
   );
 
-  return Response.json(summary, { status: 200 });
+  // ---- ADDITIVE: schedule-TYPE unified triggers (event-driven expansion) ---
+  // Runs AFTER the legacy schedule sweep with the SAME isolation discipline: a
+  // trigger-sweep failure never fails the legacy sweep (or the endpoint).
+  let triggerSummary: Awaited<ReturnType<typeof runTriggerScheduleSweep>> | { error: string };
+  try {
+    triggerSummary = await runTriggerScheduleSweep();
+    // eslint-disable-next-line no-console
+    console.info(
+      `[auto] trigger sweep processed=${triggerSummary.processed} dispatched=${triggerSummary.dispatched} skipped=${triggerSummary.skipped} errors=${triggerSummary.errors.length}`
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[auto] trigger sweep failed: ${message}`);
+    triggerSummary = { error: message };
+  }
+
+  return Response.json({ ...summary, triggerSweep: triggerSummary }, { status: 200 });
 }

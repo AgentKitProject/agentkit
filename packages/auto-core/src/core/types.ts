@@ -386,6 +386,12 @@ export interface AutoRun {
   /** The AutoWebhook that produced this run (set iff trigger === "webhook"). */
   webhookId?: string;
   /**
+   * The unified Trigger (event-driven expansion) that produced this run.
+   * Supersedes scheduleId/webhookId for trigger-created runs (contracts
+   * autoRunSchema already carries it). Absent for legacy/on-demand runs.
+   */
+  triggerId?: string;
+  /**
    * Manifest of per-run input files staged out-of-band (Phase C). Hydrated into
    * the workspace `inputs/` subdir by the worker before execution. Distinct from
    * `input.files` (inline content seeded at workspace root).
@@ -419,6 +425,8 @@ export interface CreateRunInput {
   scheduleId?: string;
   /** The AutoWebhook that produced this run (only with trigger "webhook"). */
   webhookId?: string;
+  /** The unified Trigger that produced this run (event-driven expansion). */
+  triggerId?: string;
   /** Out-of-band staged input-file manifest (Phase C). Hydrated by the worker. */
   inputFiles?: AutoRunInputFileRef[];
   /** Opt-in result delivery (Phase D). Absent = no delivery. */
@@ -699,15 +707,30 @@ export interface CreateEventSourceInput {
   tokenHash: string;
   /** True when a provider HMAC signing secret was stored (SecretStore). */
   hasSigningSecret: boolean;
+  /**
+   * INTERNAL SecretStore handle of the provider signing secret (S2: never on
+   * the EventSource contract shape; read back via getSigningSecretRef only).
+   */
+  signingSecretRef?: string | null;
   /** Defaults to true (enabled) when omitted. */
   enabled?: boolean;
   createdAt: string;
 }
 
-/** Fields an updateEventSource call may change. */
+/** Fields an updateEventSource call may change. `tokenHash` supports ingest
+ *  bearer-token ROTATION: the web layer generates a fresh plaintext token,
+ *  shows it once, and persists only the new sha256 hex hash (S2). */
 export interface UpdateEventSourceInput {
   name?: string;
   enabled?: boolean;
+  /** sha256 hex of the ROTATED ingest bearer token (never plaintext). */
+  tokenHash?: string;
+  /**
+   * Set/replace (string) or clear (null) the INTERNAL signing-secret handle.
+   * Adapters derive `hasSigningSecret` from it (ref present → true). The web
+   * layer owns SecretStore lifecycle (delete the superseded ref).
+   */
+  signingSecretRef?: string | null;
 }
 
 /** One received event presented for ring-buffer append (id assigned by the

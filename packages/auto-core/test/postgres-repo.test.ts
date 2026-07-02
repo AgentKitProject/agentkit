@@ -13,6 +13,11 @@ import {
   PostgresAutoApprovalRepository,
   PostgresAutoScheduleRepository,
   PostgresAutoWebhookRepository,
+  PostgresEventSourceRepository,
+  PostgresFireLogRepository,
+  PostgresReceivedEventRepository,
+  PostgresSecretStore,
+  PostgresTriggerRepository,
   type PgPool,
 } from "../src/adapters/selfhost/postgres.js";
 import { runRepositoryContract, type ContractRepos } from "./repository-contract.js";
@@ -36,6 +41,13 @@ runRepositoryContract("postgres (pg-mem)", async () => {
       approvals: new PostgresAutoApprovalRepository(pool),
       schedules: new PostgresAutoScheduleRepository(pool),
       webhooks: new PostgresAutoWebhookRepository(pool),
+      events: {
+        triggers: new PostgresTriggerRepository(pool),
+        eventSources: new PostgresEventSourceRepository(pool),
+        receivedEvents: new PostgresReceivedEventRepository(pool),
+        fireLogs: new PostgresFireLogRepository(pool),
+        secrets: new PostgresSecretStore(pool),
+      },
       reset,
     };
   };
@@ -54,6 +66,9 @@ runRepositoryContract("postgres (pg-mem)", async () => {
     },
     get webhooks() {
       return repos.webhooks;
+    },
+    get events() {
+      return repos.events;
     },
     reset,
   };

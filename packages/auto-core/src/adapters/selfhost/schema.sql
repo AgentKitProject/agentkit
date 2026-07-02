@@ -131,3 +131,89 @@ CREATE TABLE IF NOT EXISTS auto_webhooks (
 );
 
 CREATE INDEX IF NOT EXISTS auto_webhooks_user_idx ON auto_webhooks (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Event-driven expansion: unified triggers + event sources + ring buffers
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auto_triggers (
+  id                TEXT        NOT NULL PRIMARY KEY,
+  user_id           TEXT        NOT NULL,
+  name              TEXT        NOT NULL,
+  type              TEXT        NOT NULL,
+  config            JSONB       NOT NULL,
+  kit_ref           JSONB       NOT NULL,
+  approval_id       TEXT        NOT NULL,
+  model             TEXT,
+  budget_cents      INTEGER,
+  filters           JSONB,
+  mapping           JSONB       NOT NULL,
+  destinations      JSONB,
+  rate_limit        JSONB       NOT NULL,
+  enabled           BOOLEAN     NOT NULL DEFAULT TRUE,
+  poll_cursor       TEXT,
+  circuit_failures  INTEGER     NOT NULL DEFAULT 0,
+  circuit_paused_at TEXT,
+  created_at        TEXT        NOT NULL,
+  updated_at        TEXT        NOT NULL,
+  last_fired_at     TEXT,
+  last_run_id       TEXT,
+  last_error        TEXT,
+  fire_count        INTEGER     NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS auto_triggers_user_idx ON auto_triggers (user_id);
+CREATE INDEX IF NOT EXISTS auto_triggers_due_idx ON auto_triggers (type, enabled, poll_cursor);
+
+CREATE TABLE IF NOT EXISTS auto_event_sources (
+  id                  TEXT      NOT NULL PRIMARY KEY,
+  user_id             TEXT      NOT NULL,
+  name                TEXT      NOT NULL,
+  kind                TEXT      NOT NULL,
+  provider            TEXT,
+  token_hash          TEXT      NOT NULL,
+  has_signing_secret  BOOLEAN   NOT NULL DEFAULT FALSE,
+  enabled             BOOLEAN   NOT NULL DEFAULT TRUE,
+  created_at          TEXT      NOT NULL,
+  last_event_at       TEXT,
+  event_count         INTEGER   NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS auto_event_sources_user_idx ON auto_event_sources (user_id);
+CREATE INDEX IF NOT EXISTS auto_event_sources_token_idx ON auto_event_sources (token_hash);
+
+CREATE TABLE IF NOT EXISTS auto_received_events (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  seq         BIGSERIAL,
+  source_id   TEXT        NOT NULL,
+  name        TEXT        NOT NULL,
+  received_at  TEXT       NOT NULL,
+  payload_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_received_events_source_idx ON auto_received_events (source_id, seq);
+
+CREATE TABLE IF NOT EXISTS auto_fire_logs (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  seq         BIGSERIAL,
+  trigger_id  TEXT        NOT NULL,
+  fired_at    TEXT        NOT NULL,
+  outcome     TEXT        NOT NULL,
+  run_id      TEXT,
+  detail      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_fire_logs_trigger_idx ON auto_fire_logs (trigger_id, seq);
+
+-- Idempotent migration: unified-Trigger run provenance (contracts autoRunSchema.triggerId).
+ALTER TABLE auto_runs ADD COLUMN IF NOT EXISTS trigger_id TEXT;
+
+CREATE TABLE IF NOT EXISTS auto_secrets (
+  secret_ref  TEXT        NOT NULL PRIMARY KEY,
+  ciphertext  TEXT        NOT NULL,
+  iv          TEXT        NOT NULL,
+  tag         TEXT        NOT NULL,
+  created_at  TEXT        NOT NULL
+);
+
+ALTER TABLE auto_event_sources ADD COLUMN IF NOT EXISTS signing_secret_ref TEXT;
+

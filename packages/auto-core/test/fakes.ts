@@ -354,6 +354,8 @@ export class InMemoryTriggerRepo implements TriggerRepository {
 
 export class InMemoryEventSourceRepo implements EventSourceRepository {
   sources = new Map<string, EventSource>();
+  /** Internal signing-secret refs (never on the EventSource shape — S2). */
+  signingRefs = new Map<string, string>();
   private seq = 0;
 
   seed(source: EventSource): EventSource {
@@ -369,12 +371,13 @@ export class InMemoryEventSourceRepo implements EventSourceRepository {
       kind: input.kind,
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       tokenHash: input.tokenHash,
-      hasSigningSecret: input.hasSigningSecret,
+      hasSigningSecret: input.signingSecretRef ? true : input.hasSigningSecret,
       enabled: input.enabled ?? true,
       createdAt: input.createdAt,
       eventCount: 0,
     };
     this.sources.set(source.id, source);
+    if (input.signingSecretRef) this.signingRefs.set(source.id, input.signingSecretRef);
     return structuredClone(source);
   }
 
@@ -402,7 +405,17 @@ export class InMemoryEventSourceRepo implements EventSourceRepository {
     if (!s) return undefined;
     if (patch.name !== undefined) s.name = patch.name;
     if (patch.enabled !== undefined) s.enabled = patch.enabled;
+    if (patch.tokenHash !== undefined) s.tokenHash = patch.tokenHash;
+    if (patch.signingSecretRef !== undefined) {
+      if (patch.signingSecretRef === null) this.signingRefs.delete(sourceId);
+      else this.signingRefs.set(sourceId, patch.signingSecretRef);
+      s.hasSigningSecret = patch.signingSecretRef !== null;
+    }
     return structuredClone(s);
+  }
+
+  async getSigningSecretRef(sourceId: string): Promise<string | undefined> {
+    return this.signingRefs.get(sourceId);
   }
 
   async recordEvent(sourceId: string, receivedAt: string): Promise<void> {

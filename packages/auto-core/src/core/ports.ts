@@ -357,6 +357,14 @@ export interface EventSourceRepository {
   /** Ingest auth: the source whose tokenHash matches, regardless of enabled
    *  state (the route enforces the enabled check for a typed error). */
   findByTokenHash(tokenHash: string): Promise<EventSource | undefined>;
+  /**
+   * The SecretStore handle of the source's provider HMAC signing secret, or
+   * undefined when none is configured. INTERNAL-ONLY: the ref never appears on
+   * the EventSource contract shape (S2 — responses carry only
+   * `hasSigningSecret`); the ingest route resolves it here and reveals the
+   * plaintext through the SecretStore for signature verification.
+   */
+  getSigningSecretRef(sourceId: string): Promise<string | undefined>;
   /** Edits name/enabled; returns the updated row or undefined. */
   updateEventSource(
     sourceId: string,
@@ -483,6 +491,23 @@ export interface FireLogRepository {
 // Composed dependency bundle
 // ---------------------------------------------------------------------------
 
+/**
+ * The event-driven-expansion storage bundle (unified triggers + event sources +
+ * the inspector ring buffer + fire logs). Grouped so AutoStorageDeps stays
+ * BACKWARD-COMPATIBLE: existing fakes/stubs that build the legacy bundle keep
+ * compiling (`events` is optional there), while both persistent adapters always
+ * populate it.
+ */
+export interface EventStorageDeps {
+  triggers: TriggerRepository;
+  eventSources: EventSourceRepository;
+  receivedEvents: ReceivedEventRepository;
+  fireLogs: FireLogRepository;
+  /** Encrypted-at-rest provider signing secrets (S2). Throws the typed
+   *  SecretStoreUnconfiguredError until AUTO_SECRET_ENCRYPTION_KEY is set. */
+  secrets: SecretStore;
+}
+
 /** The storage-layer dependencies, produced by makeAutoDeps({ backend }). */
 export interface AutoStorageDeps {
   runs: AutoRunRepository;
@@ -494,4 +519,10 @@ export interface AutoStorageDeps {
   webhooks: AutoWebhookRepository;
   /** Phase C: staged per-run input files. */
   inputs: InputStore;
+  /**
+   * Event-driven expansion stores (triggers/event-sources/received-events/
+   * fire-logs). OPTIONAL for backward compatibility with existing fakes and
+   * stubs; the pg + dynamo adapters ALWAYS populate it.
+   */
+  events?: EventStorageDeps;
 }

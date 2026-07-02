@@ -27,6 +27,11 @@ import {
   DynamoAutoApprovalRepository,
   DynamoAutoScheduleRepository,
   DynamoAutoWebhookRepository,
+  DynamoEventSourceRepository,
+  DynamoFireLogRepository,
+  DynamoReceivedEventRepository,
+  DynamoSecretStore,
+  DynamoTriggerRepository,
 } from "../src/adapters/aws/index.js";
 import { runRepositoryContract } from "./repository-contract.js";
 
@@ -41,6 +46,11 @@ if (!endpoint) {
   const APPROVALS = "AutoApprovals-test";
   const SCHEDULES = "AutoSchedules-test";
   const WEBHOOKS = "AutoWebhooks-test";
+  const TRIGGERS = "AutoTriggers-test";
+  const EVENT_SOURCES = "AutoEventSources-test";
+  const RECEIVED_EVENTS = "AutoReceivedEvents-test";
+  const FIRE_LOGS = "AutoFireLogs-test";
+  const SECRETS = "AutoSecrets-test";
 
   const raw = new DynamoDBClient({
     endpoint,
@@ -133,6 +143,105 @@ if (!endpoint) {
     ],
   };
 
+  const triggersTable: CreateTableCommandInput = {
+    TableName: TRIGGERS,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [
+      { AttributeName: "id", AttributeType: "S" },
+      { AttributeName: "gsiUserId", AttributeType: "S" },
+      { AttributeName: "gsiDueType", AttributeType: "S" },
+      { AttributeName: "gsiDueCursor", AttributeType: "S" },
+    ],
+    KeySchema: [{ AttributeName: "id", KeyType: "HASH" }],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "userId-index",
+        KeySchema: [{ AttributeName: "gsiUserId", KeyType: "HASH" }],
+        Projection: { ProjectionType: "ALL" },
+      },
+      {
+        IndexName: "dueIndex",
+        KeySchema: [
+          { AttributeName: "gsiDueType", KeyType: "HASH" },
+          { AttributeName: "gsiDueCursor", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+    ],
+  };
+
+  const eventSourcesTable: CreateTableCommandInput = {
+    TableName: EVENT_SOURCES,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [
+      { AttributeName: "id", AttributeType: "S" },
+      { AttributeName: "gsiUserId", AttributeType: "S" },
+      { AttributeName: "gsiTokenHash", AttributeType: "S" },
+    ],
+    KeySchema: [{ AttributeName: "id", KeyType: "HASH" }],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "userId-index",
+        KeySchema: [{ AttributeName: "gsiUserId", KeyType: "HASH" }],
+        Projection: { ProjectionType: "ALL" },
+      },
+      {
+        IndexName: "tokenHash-index",
+        KeySchema: [{ AttributeName: "gsiTokenHash", KeyType: "HASH" }],
+        Projection: { ProjectionType: "ALL" },
+      },
+    ],
+  };
+
+  const receivedEventsTable: CreateTableCommandInput = {
+    TableName: RECEIVED_EVENTS,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [
+      { AttributeName: "id", AttributeType: "S" },
+      { AttributeName: "gsiSourceId", AttributeType: "S" },
+      { AttributeName: "receivedAt", AttributeType: "S" },
+    ],
+    KeySchema: [{ AttributeName: "id", KeyType: "HASH" }],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "sourceId-index",
+        KeySchema: [
+          { AttributeName: "gsiSourceId", KeyType: "HASH" },
+          { AttributeName: "receivedAt", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+    ],
+  };
+
+  const fireLogsTable: CreateTableCommandInput = {
+    TableName: FIRE_LOGS,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [
+      { AttributeName: "id", AttributeType: "S" },
+      { AttributeName: "gsiTriggerId", AttributeType: "S" },
+      { AttributeName: "at", AttributeType: "S" },
+    ],
+    KeySchema: [{ AttributeName: "id", KeyType: "HASH" }],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "triggerId-index",
+        KeySchema: [
+          { AttributeName: "gsiTriggerId", KeyType: "HASH" },
+          { AttributeName: "at", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+    ],
+  };
+
+  const secretsTable: CreateTableCommandInput = {
+    TableName: SECRETS,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [{ AttributeName: "secretRef", AttributeType: "S" }],
+    KeySchema: [{ AttributeName: "secretRef", KeyType: "HASH" }],
+  };
+
   const drop = async (name: string): Promise<void> => {
     const { TableNames } = await raw.send(new ListTablesCommand({}));
     if (TableNames?.includes(name)) await raw.send(new DeleteTableCommand({ TableName: name }));
@@ -144,16 +253,33 @@ if (!endpoint) {
       await drop(APPROVALS);
       await drop(SCHEDULES);
       await drop(WEBHOOKS);
+      await drop(TRIGGERS);
+      await drop(EVENT_SOURCES);
+      await drop(RECEIVED_EVENTS);
+      await drop(FIRE_LOGS);
+      await drop(SECRETS);
       await raw.send(new CreateTableCommand(runsTable));
       await raw.send(new CreateTableCommand(approvalsTable));
       await raw.send(new CreateTableCommand(schedulesTable));
       await raw.send(new CreateTableCommand(webhooksTable));
+      await raw.send(new CreateTableCommand(triggersTable));
+      await raw.send(new CreateTableCommand(eventSourcesTable));
+      await raw.send(new CreateTableCommand(receivedEventsTable));
+      await raw.send(new CreateTableCommand(fireLogsTable));
+      await raw.send(new CreateTableCommand(secretsTable));
     };
     return {
       runs: new DynamoAutoRunRepository(db, RUNS),
       approvals: new DynamoAutoApprovalRepository(db, APPROVALS),
       schedules: new DynamoAutoScheduleRepository(db, SCHEDULES),
       webhooks: new DynamoAutoWebhookRepository(db, WEBHOOKS),
+      events: {
+        triggers: new DynamoTriggerRepository(db, TRIGGERS),
+        eventSources: new DynamoEventSourceRepository(db, EVENT_SOURCES),
+        receivedEvents: new DynamoReceivedEventRepository(db, RECEIVED_EVENTS),
+        fireLogs: new DynamoFireLogRepository(db, FIRE_LOGS),
+        secrets: new DynamoSecretStore(db, SECRETS),
+      },
       reset,
     };
   });

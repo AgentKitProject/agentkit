@@ -20,10 +20,17 @@ import type {
   AutoScheduleRepository,
   AutoStorageDeps,
   AutoWebhookRepository,
+  EventSourceRepository,
+  FireLogRepository,
   InputStore,
+  ReceivedEventRepository,
   ScheduleRunResult,
+  SecretStore,
+  TriggerRepository,
 } from "../../core/ports.js";
 import type {
+  AppendFireLogInput,
+  AppendReceivedEventInput,
   AuditEntry,
   AutoApproval,
   AutoRun,
@@ -36,12 +43,32 @@ import type {
   CreateApprovalInput,
   CreateRunInput,
   CreateScheduleInput,
+  CreateTriggerInput,
   CreateWebhookInput,
+  CreateEventSourceInput,
+  EventSource,
   KitRef,
+  ReceivedEvent,
+  Trigger,
+  TriggerFireLog,
+  TriggerFireRecord,
+  TriggerType,
+  UpdateEventSourceInput,
   UpdateScheduleInput,
+  UpdateTriggerInput,
   WebhookFireResult,
 } from "../../core/types.js";
 import { kitRefKey, normalizeNetworkPolicy } from "../../core/types.js";
+import {
+  FIRE_LOGS_PER_TRIGGER_CAP,
+  RECEIVED_EVENTS_PER_SOURCE_CAP,
+  RECEIVED_EVENT_TTL_MS,
+} from "../../core/event-limits.js";
+import {
+  decryptSecret,
+  encryptSecret,
+  loadSecretEncryptionKey,
+} from "../../core/secret-crypto.js";
 import { FsWorkspaceStore } from "../../core/fs-workspace.js";
 import { LocalInputStore } from "../../core/input-store.js";
 
@@ -81,6 +108,7 @@ function rowToRun(row: Record<string, unknown>): AutoRun {
   };
   if (row["schedule_id"]) run.scheduleId = row["schedule_id"] as string;
   if (row["webhook_id"]) run.webhookId = row["webhook_id"] as string;
+  if (row["trigger_id"]) run.triggerId = row["trigger_id"] as string;
   if (row["input_files"]) run.inputFiles = asJson<AutoRunInputFileRef[]>(row["input_files"]);
   if (row["started_at"]) run.startedAt = row["started_at"] as string;
   if (row["finished_at"]) run.finishedAt = row["finished_at"] as string;
@@ -120,8 +148,8 @@ export class PostgresAutoRunRepository implements AutoRunRepository {
          (id, user_id, kit_ref, status, input, budget_cents, spent_cents,
           spent_inference_cents, spent_compute_cents, inference_mode,
           is_cloud_run, cloud_run_cents_per_min, model, created_at, audit_log, cancel_requested,
-          trigger, schedule_id, webhook_id, input_files)
-       VALUES ($1,$2,$3,'queued',$4,$5,0,0,0,$6,$7,$8,$9,$10,$11,FALSE,$12,$13,$14,$15)
+          trigger, schedule_id, webhook_id, input_files, trigger_id)
+       VALUES ($1,$2,$3,'queued',$4,$5,0,0,0,$6,$7,$8,$9,$10,$11,FALSE,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         id,
@@ -139,6 +167,7 @@ export class PostgresAutoRunRepository implements AutoRunRepository {
         input.scheduleId ?? null,
         input.webhookId ?? null,
         input.inputFiles ? JSON.stringify(input.inputFiles) : null,
+        input.triggerId ?? null,
       ],
     );
     return rowToRun(rows[0]!);
@@ -513,6 +542,489 @@ export class PostgresAutoWebhookRepository implements AutoWebhookRepository {
 }
 
 // ---------------------------------------------------------------------------
+// Postgres TriggerRepository (event-driven expansion)
+// ---------------------------------------------------------------------------
+
+function rowToTrigger(row: Record<string, unknown>): Trigger {
+  const trigger = {
+    id: row["id"] as string,
+    userId: row["user_id"] as string,
+    name: row["name"] as string,
+    type: row["type"] as TriggerType,
+    config: asJson<unknown>(row["config"]),
+    kitRef: asJson<KitRef>(row["kit_ref"]),
+    approvalId: row["approval_id"] as string,
+    ...(row["model"] ? { model: row["model"] as string } : {}),
+    ...(row["budget_cents"] !== null && row["budget_cents"] !== undefined
+      ? { budgetCents: Number(row["budget_cents"]) }
+      : {}),
+    ...(row["filters"] ? { filters: asJson<Trigger["filters"]>(row["filters"]) } : {}),
+    mapping: asJson<Trigger["mapping"]>(row["mapping"]),
+    ...(row["destinations"]
+      ? { destinations: asJson<Trigger["destinations"]>(row["destinations"]) }
+      : {}),
+    rateLimit: asJson<Trigger["rateLimit"]>(row["rate_limit"]),
+    enabled: row["enabled"] === true || row["enabled"] === "true",
+    cursor: (row["poll_cursor"] as string | null) ?? null,
+    circuit: {
+      consecutiveFailures: Number(row["circuit_failures"] ?? 0),
+      pausedAt: (row["circuit_paused_at"] as string | null) ?? null,
+    },
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
+    ...(row["last_fired_at"] ? { lastFiredAt: row["last_fired_at"] as string } : {}),
+    ...(row["last_run_id"] ? { lastRunId: row["last_run_id"] as string } : {}),
+    ...(row["last_error"] ? { lastError: row["last_error"] as string } : {}),
+    fireCount: Number(row["fire_count"] ?? 0),
+  } as Trigger;
+  return trigger;
+}
+
+export class PostgresTriggerRepository implements TriggerRepository {
+  constructor(private readonly pool: PgPool) {}
+
+  async createTrigger(input: CreateTriggerInput): Promise<Trigger> {
+    const id = randomUUID();
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_triggers
+         (id, user_id, name, type, config, kit_ref, approval_id, model,
+          budget_cents, filters, mapping, destinations, rate_limit, enabled,
+          poll_cursor, circuit_failures, circuit_paused_at, created_at, updated_at,
+          last_fired_at, last_run_id, last_error, fire_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULL,0,NULL,$15,$15,NULL,NULL,NULL,0)
+       RETURNING *`,
+      [
+        id,
+        input.userId,
+        input.name,
+        input.type,
+        JSON.stringify(input.config),
+        JSON.stringify(input.kitRef),
+        input.approvalId,
+        input.model ?? null,
+        input.budgetCents ?? null,
+        input.filters ? JSON.stringify(input.filters) : null,
+        JSON.stringify(input.mapping),
+        input.destinations ? JSON.stringify(input.destinations) : null,
+        JSON.stringify(input.rateLimit ?? { maxPerHour: 20 }),
+        input.enabled ?? true,
+        input.createdAt,
+      ],
+    );
+    return rowToTrigger(rows[0]!);
+  }
+
+  async getTrigger(triggerId: string): Promise<Trigger | undefined> {
+    const { rows } = await this.pool.query("SELECT * FROM auto_triggers WHERE id = $1", [
+      triggerId,
+    ]);
+    return rows[0] ? rowToTrigger(rows[0]) : undefined;
+  }
+
+  async listTriggersByUser(userId: string): Promise<Trigger[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_triggers WHERE user_id = $1 ORDER BY created_at DESC",
+      [userId],
+    );
+    return rows.map(rowToTrigger);
+  }
+
+  /**
+   * Enabled, non-circuit-paused triggers of `type` due at nowISO. For type
+   * "schedule" dueness = cursor (next-fire ISO) <= now, with a NULL cursor
+   * (never initialized) treated as due; for polled types every enabled trigger
+   * of the type is due each sweep. Indexed on (type, enabled, cursor) —
+   * consistent with auto_schedules' (enabled, next_run_at) due index.
+   */
+  async listDue(type: TriggerType, nowISO: string): Promise<Trigger[]> {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM auto_triggers
+        WHERE type = $1 AND enabled = TRUE AND circuit_paused_at IS NULL
+          AND ($1 <> 'schedule' OR poll_cursor IS NULL OR poll_cursor <= $2)
+        ORDER BY created_at ASC`,
+      [type, nowISO],
+    );
+    return rows.map(rowToTrigger);
+  }
+
+  async updateTrigger(
+    triggerId: string,
+    patch: UpdateTriggerInput,
+  ): Promise<Trigger | undefined> {
+    // `type` is immutable and `circuit` is ONLY written by the circuit ops.
+    const sets = ["updated_at = $2"];
+    const params: unknown[] = [triggerId, patch.updatedAt];
+    const push = (col: string, value: unknown): void => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}`);
+    };
+    if (patch.name !== undefined) push("name", patch.name);
+    if (patch.approvalId !== undefined) push("approval_id", patch.approvalId);
+    if (patch.model !== undefined) push("model", patch.model);
+    if (patch.budgetCents !== undefined) push("budget_cents", patch.budgetCents);
+    if (patch.filters !== undefined) push("filters", JSON.stringify(patch.filters));
+    if (patch.mapping !== undefined) push("mapping", JSON.stringify(patch.mapping));
+    if (patch.destinations !== undefined) {
+      push("destinations", JSON.stringify(patch.destinations));
+    }
+    if (patch.rateLimit !== undefined) push("rate_limit", JSON.stringify(patch.rateLimit));
+    if (patch.enabled !== undefined) push("enabled", patch.enabled);
+    if (patch.config !== undefined) push("config", JSON.stringify(patch.config));
+    const { rows } = await this.pool.query(
+      `UPDATE auto_triggers SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+      params,
+    );
+    return rows[0] ? rowToTrigger(rows[0]) : undefined;
+  }
+
+  async recordFire(triggerId: string, result: TriggerFireRecord): Promise<void> {
+    await this.pool.query(
+      `UPDATE auto_triggers
+         SET last_fired_at = $2, last_run_id = $3, last_error = $4, fire_count = fire_count + 1
+       WHERE id = $1`,
+      [triggerId, result.lastFiredAt, result.lastRunId, result.lastError],
+    );
+  }
+
+  async updateCursor(triggerId: string, cursor: string | null): Promise<void> {
+    await this.pool.query("UPDATE auto_triggers SET poll_cursor = $2 WHERE id = $1", [
+      triggerId,
+      cursor,
+    ]);
+  }
+
+  async recordCircuitFailure(triggerId: string): Promise<number> {
+    const { rows } = await this.pool.query(
+      "UPDATE auto_triggers SET circuit_failures = circuit_failures + 1 WHERE id = $1 RETURNING circuit_failures",
+      [triggerId],
+    );
+    return Number(rows[0]?.["circuit_failures"] ?? 0);
+  }
+
+  async resetCircuit(triggerId: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE auto_triggers SET circuit_failures = 0, circuit_paused_at = NULL WHERE id = $1",
+      [triggerId],
+    );
+  }
+
+  async setCircuitPaused(triggerId: string, pausedAt: string | null): Promise<void> {
+    await this.pool.query("UPDATE auto_triggers SET circuit_paused_at = $2 WHERE id = $1", [
+      triggerId,
+      pausedAt,
+    ]);
+  }
+
+  async deleteTrigger(triggerId: string): Promise<void> {
+    await this.pool.query("DELETE FROM auto_triggers WHERE id = $1", [triggerId]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Postgres EventSourceRepository (event-driven expansion)
+// ---------------------------------------------------------------------------
+
+function rowToEventSource(row: Record<string, unknown>): EventSource {
+  return {
+    id: row["id"] as string,
+    userId: row["user_id"] as string,
+    name: row["name"] as string,
+    kind: row["kind"] as EventSource["kind"],
+    ...(row["provider"] ? { provider: row["provider"] as EventSource["provider"] } : {}),
+    tokenHash: row["token_hash"] as string,
+    hasSigningSecret:
+      row["has_signing_secret"] === true || row["has_signing_secret"] === "true",
+    enabled: row["enabled"] === true || row["enabled"] === "true",
+    createdAt: row["created_at"] as string,
+    ...(row["last_event_at"] ? { lastEventAt: row["last_event_at"] as string } : {}),
+    eventCount: Number(row["event_count"] ?? 0),
+  };
+}
+
+export class PostgresEventSourceRepository implements EventSourceRepository {
+  constructor(private readonly pool: PgPool) {}
+
+  async createEventSource(input: CreateEventSourceInput): Promise<EventSource> {
+    const id = randomUUID();
+    const signingSecretRef = input.signingSecretRef ?? null;
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_event_sources
+         (id, user_id, name, kind, provider, token_hash, has_signing_secret,
+          signing_secret_ref, enabled, created_at, last_event_at, event_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULL,0)
+       RETURNING *`,
+      [
+        id,
+        input.userId,
+        input.name,
+        input.kind,
+        input.provider ?? null,
+        input.tokenHash,
+        signingSecretRef !== null ? true : input.hasSigningSecret,
+        signingSecretRef,
+        input.enabled ?? true,
+        input.createdAt,
+      ],
+    );
+    return rowToEventSource(rows[0]!);
+  }
+
+  async getEventSource(sourceId: string): Promise<EventSource | undefined> {
+    const { rows } = await this.pool.query("SELECT * FROM auto_event_sources WHERE id = $1", [
+      sourceId,
+    ]);
+    return rows[0] ? rowToEventSource(rows[0]) : undefined;
+  }
+
+  async listEventSourcesByUser(userId: string): Promise<EventSource[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_event_sources WHERE user_id = $1 ORDER BY created_at DESC",
+      [userId],
+    );
+    return rows.map(rowToEventSource);
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<EventSource | undefined> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_event_sources WHERE token_hash = $1 LIMIT 1",
+      [tokenHash],
+    );
+    return rows[0] ? rowToEventSource(rows[0]) : undefined;
+  }
+
+  async updateEventSource(
+    sourceId: string,
+    patch: UpdateEventSourceInput,
+  ): Promise<EventSource | undefined> {
+    const sets: string[] = [];
+    const params: unknown[] = [sourceId];
+    const push = (col: string, value: unknown): void => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}`);
+    };
+    if (patch.name !== undefined) push("name", patch.name);
+    if (patch.enabled !== undefined) push("enabled", patch.enabled);
+    if (patch.tokenHash !== undefined) push("token_hash", patch.tokenHash);
+    if (patch.signingSecretRef !== undefined) {
+      push("signing_secret_ref", patch.signingSecretRef);
+      // hasSigningSecret derives from the ref (present -> true).
+      push("has_signing_secret", patch.signingSecretRef !== null);
+    }
+    if (sets.length === 0) return this.getEventSource(sourceId);
+    const { rows } = await this.pool.query(
+      `UPDATE auto_event_sources SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+      params,
+    );
+    return rows[0] ? rowToEventSource(rows[0]) : undefined;
+  }
+
+  async getSigningSecretRef(sourceId: string): Promise<string | undefined> {
+    const { rows } = await this.pool.query(
+      "SELECT signing_secret_ref FROM auto_event_sources WHERE id = $1",
+      [sourceId],
+    );
+    const ref = rows[0]?.["signing_secret_ref"];
+    return typeof ref === "string" && ref.length > 0 ? ref : undefined;
+  }
+
+  async recordEvent(sourceId: string, receivedAt: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE auto_event_sources SET last_event_at = $2, event_count = event_count + 1 WHERE id = $1",
+      [sourceId, receivedAt],
+    );
+  }
+
+  async deleteEventSource(sourceId: string): Promise<void> {
+    await this.pool.query("DELETE FROM auto_event_sources WHERE id = $1", [sourceId]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Postgres ReceivedEventRepository (inspector ring buffer)
+// ---------------------------------------------------------------------------
+
+function rowToReceivedEvent(row: Record<string, unknown>): ReceivedEvent {
+  return {
+    id: row["id"] as string,
+    sourceId: row["source_id"] as string,
+    name: row["name"] as string,
+    receivedAt: row["received_at"] as string,
+    // Stored JSON-STRINGIFIED (payload_json TEXT) so any JSON value — incl.
+    // bare strings/numbers — round-trips identically on pg and pg-mem.
+    payload:
+      row["payload_json"] === null || row["payload_json"] === undefined
+        ? undefined
+        : (JSON.parse(row["payload_json"] as string) as unknown),
+  };
+}
+
+export class PostgresReceivedEventRepository implements ReceivedEventRepository {
+  constructor(
+    private readonly pool: PgPool,
+    private readonly capPerSource = RECEIVED_EVENTS_PER_SOURCE_CAP,
+    private readonly ttlMs = RECEIVED_EVENT_TTL_MS,
+  ) {}
+
+  async appendEvent(input: AppendReceivedEventInput): Promise<ReceivedEvent> {
+    const id = randomUUID();
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_received_events (id, source_id, name, received_at, payload_json)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING *`,
+      [
+        id,
+        input.sourceId,
+        input.name,
+        input.receivedAt,
+        input.payload === undefined ? null : JSON.stringify(input.payload),
+      ],
+    );
+    // Ring-buffer semantics: evict beyond the per-source cap on every append.
+    await this.pruneEvents(input.sourceId);
+    return rowToReceivedEvent(rows[0]!);
+  }
+
+  async listEventsBySource(sourceId: string, limit = 50): Promise<ReceivedEvent[]> {
+    // seq is a BIGSERIAL insertion counter: newest-first even when receivedAt ties.
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_received_events WHERE source_id = $1 ORDER BY seq DESC LIMIT $2",
+      [sourceId, limit],
+    );
+    return rows.map(rowToReceivedEvent);
+  }
+
+  async getEvent(eventId: string): Promise<ReceivedEvent | undefined> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_received_events WHERE id = $1",
+      [eventId],
+    );
+    return rows[0] ? rowToReceivedEvent(rows[0]) : undefined;
+  }
+
+  /** Evicts over-cap and past-TTL entries for a source; returns the count. */
+  async pruneEvents(sourceId: string): Promise<number> {
+    // Fetch ids newest-first and delete the tail — a portable two-step (pg-mem
+    // has no DELETE ... IN (subquery) guarantees). One append adds at most one
+    // over-cap row, so the tail is tiny in steady state.
+    const { rows } = await this.pool.query(
+      "SELECT id, received_at FROM auto_received_events WHERE source_id = $1 ORDER BY seq DESC",
+      [sourceId],
+    );
+    const newest = rows[0]?.["received_at"] as string | undefined;
+    const ttlCutoffMs = newest !== undefined ? Date.parse(newest) - this.ttlMs : undefined;
+    const toDelete: string[] = [];
+    rows.forEach((row, index) => {
+      const overCap = index >= this.capPerSource;
+      const receivedMs = Date.parse(row["received_at"] as string);
+      const pastTtl =
+        ttlCutoffMs !== undefined && Number.isFinite(receivedMs) && receivedMs < ttlCutoffMs;
+      if (overCap || pastTtl) toDelete.push(row["id"] as string);
+    });
+    for (const id of toDelete) {
+      await this.pool.query("DELETE FROM auto_received_events WHERE id = $1", [id]);
+    }
+    return toDelete.length;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Postgres FireLogRepository (abuse/cost observability)
+// ---------------------------------------------------------------------------
+
+function rowToFireLog(row: Record<string, unknown>): TriggerFireLog {
+  return {
+    id: row["id"] as string,
+    triggerId: row["trigger_id"] as string,
+    at: row["fired_at"] as string,
+    outcome: row["outcome"] as TriggerFireLog["outcome"],
+    runId: (row["run_id"] as string | null) ?? null,
+    detail: (row["detail"] as string | null) ?? null,
+  };
+}
+
+export class PostgresFireLogRepository implements FireLogRepository {
+  constructor(
+    private readonly pool: PgPool,
+    private readonly capPerTrigger = FIRE_LOGS_PER_TRIGGER_CAP,
+  ) {}
+
+  async appendFireLog(input: AppendFireLogInput): Promise<TriggerFireLog> {
+    const id = randomUUID();
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_fire_logs (id, trigger_id, fired_at, outcome, run_id, detail)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [id, input.triggerId, input.at, input.outcome, input.runId ?? null, input.detail ?? null],
+    );
+    // Ring-buffer semantics: evict beyond the per-trigger cap on every append.
+    const { rows: all } = await this.pool.query(
+      "SELECT id FROM auto_fire_logs WHERE trigger_id = $1 ORDER BY seq DESC",
+      [input.triggerId],
+    );
+    for (const row of all.slice(this.capPerTrigger)) {
+      await this.pool.query("DELETE FROM auto_fire_logs WHERE id = $1", [row["id"]]);
+    }
+    return rowToFireLog(rows[0]!);
+  }
+
+  async listFireLogsByTrigger(triggerId: string, limit = 100): Promise<TriggerFireLog[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_fire_logs WHERE trigger_id = $1 ORDER BY seq DESC LIMIT $2",
+      [triggerId, limit],
+    );
+    return rows.map(rowToFireLog);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Postgres SecretStore (encrypted-at-rest provider signing secrets — S2)
+// ---------------------------------------------------------------------------
+
+/**
+ * AES-256-GCM SecretStore over the `auto_secrets` table. The operator key is
+ * read LAZILY per call from AUTO_SECRET_ENCRYPTION_KEY, so an unconfigured
+ * deployment only fails (typed SecretStoreUnconfiguredError) when secret
+ * storage is actually used — sources without signing secrets are unaffected.
+ */
+export class PostgresSecretStore implements SecretStore {
+  constructor(
+    private readonly pool: PgPool,
+    private readonly env: Record<string, string | undefined> = process.env,
+  ) {}
+
+  async put(plaintext: string): Promise<string> {
+    const key = loadSecretEncryptionKey(this.env);
+    const secretRef = randomUUID();
+    const enc = encryptSecret(key, plaintext);
+    await this.pool.query(
+      `INSERT INTO auto_secrets (secret_ref, ciphertext, iv, tag, created_at)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [secretRef, enc.ciphertext, enc.iv, enc.tag, new Date().toISOString()],
+    );
+    return secretRef;
+  }
+
+  async reveal(secretRef: string): Promise<string> {
+    const key = loadSecretEncryptionKey(this.env);
+    const { rows } = await this.pool.query(
+      "SELECT ciphertext, iv, tag FROM auto_secrets WHERE secret_ref = $1",
+      [secretRef],
+    );
+    const row = rows[0];
+    if (!row) throw new Error(`Unknown secretRef: ${secretRef}`);
+    return decryptSecret(key, {
+      ciphertext: row["ciphertext"] as string,
+      iv: row["iv"] as string,
+      tag: row["tag"] as string,
+    });
+  }
+
+  async delete(secretRef: string): Promise<void> {
+    await this.pool.query("DELETE FROM auto_secrets WHERE secret_ref = $1", [secretRef]);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Composition
 // ---------------------------------------------------------------------------
 
@@ -538,6 +1050,14 @@ export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): Auto
     webhooks: new PostgresAutoWebhookRepository(options.pool),
     workspaces: new FsWorkspaceStore({ rootDir }),
     inputs: options.inputs ?? new LocalInputStore(),
+    // Event-driven expansion stores (always populated by this adapter).
+    events: {
+      triggers: new PostgresTriggerRepository(options.pool),
+      eventSources: new PostgresEventSourceRepository(options.pool),
+      receivedEvents: new PostgresReceivedEventRepository(options.pool),
+      fireLogs: new PostgresFireLogRepository(options.pool),
+      secrets: new PostgresSecretStore(options.pool),
+    },
   };
 }
 
@@ -547,7 +1067,9 @@ export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): Auto
 
 /**
  * The idempotent CREATE TABLE IF NOT EXISTS schema for the Auto self-host
- * Postgres tables (auto_runs, auto_approvals, auto_schedules, auto_webhooks).
+ * Postgres tables (auto_runs, auto_approvals, auto_schedules, auto_webhooks,
+ * plus the event-driven expansion: auto_triggers, auto_event_sources,
+ * auto_received_events, auto_fire_logs, auto_secrets).
  *
  * This is the EXACT content of `schema.sql` embedded as a string so it ships in
  * the compiled `dist/` without needing the .sql file at runtime (the worker +
@@ -654,6 +1176,92 @@ CREATE TABLE IF NOT EXISTS auto_webhooks (
 );
 
 CREATE INDEX IF NOT EXISTS auto_webhooks_user_idx ON auto_webhooks (user_id);
+
+-- ---------------------------------------------------------------------------
+-- Event-driven expansion: unified triggers + event sources + ring buffers
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auto_triggers (
+  id                TEXT        NOT NULL PRIMARY KEY,
+  user_id           TEXT        NOT NULL,
+  name              TEXT        NOT NULL,
+  type              TEXT        NOT NULL,
+  config            JSONB       NOT NULL,
+  kit_ref           JSONB       NOT NULL,
+  approval_id       TEXT        NOT NULL,
+  model             TEXT,
+  budget_cents      INTEGER,
+  filters           JSONB,
+  mapping           JSONB       NOT NULL,
+  destinations      JSONB,
+  rate_limit        JSONB       NOT NULL,
+  enabled           BOOLEAN     NOT NULL DEFAULT TRUE,
+  poll_cursor       TEXT,
+  circuit_failures  INTEGER     NOT NULL DEFAULT 0,
+  circuit_paused_at TEXT,
+  created_at        TEXT        NOT NULL,
+  updated_at        TEXT        NOT NULL,
+  last_fired_at     TEXT,
+  last_run_id       TEXT,
+  last_error        TEXT,
+  fire_count        INTEGER     NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS auto_triggers_user_idx ON auto_triggers (user_id);
+CREATE INDEX IF NOT EXISTS auto_triggers_due_idx ON auto_triggers (type, enabled, poll_cursor);
+
+CREATE TABLE IF NOT EXISTS auto_event_sources (
+  id                  TEXT      NOT NULL PRIMARY KEY,
+  user_id             TEXT      NOT NULL,
+  name                TEXT      NOT NULL,
+  kind                TEXT      NOT NULL,
+  provider            TEXT,
+  token_hash          TEXT      NOT NULL,
+  has_signing_secret  BOOLEAN   NOT NULL DEFAULT FALSE,
+  enabled             BOOLEAN   NOT NULL DEFAULT TRUE,
+  created_at          TEXT      NOT NULL,
+  last_event_at       TEXT,
+  event_count         INTEGER   NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS auto_event_sources_user_idx ON auto_event_sources (user_id);
+CREATE INDEX IF NOT EXISTS auto_event_sources_token_idx ON auto_event_sources (token_hash);
+
+CREATE TABLE IF NOT EXISTS auto_received_events (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  seq         BIGSERIAL,
+  source_id   TEXT        NOT NULL,
+  name        TEXT        NOT NULL,
+  received_at  TEXT       NOT NULL,
+  payload_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_received_events_source_idx ON auto_received_events (source_id, seq);
+
+CREATE TABLE IF NOT EXISTS auto_fire_logs (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  seq         BIGSERIAL,
+  trigger_id  TEXT        NOT NULL,
+  fired_at    TEXT        NOT NULL,
+  outcome     TEXT        NOT NULL,
+  run_id      TEXT,
+  detail      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_fire_logs_trigger_idx ON auto_fire_logs (trigger_id, seq);
+
+-- Idempotent migration: unified-Trigger run provenance (contracts autoRunSchema.triggerId).
+ALTER TABLE auto_runs ADD COLUMN IF NOT EXISTS trigger_id TEXT;
+
+CREATE TABLE IF NOT EXISTS auto_secrets (
+  secret_ref  TEXT        NOT NULL PRIMARY KEY,
+  ciphertext  TEXT        NOT NULL,
+  iv          TEXT        NOT NULL,
+  tag         TEXT        NOT NULL,
+  created_at  TEXT        NOT NULL
+);
+
+ALTER TABLE auto_event_sources ADD COLUMN IF NOT EXISTS signing_secret_ref TEXT;
+
 `;
 
 const ensuredAutoSchema = new WeakSet<object>();

@@ -144,6 +144,7 @@ export type {
   EmailSender,
   EmailSendResult,
   EventSourceRepository,
+  EventStorageDeps,
   FireLogRepository,
   InputStore,
   OutboundEmail,
@@ -155,6 +156,23 @@ export type {
   TriggerRepository,
   WorkspaceStore,
 } from "./core/ports.js";
+
+// ---- Event-store caps (ring-buffer semantics; enforced by both adapters) --
+export {
+  FIRE_LOGS_PER_TRIGGER_CAP,
+  RECEIVED_EVENTS_PER_SOURCE_CAP,
+  RECEIVED_EVENT_TTL_MS,
+} from "./core/event-limits.js";
+
+// ---- SecretStore crypto (provider signing secrets — S2) -------------------
+export {
+  AUTO_SECRET_KEY_ENV_VAR,
+  SecretStoreUnconfiguredError,
+  decryptSecret,
+  encryptSecret,
+  loadSecretEncryptionKey,
+} from "./core/secret-crypto.js";
+export type { EncryptedSecret } from "./core/secret-crypto.js";
 
 // ---- Cron utils (Phase B) ------------------------------------------------
 export { nextFireAfter, parseCron, validateCron, CronParseError } from "./core/cron.js";
@@ -341,6 +359,7 @@ export type {
 
 // ---- AWS adapter ---------------------------------------------------------
 export {
+  AUTO_EVENT_TABLE_DEFAULTS,
   AUTO_TABLE_ENV_VARS,
   awsClientEnv,
   createDynamoDBDocumentClient,
@@ -348,6 +367,11 @@ export {
   DynamoAutoRunRepository,
   DynamoAutoScheduleRepository,
   DynamoAutoWebhookRepository,
+  DynamoEventSourceRepository,
+  DynamoFireLogRepository,
+  DynamoReceivedEventRepository,
+  DynamoSecretStore,
+  DynamoTriggerRepository,
   loadAutoDynamoTableNames,
   makeAwsAutoDeps,
   s3ClientEnv,
@@ -370,6 +394,11 @@ export {
   PostgresAutoRunRepository,
   PostgresAutoScheduleRepository,
   PostgresAutoWebhookRepository,
+  PostgresEventSourceRepository,
+  PostgresFireLogRepository,
+  PostgresReceivedEventRepository,
+  PostgresSecretStore,
+  PostgresTriggerRepository,
 } from "./adapters/selfhost/postgres.js";
 export type {
   MakeSelfHostAutoDepsOptions,

@@ -828,6 +828,9 @@ export async function startRun(input: {
   scheduleId?: string;
   /** The AutoWebhook that produced this run (only with trigger "webhook"). */
   webhookId?: string;
+  /** The unified Trigger (event-driven expansion) that produced this run.
+   *  Persisted on the run for provenance (contracts autoRunSchema.triggerId). */
+  triggerId?: string;
 }): Promise<AutoRun> {
   if (typeof input.prompt !== "string" || input.prompt.trim().length === 0) {
     throw new AutoValidationError("A run input prompt is required.");
@@ -912,6 +915,8 @@ export async function startRun(input: {
     ...(input.scheduleId !== undefined ? { scheduleId: input.scheduleId } : {}),
     // Phase C: webhook-fired runs carry trigger "webhook" + webhookId.
     ...(input.webhookId !== undefined ? { webhookId: input.webhookId } : {}),
+    // Event-driven expansion: unified-Trigger provenance.
+    ...(input.triggerId !== undefined ? { triggerId: input.triggerId } : {}),
     // Phase C: out-of-band staged input-file manifest (hydrated by the worker).
     ...(input.inputFiles && input.inputFiles.length > 0 ? { inputFiles: input.inputFiles } : {}),
     // Phase D: opt-in result delivery (email + signed webhook). Persisted on the
