@@ -58,9 +58,9 @@ export async function POST(request: Request) {
             currency: "usd",
             unit_amount: amountCents,
             product_data: {
-              name: `Web Forge Credits — ${formatDollars(amountCents)}`,
+              name: `AgentKitForge Credits — ${formatDollars(amountCents)}`,
               description:
-                "Prepaid credits for managed AI inference on Web Forge. Credits are non-refundable and never expire."
+                "Prepaid credits for managed AI inference on AgentKitForge. Credits are non-refundable and never expire."
             }
           }
         }

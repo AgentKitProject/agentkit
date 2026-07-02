@@ -1,10 +1,10 @@
 ---
 import ProductCard from '../components/ProductCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { forgeUrl, githubOrgUrl, marketUrl, products, profileUrl, roadmapUrl, webForgeUrl } from '../data/products';
+import { githubOrgUrl, marketUrl, products, profileUrl, roadmapUrl, webForgeUrl } from '../data/products';
 
 const flow = [
-  ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits in AgentKitForge — on your desktop or in the browser — using prompts, skills, policies, templates, examples, and context.'],
+  ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits in AgentKitForge — in your browser or from the CLI — using prompts, skills, policies, templates, examples, and context.'],
   ['Share & Browse', 'var(--market)', 'Publish, discover, and download validated kits through AgentKitMarket — with organizations, private catalogs, and paid kits.'],
   ['Schedule & Automate', 'var(--auto)', 'Schedule and trigger trusted kits with AgentKitAuto on demand, on a schedule, or from webhooks — hosted or self-hosted.']
 ];
@@ -21,8 +21,7 @@ const flow = [
         them across schedules, events, and workflows.
       </p>
       <div class="button-row">
-        <a class="button" href={forgeUrl}>Download Forge</a>
-        <a class="button secondary" href={webForgeUrl}>Open Web Forge</a>
+        <a class="button" href={webForgeUrl}>Open Forge</a>
         <a class="button secondary" href={marketUrl}>Browse Market</a>
         <a class="button secondary" href={profileUrl}>Sign in</a>
       </div>
@@ -72,7 +71,7 @@ const flow = [
       <div class="content-panel">
         <p>
           AgentKitProject is designed around portable kit artifacts and open-source core tooling.
-          Forge (desktop and web), Market, and Auto are separate, independently usable ecosystem
+          Forge, Market, and Auto are separate, independently usable ecosystem
           layers — not hidden backend features — and the core engine and CLI are open source.
         </p>
         <p><a href={roadmapUrl}>See the ecosystem roadmap</a></p>

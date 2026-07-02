@@ -1,54 +1,22 @@
 ---
 import DocsLayout from '../../layouts/DocsLayout.astro';
-import { forgeUrl, marketUrl } from '../../data/products';
+import { webForgeUrl } from '../../data/products';
 ---
 <DocsLayout
-  title="Forge desktop"
+  title="Forge desktop (retired)"
   eyebrow="Products"
-  description="The local-first desktop app for building, running, packaging, and sharing Agent Kits."
+  description="The desktop app has been retired — use Forge in your browser or the agentkitforge CLI."
 >
-  <p>
-    AgentKitForge is a cross-platform desktop app (React 19 + Vite in a Tauri 2 shell,
-    signed and notarized, with auto-update). It is the full kit-building environment and
-    runs entirely on your machine.
-  </p>
-
-  <h2>What you can do without an account</h2>
-  <ul>
-    <li><strong>Build</strong> kits with Build-with-AI draft sessions or the Guided Builder.</li>
-    <li><strong>Edit &amp; validate</strong> against the <code>local-valid</code> and <code>publishable</code> profiles.</li>
-    <li><strong>Run</strong> kits with your selected AI provider (prepared prompts or custom prompts) and download the output.</li>
-    <li><strong>Package</strong> to a portable <code>.agentkit.zip</code>.</li>
-    <li><strong>Export</strong> one-file Markdown, or to local agent targets (Claude Code, Codex).</li>
-    <li><strong>Import</strong> any <code>.agentkit.zip</code> manually.</li>
-  </ul>
   <div class="docs-note">
-    <strong>Local-first is a hard rule.</strong> None of the above requires sign-in. Only
-    hosted Market submit/import are token-gated.
+    <strong>The AgentKitForge desktop app has been retired.</strong> Everything it did is
+    now covered by <a href={webForgeUrl}>Forge in your browser</a> and the
+    <a href="/docs/cli/">agentkitforge CLI</a>.
   </div>
 
-  <h2>Hosted features (after sign-in)</h2>
-  <ul>
-    <li><strong>Sign in</strong> with your AgentKitProject account via device authorization. See <a href="/docs/signing-in/">Signing in</a>.</li>
-    <li><strong>Submit</strong> kits to the <a href={marketUrl}>Market</a> for admin review (no automatic publishing).</li>
-    <li><strong>Import</strong> kits from the Market — Forge verifies the package sha256 and records its source.</li>
-    <li><strong>Update tracking</strong> — Forge records provenance (source, Market slug, version, sha256) so it can detect when a newer version is available. Updates are never automatic.</li>
-  </ul>
-
-  <h2>Deep links</h2>
   <p>
-    Forge registers the <code>agentkitforge://</code> URL scheme, so the Market can hand a
-    kit off to the desktop app — for example
-    <code>agentkitforge://market/import?market=&lt;url&gt;</code> opens the import flow.
+    Build, validate, package, export, import, and run Agent Kits — plus Market submit/import
+    — all work from <a href="/docs/web-forge/">Forge (web)</a>. For local-first, headless, or
+    scripted workflows with no account, use the <a href="/docs/cli/">CLI</a>. Both share the
+    same <code>@agentkitforge/core</code> engine, so results are identical everywhere.
   </p>
-
-  <h2>Where logic lives</h2>
-  <p>
-    All non-UI behavior comes from <code>@agentkitforge/core</code> — the same engine used
-    by Web Forge and the <a href="/docs/cli/">CLI</a> — so validation, packaging, and
-    export produce identical results everywhere. The Rust layer handles only OS-shell
-    concerns: secure storage, deep links, dialogs, and the updater.
-  </p>
-
-  <p><a href={forgeUrl}>Download Forge →</a></p>
 </DocsLayout>

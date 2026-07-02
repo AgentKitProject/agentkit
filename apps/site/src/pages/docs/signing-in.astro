@@ -15,35 +15,38 @@ import { profileUrl } from '../../data/products';
 
   <h2>What you need</h2>
   <ul>
-    <li>AgentKitForge (desktop or Web Forge).</li>
+    <li>The <code>agentkitforge</code> CLI, or the Forge web app.</li>
     <li>A web browser to approve the sign-in — it can be on any device, even your phone.</li>
     <li>An <a href={profileUrl}>AgentKitProject account</a> (you can create one during sign-in).</li>
   </ul>
 
-  <h2>Step by step (desktop Forge &amp; CLI)</h2>
+  <h2>Step by step (CLI)</h2>
   <ol>
-    <li>In Forge, open <strong>Account</strong> (or Settings → Account) and choose <strong>Sign in</strong>. From the CLI, run <code>agentkitforge market login</code>.</li>
-    <li>Forge shows a short device code and opens your browser to the AgentKitProject sign-in page.</li>
-    <li>On any device, confirm the code matches, then sign in or create an account.</li>
-    <li>Approve access for AgentKitForge.</li>
-    <li>Return to Forge — it stores your session securely in your OS keychain and shows you as signed in.</li>
-    <li>Your session refreshes automatically and persists across restarts. Sign out any time from Account.</li>
+    <li>Run <code>agentkitforge market login</code>.</li>
+    <li>The CLI shows a short device code and a URL. Open it in your browser (any device).</li>
+    <li>Confirm the code matches, then sign in or create an account.</li>
+    <li>Approve access.</li>
+    <li>Back in the CLI you're signed in — the token is stored securely and refreshes automatically.</li>
   </ol>
+  <p>
+    The <strong>Forge web app</strong> is simpler: just open it and sign in on the normal
+    browser sign-in page (a standard OAuth authorization-code redirect — no device code).
+  </p>
 
   <h2>How it works</h2>
   <p>
-    Sign-in uses the <strong>OAuth 2.0 device authorization flow</strong> against WorkOS,
-    so it works on headless machines — approve the code from your phone or another
-    computer. The access token lives in the OS secure store (macOS Keychain, Windows
-    Credential Manager, or Linux Secret Service), not a plain file, and is sent as a
-    bearer token to hosted Market routes.
+    The CLI uses the <strong>OAuth 2.0 device authorization flow</strong> against your
+    AgentKitProject IdP (Keycloak / OIDC), so it works on headless machines — approve the
+    code from your phone or another computer. The token is kept in the OS keyring (macOS
+    Keychain, Windows Credential Manager, or Linux Secret Service) with an encrypted-file
+    fallback for headless hosts, and is sent as a bearer token to hosted Market routes. The
+    web app instead keeps a normal session cookie after the browser sign-in.
   </p>
 
   <h2>Common mistakes</h2>
   <ul>
-    <li>Thinking you must sign in to use Forge — local build, validate, package, and import never need an account.</li>
+    <li>Thinking you must sign in for local kit work — build, validate, package, and import via the CLI never need an account.</li>
     <li>Entering the device code on the wrong account.</li>
-    <li>Expecting the desktop app and CLI to share one sign-in on macOS — the Keychain entry is per-binary, so sign in to each.</li>
   </ul>
 
   <p>See also: <a href="/docs/profile/">Profile</a> and <a href="/docs/cli/">the CLI</a>.</p>

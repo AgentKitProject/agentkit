@@ -3,27 +3,30 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 import { webForgeUrl } from '../../data/products';
 ---
 <DocsLayout
-  title="Web Forge"
+  title="Forge"
   eyebrow="Products"
-  description="The browser edition of AgentKitForge — nothing to install, your kits available from any device."
+  description="Build and run Agent Kits in your browser — nothing to install, your kits available from any device."
 >
   <p>
-    Web Forge is the browser-based edition of AgentKitForge, at
-    <a href={webForgeUrl}>webapp.forge.agentkitproject.com</a>. It runs the same
-    <code>@agentkitforge/core</code> engine as the desktop app, so validation, packaging,
-    and export produce identical results. Nothing to install — sign in and start building.
+    Forge is the browser app for building and running Agent Kits, at
+    <a href={webForgeUrl}>webapp.forge.agentkitproject.com</a>. It runs the
+    <code>@agentkitforge/core</code> engine — the same engine behind the
+    <a href="/docs/cli/">agentkitforge CLI</a> — so validation, packaging, and export
+    produce identical results. Nothing to install; sign in and start building.
   </p>
 
   <h2>What you need</h2>
   <ul>
     <li>A modern browser (Chrome, Firefox, Safari, or Edge).</li>
-    <li>A free AgentKitProject account — Web Forge is auth-gated (unlike the desktop app).</li>
+    <li>A free AgentKitProject account (Forge is auth-gated). Prefer the terminal or a
+      headless/local workflow? Use the <a href="/docs/cli/">agentkitforge CLI</a>, which
+      needs no account for local kit work.</li>
   </ul>
 
   <h2>Step by step</h2>
   <ol>
-    <li>Open <a href={webForgeUrl}>Web Forge</a> in your browser.</li>
-    <li>Sign in with your AgentKitProject account via the WorkOS-powered login page.</li>
+    <li>Open <a href={webForgeUrl}>Forge</a> in your browser.</li>
+    <li>Sign in with your AgentKitProject account (OIDC).</li>
     <li>You land on <strong>My Kits</strong> — kits you own plus Market favorites.</li>
     <li>Build a new kit, use an existing one (Run / Chat), import a kit, package/export, install to local agent targets, or submit to Market.</li>
     <li>Your kits and favorites are stored in your account and sync across every browser and device.</li>
@@ -31,7 +34,7 @@ import { webForgeUrl } from '../../data/products';
 
   <h2>Sections</h2>
   <p>
-    Web Forge mirrors the desktop workflow: <strong>My Kits</strong>, <strong>Build</strong>,
+    Forge covers the full kit workflow: <strong>My Kits</strong>, <strong>Build</strong>,
     <strong>Use / Run / Chat</strong>, <strong>Import</strong>,
     <strong>Package / Export</strong>, <strong>Install Targets</strong>,
     <strong>Submit to Market</strong>, <strong>Settings</strong>, and <strong>About</strong>.
@@ -39,7 +42,7 @@ import { webForgeUrl } from '../../data/products';
 
   <h2>Free-tier quota</h2>
   <p>
-    Web Forge stores your kits server-side under a per-account quota. The default free
+    Forge stores your kits server-side under a per-account quota. The default free
     tier is <strong>25 kits</strong> and <strong>250&nbsp;MB</strong> of total storage,
     with a <strong>10&nbsp;MB</strong> per-file cap. A usage indicator shows how much of
     your quota you're using.
@@ -50,10 +53,10 @@ import { webForgeUrl } from '../../data/products';
     from the hosted defaults above.
   </div>
 
-  <h2>Desktop vs Web Forge</h2>
+  <h2>Forge vs the CLI</h2>
   <ul>
-    <li>Desktop is local-first and works with no account; Web Forge requires sign-in.</li>
-    <li>Web Forge keeps everything in sync across devices via your account.</li>
-    <li>Kits built in either can be exported and imported in the other — same package format.</li>
+    <li>The <a href="/docs/cli/">CLI</a> is local-first and works with no account; Forge (the browser app) requires sign-in.</li>
+    <li>Forge keeps everything in sync across devices via your account.</li>
+    <li>Kits built in either use the same package format — export from one, import in the other.</li>
   </ul>
 </DocsLayout>

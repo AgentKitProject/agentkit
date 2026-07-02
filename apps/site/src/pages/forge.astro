@@ -1,24 +1,25 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { forgeUrl, githubOrgUrl } from '../data/products';
+import { webForgeUrl, githubOrgUrl } from '../data/products';
 ---
 <BaseLayout
   title="AgentKitForge"
-  description="AgentKitForge is the local-first desktop app for building, editing, running, packaging, exporting, and installing portable Agent Kits."
+  description="AgentKitForge builds, edits, runs, packages, exports, and installs portable Agent Kits — in your browser or from the agentkitforge CLI."
   theme="forge"
 >
   <section class="section">
     <div class="container">
       <p class="eyebrow">Current product</p>
-      <h1>AgentKitForge builds and runs portable Agent Kits locally.</h1>
+      <h1>AgentKitForge builds and runs portable Agent Kits.</h1>
       <p class="lead">
-        AgentKitForge is the public preview desktop app for building, editing, and running Agent
-        Kits on your computer, then packaging, exporting, and installing them where they belong. It
-        is local-first and available for Windows, macOS, and Linux.
+        AgentKitForge is the app for building, editing, and running Agent Kits, then packaging,
+        exporting, and installing them where they belong. Use it in your browser, or do the same
+        local-first work headless with the <code>agentkitforge</code> CLI — both run the same
+        open-source core engine.
       </p>
       <div class="button-row">
-        <a class="button" href={forgeUrl}>Open AgentKitForge</a>
-        <a class="button secondary" href="/docs/forge-desktop/">Read Forge docs</a>
+        <a class="button" href={webForgeUrl}>Open Forge</a>
+        <a class="button secondary" href="/docs/web-forge/">Read Forge docs</a>
       </div>
     </div>
   </section>
@@ -30,8 +31,8 @@ import { forgeUrl, githubOrgUrl } from '../data/products';
         <p>Create kits with prepared prompts, skills, policies, templates, examples, and context.</p>
       </article>
       <article class="card">
-        <h3>Run on your computer</h3>
-        <p>Use kits locally with your selected provider, collect required inputs, and generate outputs from Forge.</p>
+        <h3>Run it</h3>
+        <p>Use kits with your selected provider, collect required inputs, and generate outputs — in the browser or from the CLI.</p>
       </article>
       <article class="card">
         <h3>Package and install</h3>
@@ -43,14 +44,13 @@ import { forgeUrl, githubOrgUrl } from '../data/products';
   <section class="section">
     <div class="container grid two">
       <div>
-        <p class="eyebrow">Domain plan</p>
-        <h2>Forge remains available at agentkitforge.com.</h2>
+        <p class="eyebrow">Open source</p>
+        <h2>Forge is open-core, and self-hostable.</h2>
       </div>
       <div class="content-panel">
         <p>
-          The ecosystem domain will later support <code>forge.agentkitproject.com</code>, but
-          <a href={forgeUrl}>agentkitforge.com</a> is not going away. This site does not migrate
-          Forge, change downloads, or alter update endpoints.
+          The core engine and CLI are open source, and Forge (the web app) can be run on your own
+          cluster alongside Market, Auto, and Profile — see <a href="/docs/self-hosting/">Self-hosting</a>.
         </p>
         <p><a href={githubOrgUrl}>View the AgentKitProject GitHub organization</a></p>
       </div>

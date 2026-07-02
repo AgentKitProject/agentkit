@@ -539,7 +539,7 @@ export function OrgApiKeyPanel({ orgId, viewerUserId }: { orgId: string; viewerU
       <div>
         <h2 className="text-xl font-semibold text-slate-950">Organization API keys</h2>
         <p className={`mt-1 ${MUTED}`}>
-          Members&apos; own keys take precedence; these org keys are the shared fallback per provider. Used by Auto and Web Forge.
+          Members&apos; own keys take precedence; these org keys are the shared fallback per provider. Used by Auto and Forge.
         </p>
       </div>
 

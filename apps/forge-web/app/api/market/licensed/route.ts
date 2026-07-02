@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         code: ONLINE_ONLY_RUN_REQUIRED,
         slug: body.slug,
         ...(status.kitId ? { kitId: status.kitId } : {}),
-        message: "This kit is output-only — run it on web Forge or Auto.",
+        message: "This kit is output-only — run it on Forge or Auto.",
         ...(runTargets.forgeWebUrl || runTargets.autoUrl ? { runTargets } : {})
       };
       return NextResponse.json(directive, { status: 402, headers: { "Cache-Control": "no-store" } });

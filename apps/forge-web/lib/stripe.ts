@@ -50,7 +50,7 @@ export function isStripeConfigured(): boolean {
 /** Standard 503 response for payment routes when Stripe is not configured. */
 export function paymentsNotConfiguredResponse(): NextResponse {
   return NextResponse.json(
-    { message: "Payments are not configured on this Web Forge instance." },
+    { message: "Payments are not configured on this Forge instance." },
     { status: 503 }
   );
 }

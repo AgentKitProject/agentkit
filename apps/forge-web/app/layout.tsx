@@ -7,14 +7,14 @@ import "@agentkitforge/ui/styles.css";
 import "./forge.css";
 
 export const metadata = {
-  metadataBase: new URL("https://forge.agentkitproject.com"),
-  title: "AgentKitForge Web",
+  metadataBase: new URL("https://webapp.forge.agentkitproject.com"),
+  title: "AgentKitForge",
   description: "Build and run portable Agent Kits in your browser.",
   openGraph: {
-    siteName: "AgentKitForge Web",
+    siteName: "AgentKitForge",
     type: "website",
     locale: "en_US",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Web Forge" }]
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "AgentKitForge" }]
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },
   icons: {

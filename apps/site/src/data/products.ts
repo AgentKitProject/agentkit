@@ -21,9 +21,9 @@ export const products = [
     accent: '#5b4cf0',
     accentSoft: '#eef2ff',
     icon: '/brand/agentkitforge-icon.svg',
-    purpose: 'Build, edit, run, package, export, and install Agent Kits — on desktop or in the browser.',
+    purpose: 'Build, edit, run, package, export, and install Agent Kits — in your browser or from the CLI.',
     summary:
-      'The local-first app for creating portable Agent Kits and running them with your preferred AI provider. A cross-platform desktop build (signed, auto-updating) plus a browser-based Web Forge.'
+      'The local-first tool for creating portable Agent Kits and running them with your preferred AI provider — in the browser, or headless via the agentkitforge CLI.'
   },
   {
     name: 'AgentKitMarket',

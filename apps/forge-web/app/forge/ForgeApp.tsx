@@ -203,7 +203,7 @@ export default function ForgeApp({ user, config }: { user: SessionUser; config: 
             AgentKit<span style={{ color: "var(--ak-brand)" }}>Forge</span>
           </>
         }
-        brandSubtitle="Web Forge"
+        brandSubtitle="Forge"
         brandAccent={BRAND_ACCENTS.forge.accent}
         brandAccentStrong={BRAND_ACCENTS.forge.strong}
         appSwitcher={buildAppSwitcher({ current: "forge", links: { market: config.links.marketUrl, auto: config.links.autoUrl, profile: config.links.profileUrl } })}

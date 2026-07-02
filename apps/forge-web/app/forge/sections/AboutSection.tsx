@@ -14,8 +14,8 @@ export function AboutSection({ forge }: { forge: Forge }) {
   return (
     <div className="about-screen">
       <div className="about-panel">
-        <h2>AgentKitForge (web)</h2>
-        <p className="form-copy">Build, validate, package, import, export, and submit Agent Kits from your browser. This hosted web Forge shares the desktop app&apos;s design system and feature set, talking to the same backend through the ForgeClient seam.</p>
+        <h2>AgentKitForge</h2>
+        <p className="form-copy">Build, validate, package, import, export, and submit Agent Kits from your browser. The same engine also powers the <span className="inline-code">agentkitforge</span> CLI, talking to the backend through the ForgeClient seam.</p>
         <div className="about-meta">
           <p className="form-copy">Version: <span className="inline-code">{version || "…"}</span></p>
         </div>

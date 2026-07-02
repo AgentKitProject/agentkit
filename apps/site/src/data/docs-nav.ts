@@ -59,14 +59,9 @@ export const DOCS_SECTIONS: DocSection[] = [
     title: 'Products',
     links: [
       {
-        title: 'Forge desktop',
-        href: '/docs/forge-desktop/',
-        summary: 'The local-first desktop app for building and running kits.'
-      },
-      {
-        title: 'Web Forge',
+        title: 'Forge',
         href: '/docs/web-forge/',
-        summary: 'The browser edition — same core engine, your account anywhere.'
+        summary: 'Build and run kits in your browser — same core engine, your account anywhere (or headless via the agentkitforge CLI).'
       },
       {
         title: 'Market',
@@ -101,7 +96,7 @@ export const DOCS_SECTIONS: DocSection[] = [
       {
         title: 'Self-hosting on Kubernetes',
         href: '/docs/self-hosting/',
-        summary: 'Run Market, Web Forge, Auto, and Profile on your own cluster with Helm.'
+        summary: 'Run Market, Forge, Auto, and Profile on your own cluster with Helm.'
       }
     ]
   }
