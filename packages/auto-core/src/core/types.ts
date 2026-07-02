@@ -17,7 +17,8 @@
  *
  * SAFETY MODEL:
  *   - A run is permitted ONLY if a matching, non-revoked AutoApproval exists for
- *     the kit AND the run's budgetCents <= approval.maxBudgetCents.
+ *     the kit AND the run's budgetCents <= approval.maxBudgetCents (a ceiling of
+ *     0 = UNLIMITED — the approval imposes no per-run ceiling).
  *   - The approval's toolAllowlist IS the consent. There is no per-call human
  *     confirm in Auto (the key difference vs the interactive gateway loop).
  *   - The sandbox executor supports ONLY workspace-confined file tools; there is
@@ -136,6 +137,7 @@ export interface CreateApprovalInput {
   userId: string;
   kitRef: KitRef;
   toolAllowlist: string[];
+  /** Per-run ceiling (US cents). 0 = UNLIMITED — no per-run ceiling. */
   maxBudgetCents: number;
   scope?: ApprovalScope;
   networkPolicy?: NetworkPolicy;

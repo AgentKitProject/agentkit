@@ -68,7 +68,7 @@ export interface ScheduleSweepSummary {
  * Re-checks a due schedule against the standing approval (the Phase A gate),
  * mirroring processAutoRun's gate semantics:
  *   - a non-revoked approval for (userId, kitRef) must exist;
- *   - budgetCents <= approval.maxBudgetCents.
+ *   - budgetCents <= approval.maxBudgetCents (a 0 ceiling = unlimited, never blocks).
  * Returns a skip reason string, or null when the schedule may fire.
  */
 async function approvalGateSkipReason(
@@ -80,7 +80,8 @@ async function approvalGateSkipReason(
   if (approval.revokedAt !== null) {
     return "The standing approval for this kit has been revoked.";
   }
-  if (schedule.budgetCents > approval.maxBudgetCents) {
+  // maxBudgetCents 0 = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && schedule.budgetCents > approval.maxBudgetCents) {
     return `Schedule budget (${schedule.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`;
   }
   return null;

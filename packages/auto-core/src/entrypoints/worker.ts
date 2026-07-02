@@ -150,7 +150,8 @@ export async function processAutoRun(
   if (appr.revokedAt !== null) {
     await denyAndFail("The standing approval for this kit has been revoked.");
   }
-  if (run.budgetCents > appr.maxBudgetCents) {
+  // maxBudgetCents 0 = UNLIMITED (no per-run ceiling) — never blocks.
+  if (appr.maxBudgetCents > 0 && run.budgetCents > appr.maxBudgetCents) {
     await denyAndFail(
       `Run budget (${run.budgetCents}¢) exceeds the approval ceiling (${appr.maxBudgetCents}¢).`,
     );

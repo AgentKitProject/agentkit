@@ -149,6 +149,30 @@ describe("runDueSchedules", () => {
     expect(after?.nextRunAt).toBe("2026-06-18T00:05:00.000Z");
   });
 
+  it("dispatches under an UNLIMITED (0) approval ceiling — 0 never blocks", async () => {
+    const schedules = new InMemoryScheduleRepo();
+    const approvals = new InMemoryApprovalRepo();
+    // Ceiling 0 = unlimited (the fresh-user default when no run budget is set).
+    await approvals.createApproval({
+      userId: "u1",
+      kitRef: KIT,
+      toolAllowlist: ["read_file"],
+      maxBudgetCents: 0,
+      createdAt: NOW,
+    });
+    schedules.seed(makeSchedule({ budgetCents: 5000 }));
+    const dispatcher = fakeDispatcher();
+
+    const summary = await runDueSchedules({
+      deps: { schedules, approvals },
+      now: NOW,
+      createAndDispatch: dispatcher.fn,
+    });
+    expect(summary).toMatchObject({ processed: 1, dispatched: 1, skipped: 0, errors: [] });
+    const after = await schedules.getSchedule("sched-1");
+    expect(after?.lastError).toBeNull();
+  });
+
   it("skips + advances when the approval is revoked", async () => {
     const { schedules, approvals } = await setup();
     const list = await approvals.listApprovalsByUser("u1");

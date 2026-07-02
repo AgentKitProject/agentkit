@@ -740,6 +740,17 @@ describe("contracts", () => {
       kitRef: { source: "market", marketKitId: "k1" },
       maxBudgetCents: 500
     });
+    // 0 = unlimited (no per-run ceiling) is a VALID approval ceiling; negatives are not.
+    createAutoApprovalRequestSchema.parse({
+      kitRef: { source: "market", marketKitId: "k1" },
+      maxBudgetCents: 0
+    });
+    assert.throws(() =>
+      createAutoApprovalRequestSchema.parse({
+        kitRef: { source: "market", marketKitId: "k1" },
+        maxBudgetCents: -1
+      })
+    );
     // kitRef refinement: market requires marketKitId.
     assert.throws(() =>
       createAutoApprovalRequestSchema.parse({ kitRef: { source: "market" }, maxBudgetCents: 1 })

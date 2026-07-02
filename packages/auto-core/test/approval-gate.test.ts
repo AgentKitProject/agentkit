@@ -173,6 +173,30 @@ describe("approval gate (processAutoRun)", () => {
     await expect(processAutoRun(run.id, deps)).rejects.toBeInstanceOf(ApprovalDeniedError);
   });
 
+  it("permits a run under an UNLIMITED (0) approval ceiling and completes it", async () => {
+    const { runs, approvals, deps } = await harness();
+    // Ceiling 0 = unlimited (the fresh-user default when no run budget is set):
+    // the gate must never treat it as "0 cents = instantly over budget".
+    await approvals.createApproval({
+      userId: "u1",
+      kitRef: { source: "local", localKitId: "k1" },
+      toolAllowlist: ["read_file"],
+      maxBudgetCents: 0,
+      createdAt: noopNow(),
+    });
+    const run = await runs.createRun({
+      userId: "u1",
+      kitRef: { source: "local", localKitId: "k1" },
+      input: { prompt: "x" },
+      budgetCents: 100,
+      model: "claude-sonnet-4-6",
+      createdAt: noopNow(),
+    });
+    const out = await processAutoRun(run.id, deps);
+    expect(out.status).toBe("succeeded");
+    expect((await runs.getRun(run.id))?.status).toBe("succeeded");
+  });
+
   it("permits a valid run and completes it", async () => {
     const { runs, approvals, deps } = await harness();
     await approvals.createApproval({

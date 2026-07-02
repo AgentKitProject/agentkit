@@ -40,7 +40,9 @@ export async function POST(request: Request) {
       ? body.toolAllowlist.filter((t): t is string => typeof t === "string")
       : [];
     // The approval ceiling is the resolved per-run budget (org override → user
-    // default → 50¢ fallback); the form no longer asks for a budget.
+    // default → 0 = UNLIMITED); the form no longer asks for a budget. 0 is a
+    // valid ceiling (unlimited — createApproval accepts it); runs under it fall
+    // back to auto.ts's UNLIMITED_RUN_FALLBACK_CAP_CENTS at run-create time.
     const maxBudgetCents = await resolveRunBudgetCents(userId);
     // Phase C: deny_all (default) or an allowlist of egress hosts. http_fetch in
     // the toolAllowlist is honored only with an allowlist policy (createApproval enforces).

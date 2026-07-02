@@ -70,7 +70,7 @@ export interface ConsumeWebhookArgs {
  * Re-checks the webhook against the standing approval (the Phase A gate),
  * mirroring processAutoRun / the Phase B scheduler:
  *   - a non-revoked approval for (userId, kitRef) must exist;
- *   - budgetCents <= approval.maxBudgetCents.
+ *   - budgetCents <= approval.maxBudgetCents (a 0 ceiling = unlimited, never blocks).
  * Throws a typed WebhookError on failure.
  */
 async function assertApprovalGate(
@@ -86,7 +86,8 @@ async function assertApprovalGate(
       "No standing approval exists for this kit.",
     );
   }
-  if (webhook.budgetCents > approval.maxBudgetCents) {
+  // maxBudgetCents 0 = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && webhook.budgetCents > approval.maxBudgetCents) {
     throw new WebhookError(
       "over_budget",
       `Webhook budget (${webhook.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`,

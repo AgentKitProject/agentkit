@@ -1026,6 +1026,20 @@ export class InsufficientComputeBalanceError extends Error {
 export const HTTP_FETCH_TOOL = "http_fetch";
 
 /**
+ * Effective per-run cap (US cents) when EVERYTHING resolves to unlimited: the
+ * requested run budget is 0 (unlimited) AND the approval ceiling is 0
+ * (unlimited — the fresh-user default, since approvals inherit the resolved run
+ * budget). A run can never actually carry budgetCents = 0: the run-driver's
+ * cutoff (`spentInferenceCents >= budgetCents`) would end it instantly, and the
+ * v2 active-minute hold is sized FROM the budget (0 → no hold → active minutes
+ * never billed). So "unlimited" runs get this generous-but-finite cap instead.
+ * Self-host/BYO is unaffected (inference spend stays 0, so no cap ever trips);
+ * on hosted the cap also bounds the up-front active-minute hold, so it must
+ * stay small enough to clear a typical prepaid balance ($10+ packs).
+ */
+export const UNLIMITED_RUN_FALLBACK_CAP_CENTS = 500; // $5.00 per run
+
+/**
  * Parses + validates a request body's networkPolicy into the auto-core Phase C
  * shape, defaulting to deny_all. Accepts either the object shape
  * ({ mode: "deny_all" } | { mode: "allowlist", hosts: [...] }) or the legacy
@@ -1099,11 +1113,15 @@ export async function createApproval(input: {
   userId: string;
   kitRef: KitRef;
   toolAllowlist: string[];
+  /** Per-run ceiling (US cents). 0 = UNLIMITED — no per-run ceiling. The routes
+   *  resolve this from the user's default run budget, whose system default IS
+   *  unlimited (run-budget.ts), so 0 must be a creatable approval — otherwise a
+   *  fresh user (no org/user budget set) could never create an approval. */
   maxBudgetCents: number;
   networkPolicy?: NetworkPolicy;
 }): Promise<AutoApproval> {
-  if (!Number.isInteger(input.maxBudgetCents) || input.maxBudgetCents <= 0) {
-    throw new AutoValidationError("maxBudgetCents must be a positive integer (US cents).");
+  if (!Number.isInteger(input.maxBudgetCents) || input.maxBudgetCents < 0) {
+    throw new AutoValidationError("maxBudgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   const networkPolicy = input.networkPolicy ?? { mode: "deny_all" };
   const toolAllowlist =
@@ -1201,15 +1219,24 @@ export async function startRun(input: {
   if (approval.revokedAt !== null) {
     throw new ApprovalDeniedError("The standing approval for this kit has been revoked.");
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Run budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );
   }
   // 0 (unlimited) → the approval ceiling: "unlimited" means "use the full
   // approved budget" rather than a separate per-run cap. A positive request is
-  // used as-is (already bounded by the ceiling check above).
-  const effectiveBudgetCents = input.budgetCents > 0 ? input.budgetCents : approval.maxBudgetCents;
+  // used as-is (already bounded by the ceiling check above). When the ceiling is
+  // ITSELF unlimited (0 — the fresh-user default), fall back to the named cap
+  // below: the run-driver's budget cutoff + the v2 active-minute hold/settle
+  // both require a POSITIVE per-run number, so a run can never carry 0.
+  const effectiveBudgetCents =
+    input.budgetCents > 0
+      ? input.budgetCents
+      : approval.maxBudgetCents > 0
+        ? approval.maxBudgetCents
+        : UNLIMITED_RUN_FALLBACK_CAP_CENTS;
 
   // ---- Pre-run prompt-extraction guard (M6 content protection) -----------
   // For a PROTECTED (paid / online-only) kit the system prompt is the seller's IP
@@ -1588,7 +1615,8 @@ async function requireScheduleApproval(input: {
       "approvalId does not match the standing approval for this kit."
     );
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Schedule budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );
@@ -1980,7 +2008,8 @@ async function requireWebhookApproval(input: {
   if (approval.id !== input.approvalId) {
     throw new AutoValidationError("approvalId does not match the standing approval for this kit.");
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Webhook budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );

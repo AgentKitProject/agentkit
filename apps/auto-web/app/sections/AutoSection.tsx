@@ -1065,7 +1065,8 @@ export function AutoSection({
                   <div style={{ fontSize: "0.85em" }}>
                     <strong>{kitRefLabel(a.kitRef)}</strong>
                     <div style={{ color: "var(--color-text-secondary)" }}>
-                      {a.toolAllowlist.join(", ") || "no tools"} · ceiling {centsToUsd(a.maxBudgetCents)}
+                      {a.toolAllowlist.join(", ") || "no tools"} · ceiling{" "}
+                      {a.maxBudgetCents > 0 ? centsToUsd(a.maxBudgetCents) : "Unlimited"}
                     </div>
                     <div style={{ marginTop: 4 }}>
                       {typeof a.networkPolicy === "object" && a.networkPolicy.mode === "allowlist" ? (

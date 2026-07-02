@@ -749,11 +749,14 @@ export async function createApproval(input: {
   userId: string;
   kitRef: KitRef;
   toolAllowlist: string[];
+  /** Per-run ceiling (US cents). 0 = UNLIMITED — no per-run ceiling (kept
+   *  consistent with auto-web, where approvals inherit the resolved default run
+   *  budget whose system default IS unlimited). */
   maxBudgetCents: number;
   networkPolicy?: NetworkPolicy;
 }): Promise<AutoApproval> {
-  if (!Number.isInteger(input.maxBudgetCents) || input.maxBudgetCents <= 0) {
-    throw new AutoValidationError("maxBudgetCents must be a positive integer (US cents).");
+  if (!Number.isInteger(input.maxBudgetCents) || input.maxBudgetCents < 0) {
+    throw new AutoValidationError("maxBudgetCents must be a non-negative integer (US cents); 0 = unlimited.");
   }
   const networkPolicy = input.networkPolicy ?? { mode: "deny_all" };
   const toolAllowlist =
@@ -845,7 +848,8 @@ export async function startRun(input: {
   if (approval.revokedAt !== null) {
     throw new ApprovalDeniedError("The standing approval for this kit has been revoked.");
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Run budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );
@@ -1142,7 +1146,8 @@ async function requireScheduleApproval(input: {
       "approvalId does not match the standing approval for this kit."
     );
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Schedule budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );
@@ -1534,7 +1539,8 @@ async function requireWebhookApproval(input: {
   if (approval.id !== input.approvalId) {
     throw new AutoValidationError("approvalId does not match the standing approval for this kit.");
   }
-  if (input.budgetCents > approval.maxBudgetCents) {
+  // A 0 ceiling = UNLIMITED (no per-run ceiling) — never blocks.
+  if (approval.maxBudgetCents > 0 && input.budgetCents > approval.maxBudgetCents) {
     throw new ApprovalDeniedError(
       `Webhook budget (${input.budgetCents}¢) exceeds the approval ceiling (${approval.maxBudgetCents}¢).`
     );

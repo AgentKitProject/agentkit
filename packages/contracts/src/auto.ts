@@ -118,8 +118,10 @@ export const autoApprovalSchema = z.object({
   toolAllowlist: z.array(z.string().min(1)),
   /** Network egress policy. Defaults to `{ mode: "deny_all" }`. */
   networkPolicy: networkPolicySchema,
-  /** Ceiling (US cents) a single run under this approval may budget. */
-  maxBudgetCents: z.number().int().positive(),
+  /** Ceiling (US cents) a single run under this approval may budget.
+   *  0 = UNLIMITED — the approval imposes no per-run ceiling (used when the
+   *  resolved default run budget is itself unlimited). */
+  maxBudgetCents: z.number().int().nonnegative(),
   createdAt: z.string().min(1),
   /** Set when revoked; a revoked approval never permits a run. */
   revokedAt: z.string().min(1).nullable()
@@ -130,7 +132,8 @@ export type AutoApproval = z.infer<typeof autoApprovalSchema>;
 export const createAutoApprovalRequestSchema = z.object({
   kitRef: kitRefSchema,
   toolAllowlist: z.array(z.string().min(1)).optional(),
-  maxBudgetCents: z.number().int().positive(),
+  /** 0 = unlimited (no per-run ceiling); see autoApprovalSchema.maxBudgetCents. */
+  maxBudgetCents: z.number().int().nonnegative(),
   networkPolicy: networkPolicySchema.optional()
 });
 export type CreateAutoApprovalRequest = z.infer<typeof createAutoApprovalRequestSchema>;

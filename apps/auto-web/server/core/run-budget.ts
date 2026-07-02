@@ -21,6 +21,11 @@ import { resolveOrgRunBudget } from "@/server/core/run-budget-client";
  * `startRun` resolves 0 to the kit's approval ceiling (the per-kit safety cap the
  * user already set), so "unlimited" means "use the full approved budget" rather
  * than an arbitrary floor. Org/user-set budgets + org monthly limits still apply.
+ * An approval created while this resolves to 0 stores maxBudgetCents = 0 — the
+ * documented UNLIMITED ceiling sentinel (never blocks a run); when BOTH the run
+ * budget and the ceiling are unlimited, startRun caps the run at
+ * UNLIMITED_RUN_FALLBACK_CAP_CENTS (auto.ts) because the run-driver's cutoff +
+ * v2 hold/settle billing require a positive per-run number.
  */
 export const SYSTEM_DEFAULT_RUN_BUDGET_CENTS = 0; // unlimited (→ approval ceiling)
 

@@ -215,4 +215,25 @@ describe("consumeWebhook", () => {
     ).rejects.toMatchObject({ reason: "over_budget" });
     expect(dispatcher.inputs).toHaveLength(0);
   });
+
+  it("fires under an UNLIMITED (0) approval ceiling — 0 never blocks", async () => {
+    const webhooks = new InMemoryWebhookRepo();
+    const approvals = new InMemoryApprovalRepo();
+    webhooks.seed(makeWebhook({ budgetCents: 5000 }));
+    // Ceiling 0 = unlimited (the fresh-user default when no run budget is set).
+    await seedApproval(approvals, 0);
+    const dispatcher = makeDispatcher();
+
+    const run = await consumeWebhook({
+      deps: { webhooks, approvals },
+      webhookId: "wh-1",
+      providedSecret: SECRET,
+      payload: { text: "go" },
+      now: NOW,
+      createAndDispatch: dispatcher.fn,
+    });
+    expect(run.id).toBe("run-dispatched-1");
+    expect(dispatcher.inputs).toHaveLength(1);
+    expect(dispatcher.inputs[0]!.budgetCents).toBe(5000);
+  });
 });
