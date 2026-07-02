@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
-import { buildUserCreateUploadUrlRequest, validateUserCreateUploadUrlRequest } from "./user-upload.ts";
+import {
+  buildUserCreateUploadUrlRequest,
+  DUPLICATE_SUBMISSION_MESSAGE,
+  resolveSubmissionConflictMessage,
+  validateUserCreateUploadUrlRequest
+} from "./user-upload.ts";
 
 describe("user-upload", () => {
   it("builds listingDraft from comma-separated form values", () => {
@@ -79,5 +84,33 @@ describe("user-upload", () => {
     assert.doesNotMatch(formSource, /placeholder=["'][^"']*(?:kit id|kit slug|slug)[^"']*["']/i);
     assert.match(formSource, /name="name"/);
     assert.match(formSource, /Market generates\s+the public kit URL/);
+  });
+
+  it("surfaces a non-duplicate 409 message verbatim (display name required)", () => {
+    const serverMessage = "AgentKitProfile display name is required for Market submission.";
+
+    assert.equal(resolveSubmissionConflictMessage(serverMessage), serverMessage);
+  });
+
+  it("keeps the friendly copy for a duplicate-submission 409", () => {
+    assert.equal(
+      resolveSubmissionConflictMessage("An active submission already exists for this user, kit, and version"),
+      DUPLICATE_SUBMISSION_MESSAGE
+    );
+  });
+
+  it("falls back to the friendly duplicate copy when the 409 payload has no message", () => {
+    assert.equal(resolveSubmissionConflictMessage(null), DUPLICATE_SUBMISSION_MESSAGE);
+    assert.equal(resolveSubmissionConflictMessage(undefined), DUPLICATE_SUBMISSION_MESSAGE);
+    assert.equal(resolveSubmissionConflictMessage(""), DUPLICATE_SUBMISSION_MESSAGE);
+  });
+
+  it("submit form resolves 409 messages through the shared conflict helper", async () => {
+    const formSource = await readFile(new URL("../components/UserSubmissionForm.tsx", import.meta.url), "utf8");
+
+    // The component must not hardcode the duplicate copy for every 409; it
+    // routes conflict payload messages through resolveSubmissionConflictMessage.
+    assert.match(formSource, /resolveSubmissionConflictMessage/);
+    assert.doesNotMatch(formSource, /message: "You already have an active submission/);
   });
 });

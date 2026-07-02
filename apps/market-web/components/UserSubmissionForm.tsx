@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Input, Textarea } from "@agentkitforge/ui";
-import { buildUserCreateUploadUrlRequest, validateUserCreateUploadUrlRequest } from "@/lib/user-upload";
+import {
+  buildUserCreateUploadUrlRequest,
+  resolveSubmissionConflictMessage,
+  validateUserCreateUploadUrlRequest
+} from "@/lib/user-upload";
 
 type SubmitState =
   | { status: "idle" }
@@ -62,7 +66,7 @@ export function UserSubmissionForm({ isConfigured }: { isConfigured: boolean }) 
       router.push(`/submissions/${encodeURIComponent(submissionId)}`);
     } catch (error) {
       if (error instanceof SubmissionConflictError) {
-        setState({ status: "failed", message: "You already have an active submission for this kit/version." });
+        setState({ status: "failed", message: error.message });
         return;
       }
 
@@ -164,20 +168,22 @@ async function postJson(path: string, payload: Record<string, unknown>) {
   const json = (await response.json()) as unknown;
 
   if (!response.ok) {
-    const message = isObject(json) && typeof json.message === "string" ? json.message : `Request failed with ${response.status}.`;
+    const serverMessage = isObject(json) && typeof json.message === "string" ? json.message : null;
     if (response.status === 409) {
-      throw new SubmissionConflictError(message);
+      throw new SubmissionConflictError(serverMessage);
     }
 
-    throw new Error(message);
+    throw new Error(serverMessage ?? `Request failed with ${response.status}.`);
   }
 
   return isObject(json) ? json : {};
 }
 
 class SubmissionConflictError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(serverMessage: string | null) {
+    // A duplicate-submission conflict keeps the friendly copy; any other 409
+    // (e.g. missing AgentKitProfile display name) surfaces the server message.
+    super(resolveSubmissionConflictMessage(serverMessage));
     this.name = "SubmissionConflictError";
   }
 }

@@ -76,3 +76,23 @@ function parseCommaSeparatedList(value: string) {
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
+
+export const DUPLICATE_SUBMISSION_MESSAGE = "You already have an active submission for this kit/version.";
+
+const DUPLICATE_SUBMISSION_SERVER_MESSAGE = /active submission already exists/i;
+
+/**
+ * Resolves the user-facing message for a 409 conflict from the submission API.
+ * The backend duplicate conflict carries no machine-readable code, so it is
+ * identified by its message text ("An active submission already exists for
+ * this user, kit, and version"). Every other 409 (for example the missing
+ * AgentKitProfile display name) surfaces the server's message verbatim. The
+ * friendly duplicate copy is also the fallback when the payload has no message.
+ */
+export function resolveSubmissionConflictMessage(serverMessage: string | null | undefined): string {
+  if (!serverMessage || DUPLICATE_SUBMISSION_SERVER_MESSAGE.test(serverMessage)) {
+    return DUPLICATE_SUBMISSION_MESSAGE;
+  }
+
+  return serverMessage;
+}
