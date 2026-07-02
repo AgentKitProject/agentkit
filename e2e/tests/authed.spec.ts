@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { targets } from "../lib/targets";
-import { hasRealSession } from "../global-setup";
+import { hasRealSession, STORAGE_STATE_PATH } from "../global-setup";
 
 // Authenticated READ-ONLY checks for the dedicated E2E user. The session comes
 // from a REAL Keycloak form login in global-setup (E2E_USER + E2E_PASSWORD CI
@@ -11,6 +11,11 @@ import { hasRealSession } from "../global-setup";
 // it must never mutate state. Write journeys live in tests/cuj/ (the `cuj` /
 // `prod-cuj` projects) with RUN_ID-prefixed artifacts + cleanup.
 test.skip(!hasRealSession(), "no E2E_USER/E2E_PASSWORD — authed checks skipped");
+
+// File-level auth: the `authed` project already supplies this storageState, and
+// setting it here too lets these tests stay authenticated when they run inside
+// the ANONYMOUS `canary` project (which must not globally preload auth).
+test.use({ storageState: STORAGE_STATE_PATH });
 
 test.describe("authed: apps admit the signed-in user", () => {
   test("Auto opens the run console (not bounced to sign-in) @canary", async ({ page }) => {

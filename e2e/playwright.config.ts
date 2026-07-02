@@ -66,10 +66,13 @@ export default defineConfig({
       use: { ...chrome, storageState: STORAGE_STATE_PATH },
     },
     {
-      // Continuous health cron: light, read-mostly, fast.
+      // Continuous health cron: light, read-mostly, fast. Runs ANONYMOUS by
+      // default so @canary tests that assert anonymous behavior (sign-in
+      // redirects) hold; authed.spec.ts opts into the storageState itself
+      // via test.use, so its @canary tests still run authenticated.
       name: "canary",
       grep: /@canary/,
-      use: { ...chrome, storageState: STORAGE_STATE_PATH },
+      use: chrome,
     },
   ],
 });
