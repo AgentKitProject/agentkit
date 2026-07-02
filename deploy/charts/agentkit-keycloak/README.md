@@ -10,7 +10,7 @@ consume it through `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
 
 This chart is a **convenience**: a batteries-included Keycloak that serves one
 OIDC realm (`agentkit`) already wired for all the apps — one confidential client
-per app plus a public device-flow client for Forge desktop. Think of it like the
+per app plus a public device-flow client for the CLI. Think of it like the
 bundled Postgres/MinIO in the app charts: optional and self-contained.
 
 **Already have an IdP? Skip this chart entirely** and point each app at your IdP.
@@ -28,7 +28,8 @@ bundled Postgres/MinIO in the app charts: optional and self-contained.
   - one **confidential** client per app (auth-code flow), redirect URI
     `<appUrl>/auth/callback`, post-logout redirect;
   - one **public** client `agentkitforge-desktop` with the OAuth 2.0 **device**
-    flow enabled (for the Forge desktop app / CLI);
+    flow enabled (for the `agentkitforge` CLI; the name is historical — the
+    desktop app is retired);
   - protocol mappers so tokens carry `sub`, `email`, `name`, `given_name`,
     `family_name`, `preferred_username`, and a `groups` claim;
   - an `admins` group (in the `groups` claim) so `ADMIN_OIDC_GROUP=admins` works.
@@ -98,7 +99,7 @@ helm install keycloak ./charts/agentkit-keycloak \
 | `realm.appUrls.{market,profile,auto,forgeWeb}` | `""` | Public origin per app → drives that client's redirect URI. Empty ⇒ client omitted. |
 | `realm.clients.{market,profile,auto,forgeWeb}.clientId` | `agentkitmarket`, `agentkitprofile`, `agentkitauto`, `agentkitforge-web` | Client id (must equal each app's `OIDC_CLIENT_ID`). |
 | `realm.clients.*.secret` | `""` (generated) | Client secret (must equal each app's `OIDC_CLIENT_SECRET`). |
-| `realm.desktopClient.enabled` / `.clientId` | `true` / `agentkitforge-desktop` | Public device-flow client for Forge desktop/CLI. |
+| `realm.desktopClient.enabled` / `.clientId` | `true` / `agentkitforge-desktop` | Public device-flow client for the CLI (name is historical — desktop app retired). |
 | **SMTP (optional, off)** | | |
 | `smtp.enabled` | `false` | Enable realm SMTP for verify/reset emails. |
 | `smtp.host` / `.port` / `.from` / `.fromDisplayName` / `.ssl` / `.starttls` / `.auth` | `""` / `587` / … | Non-secret SMTP config. |
@@ -205,7 +206,8 @@ web:
   auto-generate + persist `SESSION_SECRET`.
 - **Admin gating** (Market): add users to the `admins` group in Keycloak and set
   `ADMIN_OIDC_GROUP=admins` (via `web.config.oidc.adminGroup`).
-- **Forge desktop / CLI**: uses the public `agentkitforge-desktop` client with
-  the OAuth 2.0 device flow against the same realm issuer.
+- **CLI Forge** (`agentkitforge market login`): uses the public
+  `agentkitforge-desktop` client with the OAuth 2.0 device flow against the same
+  realm issuer.
 
 This chart does **not** modify any app chart — wire the values above yourself.

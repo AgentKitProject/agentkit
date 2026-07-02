@@ -13,10 +13,10 @@ This is the **full-stack entry point**. Each app also has a focused per-chart do
 - Web Forge: [`apps/forge-web/docs/SELF_HOSTING.md`](../apps/forge-web/docs/SELF_HOSTING.md)
 - Auto: [`apps/forge-web/docs/SELF_HOST_AUTO.md`](../apps/forge-web/docs/SELF_HOST_AUTO.md)
 
-> **You rarely need to self-host anything.** The desktop **AgentKitForge** app and
-> all local kit work (create / validate / package / import / export) run entirely on
-> a workstation with no account and no server. Self-hosting applies only to the
-> optional cloud services below.
+> **You rarely need to self-host anything.** The **`agentkitforge` CLI** and
+> `@agentkitforge/core` do all local kit work (create / validate / package / import /
+> export) on a workstation with no account and no server. Self-hosting applies only to
+> the optional cloud services below (web Forge, Market, Auto, Profile).
 
 ---
 
@@ -191,8 +191,10 @@ helm install agentkit-keycloak deploy/charts/agentkit-keycloak \
   at an external/managed Postgres (`postgres.enabled=false` + `db.url`/`db.username`/
   `db.password`) for larger installs.
 - **Email** (verification / password reset) is off by default — set `smtp.*` to enable.
-- **Desktop/CLI Forge** login uses the public `agentkitforge-desktop` device-flow
-  client the chart also creates.
+- **CLI Forge** (`agentkitforge market login`) login uses the public
+  `agentkitforge-desktop` device-flow client the chart also creates. (The name is
+  historical — the desktop app is retired; the client now serves the CLI + any
+  device-flow client.)
 
 Full knobs + the app-wiring table are in `deploy/charts/agentkit-keycloak/README.md`.
 Everything below (Users & admins, client-secret coordination) applies to **both**
