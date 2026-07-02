@@ -16,6 +16,8 @@
  */
 
 import type {
+  AppendFireLogInput,
+  AppendReceivedEventInput,
   AuditEntry,
   AutoApproval,
   AutoRun,
@@ -24,12 +26,27 @@ import type {
   AutoRunStatus,
   AutoSchedule,
   AutoWebhook,
+  Connection,
+  ConnectionOwnerType,
+  ConnectionStatus,
   CreateApprovalInput,
+  CreateConnectionInput,
+  CreateEventSourceInput,
   CreateRunInput,
   CreateScheduleInput,
+  CreateTriggerInput,
   CreateWebhookInput,
+  EventSource,
   KitRef,
+  ReceivedEvent,
+  Trigger,
+  TriggerFireLog,
+  TriggerFireRecord,
+  TriggerType,
+  UpdateConnectionInput,
+  UpdateEventSourceInput,
   UpdateScheduleInput,
+  UpdateTriggerInput,
   WebhookFireResult,
   WorkspaceFileEntry,
 } from "./types.js";
@@ -268,6 +285,190 @@ export interface WorkspaceStore {
   bundleResult(workspaceId: string): Promise<WorkspaceFileEntry[]>;
   /** Tears down the workspace and frees its storage. */
   cleanup(workspaceId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// TriggerRepository (event-driven expansion — unified triggers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists unified Trigger records (the event-driven expansion; INTERFACE ONLY
+ * in this workstream — adapters land later).
+ *
+ * INVARIANTS:
+ *   - A trigger never widens consent: fires are still approval- and
+ *     budget-gated by the run-create path; the repository just stores state.
+ *   - recordFire is additive on fireCount and stamps lastFiredAt/lastRunId.
+ *   - listDue returns ENABLED triggers of `type` that are not circuit-paused;
+ *     for type "schedule" dueness = cursor (next-fire ISO) <= nowISO, for
+ *     polled types (watch/rss/run_completed/email_in) every enabled trigger of
+ *     the type is due each sweep (the poller consults `cursor` itself).
+ *   - Circuit ops are the ONLY writers of `circuit`; updateTrigger never
+ *     touches it.
+ */
+export interface TriggerRepository {
+  createTrigger(input: CreateTriggerInput): Promise<Trigger>;
+  getTrigger(triggerId: string): Promise<Trigger | undefined>;
+  listTriggersByUser(userId: string): Promise<Trigger[]>;
+  /** Enabled, non-circuit-paused triggers of `type` due at nowISO (see above). */
+  listDue(type: TriggerType, nowISO: string): Promise<Trigger[]>;
+  /** Edits a trigger (`type` is immutable); returns the updated row or undefined. */
+  updateTrigger(triggerId: string, patch: UpdateTriggerInput): Promise<Trigger | undefined>;
+  /** Stamps the outcome of a fire (lastFiredAt/lastRunId/lastError, ++fireCount). */
+  recordFire(triggerId: string, result: TriggerFireRecord): Promise<void>;
+  /** Persists the poll/schedule resume cursor (null clears it). */
+  updateCursor(triggerId: string, cursor: string | null): Promise<void>;
+  /** ++circuit.consecutiveFailures; returns the new count. */
+  recordCircuitFailure(triggerId: string): Promise<number>;
+  /** Resets circuit.consecutiveFailures to 0 and clears pausedAt. */
+  resetCircuit(triggerId: string): Promise<void>;
+  /** Pauses (pausedAt = ISO) or unpauses (null) the trigger's circuit breaker. */
+  setCircuitPaused(triggerId: string, pausedAt: string | null): Promise<void>;
+  deleteTrigger(triggerId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// EventSourceRepository (user-created ingest endpoints)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists EventSource records (INTERFACE ONLY in this workstream).
+ *
+ * INVARIANTS:
+ *   - `tokenHash` is stored verbatim; the plaintext ingest bearer token is
+ *     NEVER persisted (S2 — mirrors AutoWebhookRepository.secretHash).
+ *   - findByTokenHash is the ingest auth lookup: the route hashes the presented
+ *     bearer token (sha256 hex) and looks the source up by that hash — the
+ *     comparison happens on hashes, never plaintext.
+ *   - recordEvent is additive on eventCount and stamps lastEventAt.
+ */
+export interface EventSourceRepository {
+  createEventSource(input: CreateEventSourceInput): Promise<EventSource>;
+  getEventSource(sourceId: string): Promise<EventSource | undefined>;
+  listEventSourcesByUser(userId: string): Promise<EventSource[]>;
+  /** Ingest auth: the source whose tokenHash matches, regardless of enabled
+   *  state (the route enforces the enabled check for a typed error). */
+  findByTokenHash(tokenHash: string): Promise<EventSource | undefined>;
+  /** Edits name/enabled; returns the updated row or undefined. */
+  updateEventSource(
+    sourceId: string,
+    patch: UpdateEventSourceInput,
+  ): Promise<EventSource | undefined>;
+  /** Stamps lastEventAt and ++eventCount after an accepted ingest. */
+  recordEvent(sourceId: string, receivedAt: string): Promise<void>;
+  deleteEventSource(sourceId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// ReceivedEventRepository (inspector ring buffer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists the received-event inspector buffer (INTERFACE ONLY in this
+ * workstream). RING-BUFFER SEMANTICS: entries are capped PER SOURCE (append
+ * evicts the oldest beyond the cap) and TTL'd (implementations expire old
+ * entries; prune enforces both). Payloads are already size-capped at ingest
+ * (EVENT_PAYLOAD_MAX_BYTES) — this store never sees larger bodies.
+ */
+export interface ReceivedEventRepository {
+  /** Appends one event (id assigned), evicting beyond the per-source cap. */
+  appendEvent(input: AppendReceivedEventInput): Promise<ReceivedEvent>;
+  /** Newest-first events for a source (inspector listing). */
+  listEventsBySource(sourceId: string, limit?: number): Promise<ReceivedEvent[]>;
+  getEvent(eventId: string): Promise<ReceivedEvent | undefined>;
+  /** Evicts over-cap / past-TTL entries for a source; returns the count removed. */
+  pruneEvents(sourceId: string): Promise<number>;
+}
+
+// ---------------------------------------------------------------------------
+// ConnectionRepository (non-secret connection records)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists Connection records (INTERFACE ONLY in this workstream).
+ *
+ * SECRETS NEVER TRAVEL THROUGH THIS PORT (S2): a connection's credential lives
+ * in the SecretStore; this repository stores only the opaque `secretRef`
+ * handle plus NON-SECRET config (schema-refined to reject secret-looking
+ * keys). Plaintext put/reveal is SecretStore-only.
+ */
+export interface ConnectionRepository {
+  createConnection(input: CreateConnectionInput): Promise<Connection>;
+  getConnection(connectionId: string): Promise<Connection | undefined>;
+  listConnectionsByOwner(
+    ownerType: ConnectionOwnerType,
+    ownerId: string,
+  ): Promise<Connection[]>;
+  /** Edits name/config/secretRef; returns the updated row or undefined. */
+  updateConnection(
+    connectionId: string,
+    patch: UpdateConnectionInput,
+  ): Promise<Connection | undefined>;
+  /** Stamps the verification status (+ optionally lastUsedAt). */
+  setConnectionStatus(
+    connectionId: string,
+    status: ConnectionStatus,
+    lastUsedAt?: string,
+  ): Promise<void>;
+  deleteConnection(connectionId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// SecretStore (encrypted-at-rest secret material — S2 invariant)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stores secret material ENCRYPTED AT REST behind opaque `secretRef` handles
+ * (INTERFACE ONLY in this workstream). Used ONLY by the worker harness /
+ * server delivery+verification paths (HMAC signature checks, connection
+ * credentials) — NEVER exposed to agent tools, never interpolated into
+ * prompts, never present in any contract shape (S2 invariant). Unlike our own
+ * bearer tokens (stored as hashes), these must be RECOVERABLE: HMAC
+ * verification and downstream delivery need the plaintext.
+ */
+export interface SecretStore {
+  /** Encrypts + stores the plaintext; returns the opaque secretRef handle. */
+  put(plaintext: string): Promise<string>;
+  /** Decrypts + returns the plaintext for a handle (server/worker-only). */
+  reveal(secretRef: string): Promise<string>;
+  /** Destroys the stored secret (handle becomes invalid). */
+  delete(secretRef: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// OutputStore (persisted run outputs)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists run output files DURABLY (INTERFACE ONLY in this workstream) —
+ * backing the run's `outputFiles` manifest, distinct from the ephemeral
+ * workspace (`result.files`). Presigned GETs let the UI/destinations download
+ * without proxying bytes.
+ */
+export interface OutputStore {
+  /** Stores one output file; returns the storeKey for the run manifest. */
+  putRunOutput(runId: string, path: string, bytes: Uint8Array): Promise<string>;
+  /** Time-limited download URL for a stored output. */
+  presignGet(storeKey: string): Promise<string>;
+  /** Deletes a stored output (retention/expiry sweep). */
+  delete(storeKey: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// FireLogRepository (abuse/cost observability)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists trigger fire-log rows (INTERFACE ONLY in this workstream).
+ * Suppressed/filtered/skipped fires land HERE, never as fake run records —
+ * the runs table stays real executions only. Storage is capped per trigger
+ * (implementations evict the oldest rows beyond the cap).
+ */
+export interface FireLogRepository {
+  /** Appends one fire-log row (id assigned), evicting beyond the per-trigger cap. */
+  appendFireLog(input: AppendFireLogInput): Promise<TriggerFireLog>;
+  /** Newest-first fire logs for a trigger, capped. */
+  listFireLogsByTrigger(triggerId: string, limit?: number): Promise<TriggerFireLog[]>;
 }
 
 // ---------------------------------------------------------------------------

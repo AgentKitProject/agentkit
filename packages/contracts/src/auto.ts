@@ -215,6 +215,24 @@ export type AuditEntry = z.infer<typeof auditEntrySchema>;
 // Runs
 // ---------------------------------------------------------------------------
 
+/**
+ * One PERSISTED output file produced by a run (event-driven expansion): the
+ * durable, delivery-backed manifest — distinct from the ephemeral
+ * `result.files` workspace manifest. `storeKey` points into the OutputStore;
+ * `expiresAt` is the retention deadline.
+ */
+export const autoRunOutputFileSchema = z.object({
+  /** Workspace-relative path. */
+  path: z.string().min(1),
+  /** Byte size of the file. */
+  sizeBytes: z.number().int().nonnegative(),
+  /** Backing OutputStore key (absent when persistence was skipped). */
+  storeKey: z.string().min(1).nullable().optional(),
+  /** ISO retention deadline; null/absent = no scheduled expiry. */
+  expiresAt: z.string().min(1).nullable().optional()
+});
+export type AutoRunOutputFile = z.infer<typeof autoRunOutputFileSchema>;
+
 /** The persisted record of one autonomous run. */
 export const autoRunSchema = z.object({
   id: z.string().min(1),
@@ -253,12 +271,20 @@ export const autoRunSchema = z.object({
   cancelRequested: z.boolean().optional(),
   /** How this run was triggered. Defaults to "on_demand" when absent. */
   trigger: runTriggerSchema.optional(),
-  /** The AutoSchedule that produced this run (iff trigger === "schedule"). */
+  /** @deprecated Superseded by `triggerId` (unified Trigger records). The
+   *  AutoSchedule that produced this run (iff trigger === "schedule"). */
   scheduleId: z.string().min(1).optional(),
-  /** The AutoWebhook that produced this run (iff trigger === "webhook"). */
+  /** @deprecated Superseded by `triggerId` (unified Trigger records). The
+   *  AutoWebhook that produced this run (iff trigger === "webhook"). */
   webhookId: z.string().min(1).optional(),
   /** Out-of-band staged input-file manifest (Phase C). */
-  inputFiles: z.array(autoRunInputFileRefSchema).optional()
+  inputFiles: z.array(autoRunInputFileRefSchema).optional(),
+  /** The unified Trigger that produced this run (event-driven expansion).
+   *  Supersedes the deprecated scheduleId/webhookId for trigger-created runs. */
+  triggerId: z.string().min(1).nullable().optional(),
+  /** Persisted-output manifest (durable OutputStore-backed files) — distinct
+   *  from the ephemeral `result.files` workspace manifest. */
+  outputFiles: z.array(autoRunOutputFileSchema).optional()
 });
 export type AutoRun = z.infer<typeof autoRunSchema>;
 
@@ -334,7 +360,13 @@ export type AutoRunInputUploadResponse = z.infer<typeof autoRunInputUploadRespon
 // Schedules
 // ---------------------------------------------------------------------------
 
-/** A standing schedule: fires an autonomous run on a recurring cron cadence. */
+/**
+ * A standing schedule: fires an autonomous run on a recurring cron cadence.
+ *
+ * @deprecated Superseded by the unified `triggerSchema` (type "schedule") in
+ * ./auto-events.ts. Kept fully working for back-compat; existing consumers and
+ * records are unaffected.
+ */
 export const autoScheduleSchema = z.object({
   id: z.string().min(1),
   userId: z.string().min(1),
@@ -368,7 +400,11 @@ export const autoScheduleSchema = z.object({
 });
 export type AutoSchedule = z.infer<typeof autoScheduleSchema>;
 
-/** Request body: POST /api/auto/schedules (and the Forge mirror). */
+/**
+ * Request body: POST /api/auto/schedules (and the Forge mirror).
+ *
+ * @deprecated Superseded by `createTriggerRequestSchema` (type "schedule").
+ */
 export const createAutoScheduleRequestSchema = z.object({
   kitRef: kitRefSchema,
   cron: z.string().min(1),
@@ -383,7 +419,11 @@ export const createAutoScheduleRequestSchema = z.object({
 });
 export type CreateAutoScheduleRequest = z.infer<typeof createAutoScheduleRequestSchema>;
 
-/** Request body: PATCH /api/auto/schedules/{id}. All fields optional. */
+/**
+ * Request body: PATCH /api/auto/schedules/{id}. All fields optional.
+ *
+ * @deprecated Superseded by `updateTriggerRequestSchema`.
+ */
 export const updateAutoScheduleRequestSchema = z.object({
   cron: z.string().min(1).optional(),
   timezone: z.string().min(1).optional(),
@@ -397,7 +437,11 @@ export const updateAutoScheduleRequestSchema = z.object({
 });
 export type UpdateAutoScheduleRequest = z.infer<typeof updateAutoScheduleRequestSchema>;
 
-/** Response body: GET /api/auto/schedules. */
+/**
+ * Response body: GET /api/auto/schedules.
+ *
+ * @deprecated Superseded by `listTriggersResponseSchema`.
+ */
 export const listAutoSchedulesResponseSchema = z.object({
   schedules: z.array(autoScheduleSchema)
 });
@@ -412,6 +456,9 @@ export type ListAutoSchedulesResponse = z.infer<typeof listAutoSchedulesResponse
  * hex of the shared secret) — the plaintext is NEVER stored. This schema must
  * NOT be used to shape any HTTP response; use `publicAutoWebhookSchema` or
  * `createAutoWebhookResponseSchema` instead.
+ *
+ * @deprecated Superseded by `eventSourceSchema` + the unified `triggerSchema`
+ * (type "event") in ./auto-events.ts. Kept fully working for back-compat.
  */
 export const autoWebhookSchema = z.object({
   id: z.string().min(1),
@@ -446,6 +493,8 @@ export type AutoWebhook = z.infer<typeof autoWebhookSchema>;
  * `secretHash` (and never carries the plaintext `secret`) and adds the public
  * `ingestUrl` the user POSTs events to. This is the only webhook shape a
  * non-create response may use.
+ *
+ * @deprecated Superseded by `publicEventSourceSchema` (event sources + triggers).
  */
 export const publicAutoWebhookSchema = autoWebhookSchema
   .omit({ secretHash: true })
@@ -455,7 +504,12 @@ export const publicAutoWebhookSchema = autoWebhookSchema
   });
 export type PublicAutoWebhook = z.infer<typeof publicAutoWebhookSchema>;
 
-/** Request body: POST /api/auto/webhooks (and the Forge mirror). */
+/**
+ * Request body: POST /api/auto/webhooks (and the Forge mirror).
+ *
+ * @deprecated Superseded by `createEventSourceRequestSchema` +
+ * `createTriggerRequestSchema` (type "event").
+ */
 export const createAutoWebhookRequestSchema = z.object({
   kitRef: kitRefSchema,
   budgetCents: z.number().int().positive(),
@@ -468,6 +522,8 @@ export type CreateAutoWebhookRequest = z.infer<typeof createAutoWebhookRequestSc
  * Response body: POST /api/auto/webhooks. This is the ONLY response that carries
  * the one-time plaintext `secret`; it is shown to the user once and can never be
  * retrieved again. `secretHash` is never present here.
+ *
+ * @deprecated Superseded by `createEventSourceResponseSchema` (one-time `token`).
  */
 export const createAutoWebhookResponseSchema = publicAutoWebhookSchema.extend({
   /** One-time plaintext shared secret. Shown ONCE; never retrievable again. */
@@ -475,13 +531,21 @@ export const createAutoWebhookResponseSchema = publicAutoWebhookSchema.extend({
 });
 export type CreateAutoWebhookResponse = z.infer<typeof createAutoWebhookResponseSchema>;
 
-/** Request body: PATCH /api/auto/webhooks/{id} (enable/disable). */
+/**
+ * Request body: PATCH /api/auto/webhooks/{id} (enable/disable).
+ *
+ * @deprecated Superseded by `updateTriggerRequestSchema` / `updateEventSourceRequestSchema`.
+ */
 export const updateAutoWebhookRequestSchema = z.object({
   enabled: z.boolean()
 });
 export type UpdateAutoWebhookRequest = z.infer<typeof updateAutoWebhookRequestSchema>;
 
-/** Response body: GET /api/auto/webhooks. */
+/**
+ * Response body: GET /api/auto/webhooks.
+ *
+ * @deprecated Superseded by `listEventSourcesResponseSchema` + `listTriggersResponseSchema`.
+ */
 export const listAutoWebhooksResponseSchema = z.object({
   webhooks: z.array(publicAutoWebhookSchema)
 });

@@ -167,6 +167,12 @@ export interface CreateApprovalInput {
  *
  * Both channels are optional; absent `deliveryConfig` (or an empty object) means
  * NO delivery. Backward compatible: pre-Phase-D records carry no deliveryConfig.
+ *
+ * NOTE (event-driven expansion): the unified Trigger's `destinations[]`
+ * (contracts `destinationSchema`, max 5 per trigger) SUPERSEDES deliveryConfig
+ * — it adds slack_incoming + connection targets. deliveryConfig stays fully
+ * supported for existing runs/schedules/webhooks; new trigger work should use
+ * destinations[].
  */
 export const deliveryWebhookSchema = z.object({
   /** Destination URL. MUST be https (validated). */
@@ -556,4 +562,189 @@ export interface WebhookFireResult {
   lastRunId: string;
   /** Fire error, or null when the fire was clean. */
   lastError: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Event-driven expansion (unified Triggers, EventSources, Connections)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shapes sourced from @agentkitforge/contracts (contracts-first — the wire
+ * schemas ARE the domain schemas, exactly like the schedule/webhook re-exports
+ * above; re-exported wholesale so consumers never import contracts directly
+ * for Auto domain types).
+ *
+ * INVARIANTS carried by these shapes (implementations come in a later
+ * workstream — this package currently ships the types + ports only):
+ *   S1 — events are DATA, never instructions: `TriggerMapping.promptTemplate`
+ *        is the ONLY instruction source for a trigger-fired run.
+ *   S2 — contracts/ports NEVER carry secrets: EventSource stores `tokenHash`
+ *        only; Connection carries an opaque `secretRef` into the SecretStore.
+ */
+export {
+  CAN_START_FAIL_CLOSED_MODES,
+  EVENT_PAYLOAD_MAX_BYTES,
+  MAPPING_FIELD_INTERPOLATION_MAX_CHARS,
+  MAPPING_TOTAL_PROMPT_MAX_CHARS,
+  autoRunOutputFileSchema,
+  canStartRunReasonSchema,
+  canStartRunRequestSchema,
+  canStartRunResponseSchema,
+  connectionConfigSchema,
+  connectionOwnerTypeSchema,
+  connectionSchema,
+  connectionStatusSchema,
+  connectionTypeSchema,
+  destinationSchema,
+  emailInTriggerConfigSchema,
+  eventNameSchema,
+  eventSourceKindSchema,
+  eventSourceProviderSchema,
+  eventSourceSchema,
+  eventTriggerConfigSchema,
+  messageTriggerConfigSchema,
+  publicEventSourceSchema,
+  receivedEventSchema,
+  rssTriggerConfigSchema,
+  runCompletedTriggerConfigSchema,
+  runTerminalStatusSchema,
+  scheduleTriggerConfigSchema,
+  triggerCircuitSchema,
+  triggerFilterSchema,
+  triggerFireLogSchema,
+  triggerFireOutcomeSchema,
+  triggerMappingSchema,
+  triggerRateLimitSchema,
+  triggerSchema,
+  triggerTypeSchema,
+  watchTriggerConfigSchema,
+} from "@agentkitforge/contracts";
+export type {
+  AutoRunOutputFile,
+  CanStartRunReason,
+  CanStartRunRequest,
+  CanStartRunResponse,
+  Connection,
+  ConnectionConfig,
+  ConnectionOwnerType,
+  ConnectionStatus,
+  ConnectionType,
+  CreateTriggerRequest,
+  Destination,
+  EventSource,
+  EventSourceKind,
+  EventSourceProvider,
+  PublicEventSource,
+  ReceivedEvent,
+  ReceivedEventDelivery,
+  RunTerminalStatus,
+  Trigger,
+  TriggerCircuit,
+  TriggerConfig,
+  TriggerFilter,
+  TriggerFilterOp,
+  TriggerFireLog,
+  TriggerFireOutcome,
+  TriggerMapping,
+  TriggerRateLimit,
+  TriggerType,
+  UpdateTriggerRequest,
+} from "@agentkitforge/contracts";
+
+import type {
+  ConnectionConfig as ContractsConnectionConfig,
+  ConnectionOwnerType as ContractsConnectionOwnerType,
+  ConnectionType as ContractsConnectionType,
+  CreateTriggerRequest as ContractsCreateTriggerRequest,
+  EventSourceKind as ContractsEventSourceKind,
+  EventSourceProvider as ContractsEventSourceProvider,
+  TriggerFireOutcome as ContractsTriggerFireOutcome,
+  UpdateTriggerRequest as ContractsUpdateTriggerRequest,
+} from "@agentkitforge/contracts";
+
+/**
+ * Fields a TriggerRepository.createTrigger call persists: the wire create
+ * request (already type/config-discriminated) plus the server-stamped
+ * identity/time fields — mirrors CreateScheduleInput/CreateWebhookInput.
+ */
+export type CreateTriggerInput = ContractsCreateTriggerRequest & {
+  userId: string;
+  createdAt: string;
+};
+
+/** Fields an updateTrigger call may change; `type` is immutable. */
+export type UpdateTriggerInput = ContractsUpdateTriggerRequest & {
+  /** Always stamped by the caller. */
+  updatedAt: string;
+};
+
+/** The fields recordFire stamps after a trigger fire creates a run (mirrors
+ *  WebhookFireResult; fireCount is incremented by the repository). */
+export interface TriggerFireRecord {
+  /** When the trigger fired (ISO). */
+  lastFiredAt: string;
+  /** Run id produced by the fire, or null when no run was created. */
+  lastRunId: string | null;
+  /** Fire error, or null when the fire was clean. */
+  lastError: string | null;
+}
+
+export interface CreateEventSourceInput {
+  userId: string;
+  name: string;
+  kind: ContractsEventSourceKind;
+  provider?: ContractsEventSourceProvider;
+  /** sha256 hex of OUR ingest bearer token. The web layer generates + hashes
+   *  the plaintext (mirrors CreateWebhookInput.secretHash). */
+  tokenHash: string;
+  /** True when a provider HMAC signing secret was stored (SecretStore). */
+  hasSigningSecret: boolean;
+  /** Defaults to true (enabled) when omitted. */
+  enabled?: boolean;
+  createdAt: string;
+}
+
+/** Fields an updateEventSource call may change. */
+export interface UpdateEventSourceInput {
+  name?: string;
+  enabled?: boolean;
+}
+
+/** One received event presented for ring-buffer append (id assigned by the
+ *  repository; payload already size-capped by the ingest route). */
+export interface AppendReceivedEventInput {
+  sourceId: string;
+  name: string;
+  receivedAt: string;
+  payload: unknown;
+}
+
+export interface CreateConnectionInput {
+  ownerType: ContractsConnectionOwnerType;
+  ownerId: string;
+  name: string;
+  type: ContractsConnectionType;
+  /** NON-SECRET config only (schema-refined upstream). */
+  config: ContractsConnectionConfig;
+  /** Opaque SecretStore handle; null = no secret needed. NEVER plaintext. */
+  secretRef?: string | null;
+  createdAt: string;
+}
+
+/** Fields an updateConnection call may change (status via setConnectionStatus). */
+export interface UpdateConnectionInput {
+  name?: string;
+  config?: ContractsConnectionConfig;
+  /** Replaces the SecretStore handle (rotation); null clears it. */
+  secretRef?: string | null;
+}
+
+/** One fire-log row presented for append (id assigned by the repository). */
+export interface AppendFireLogInput {
+  triggerId: string;
+  /** ISO of the fire attempt. */
+  at: string;
+  outcome: ContractsTriggerFireOutcome;
+  runId?: string | null;
+  detail?: string | null;
 }

@@ -76,7 +76,33 @@ import {
   recordUserOrgUsageRequestSchema,
   resolvedUserOrgUsageRecordSchema,
   setOrgMonthlyLimitsRequestSchema,
-  orgPrivateKitCapSchema
+  orgPrivateKitCapSchema,
+  eventSourceSchema,
+  publicEventSourceSchema,
+  createEventSourceRequestSchema,
+  createEventSourceResponseSchema,
+  receivedEventSchema,
+  emitEventResponseSchema,
+  replayEventRequestSchema,
+  triggerSchema,
+  createTriggerRequestSchema,
+  updateTriggerRequestSchema,
+  listTriggersResponseSchema,
+  triggerMappingSchema,
+  triggerFilterSchema,
+  destinationSchema,
+  connectionSchema,
+  createConnectionRequestSchema,
+  triggerFireLogSchema,
+  triggerFireOutcomeSchema,
+  canStartRunRequestSchema,
+  canStartRunResponseSchema,
+  CAN_START_FAIL_CLOSED_MODES,
+  EVENT_PAYLOAD_MAX_BYTES,
+  MAPPING_FIELD_INTERPOLATION_MAX_CHARS,
+  MAPPING_TOTAL_PROMPT_MAX_CHARS,
+  autoTriggerRoutes,
+  autoEventIngestRoutes
 } from "../dist/index.js";
 
 const fixture = (name: string) =>
@@ -820,6 +846,358 @@ describe("contracts", () => {
 
     assert.equal(autoWebhookSecretHeader, "x-auto-webhook-secret");
     assert.equal(autoInternalServiceKeyHeader, "x-service-key");
+  });
+
+  // --- Event-driven expansion (event sources, triggers, connections) -------
+
+  const baseTrigger = {
+    id: "t1",
+    userId: "u1",
+    name: "My trigger",
+    kitRef: { source: "local", localKitId: "k1" },
+    approvalId: "a1",
+    mapping: { promptTemplate: "Summarize {{event.subject}}" },
+    enabled: true,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z"
+  };
+
+  it("event source: create response carries one-time token; public omits tokenHash", () => {
+    const persisted = eventSourceSchema.parse({
+      id: "src1",
+      userId: "u1",
+      name: "My source",
+      kind: "custom",
+      tokenHash: "deadbeef",
+      hasSigningSecret: false,
+      enabled: true,
+      createdAt: "2026-07-01T00:00:00.000Z"
+    });
+    assert.equal(persisted.eventCount, 0); // default
+    // The persisted record REQUIRES tokenHash.
+    assert.throws(() =>
+      eventSourceSchema.parse({
+        id: "src1",
+        userId: "u1",
+        name: "My source",
+        kind: "custom",
+        hasSigningSecret: false,
+        enabled: true,
+        createdAt: "2026-07-01T00:00:00.000Z"
+      })
+    );
+    // Public projection strips tokenHash even if present; adds ingestUrl.
+    const pub = publicEventSourceSchema.parse({
+      ...persisted,
+      ingestUrl: "/api/hooks/auto/events/src1"
+    });
+    assert.ok(!("tokenHash" in pub));
+    // Create response is the ONLY shape carrying the one-time plaintext token.
+    const created = createEventSourceResponseSchema.parse({
+      ...pub,
+      token: "evt_token_shown_once"
+    });
+    assert.equal(created.token, "evt_token_shown_once");
+    assert.ok(!("tokenHash" in created));
+    // Create request: kind defaults to custom; provider optional.
+    const req = createEventSourceRequestSchema.parse({ name: "s" });
+    assert.equal(req.kind, "custom");
+    createEventSourceRequestSchema.parse({ name: "s", kind: "provider", provider: "github" });
+    assert.throws(() => createEventSourceRequestSchema.parse({ name: "" }));
+    assert.throws(() => createEventSourceRequestSchema.parse({ name: "s", provider: "nope" }));
+  });
+
+  it("received event: eventName regex rejects slashes/spaces; payload cap const", () => {
+    const evt = {
+      id: "e1",
+      sourceId: "src1",
+      name: "file.uploaded-v2_x",
+      receivedAt: "2026-07-01T00:00:00.000Z",
+      payload: { any: "thing" }
+    };
+    receivedEventSchema.parse(evt);
+    receivedEventSchema.parse({
+      ...evt,
+      delivered: [{ triggerId: "t1", outcome: "run_created" }]
+    });
+    assert.throws(() => receivedEventSchema.parse({ ...evt, name: "a/b" }));
+    assert.throws(() => receivedEventSchema.parse({ ...evt, name: "a b" }));
+    assert.throws(() => receivedEventSchema.parse({ ...evt, name: "" }));
+    assert.throws(() => receivedEventSchema.parse({ ...evt, name: "x".repeat(101) }));
+    assert.equal(EVENT_PAYLOAD_MAX_BYTES, 65536);
+    // Ingest ack + replay request.
+    emitEventResponseSchema.parse({ accepted: true, eventId: "e1" });
+    emitEventResponseSchema.parse({ accepted: false, suppressed: true });
+    replayEventRequestSchema.parse({ eventId: "e1" });
+    assert.throws(() => replayEventRequestSchema.parse({}));
+  });
+
+  it("trigger mapping: promptTemplate REQUIRED; defaults; interpolation caps exported", () => {
+    const mapping = triggerMappingSchema.parse({ promptTemplate: "Do {{x}}" });
+    assert.equal(mapping.attachPayloadAs, "event.json"); // default
+    assert.equal(mapping.fileHandling, "attach"); // default
+    triggerMappingSchema.parse({ promptTemplate: "p", attachPayloadAs: null, fileHandling: "ignore" });
+    // S1: a mapping WITHOUT promptTemplate must reject — events are data, never instructions.
+    assert.throws(() => triggerMappingSchema.parse({}));
+    assert.throws(() => triggerMappingSchema.parse({ promptTemplate: "" }));
+    assert.throws(() => triggerMappingSchema.parse({ promptTemplate: "x".repeat(4001) }));
+    assert.equal(MAPPING_FIELD_INTERPOLATION_MAX_CHARS, 2000);
+    assert.equal(MAPPING_TOTAL_PROMPT_MAX_CHARS, 8000);
+  });
+
+  it("trigger discriminated union parses every type; defaults fill in", () => {
+    const schedule = triggerSchema.parse({
+      ...baseTrigger,
+      type: "schedule",
+      config: { cron: "0 9 * * 1", timezone: "Europe/Berlin" }
+    });
+    assert.equal(schedule.rateLimit.maxPerHour, 20); // default
+    assert.equal(schedule.circuit.consecutiveFailures, 0); // default
+    assert.equal(schedule.fireCount, 0); // default
+    triggerSchema.parse({ ...baseTrigger, type: "event", config: { sourceId: "src1" } });
+    triggerSchema.parse({
+      ...baseTrigger,
+      type: "event",
+      config: { sourceId: "src1", eventName: null } // null = ALL names
+    });
+    const watch = triggerSchema.parse({
+      ...baseTrigger,
+      type: "watch",
+      config: { connectionId: "c1" }
+    });
+    assert.equal(watch.config.prefix, ""); // default
+    assert.equal(watch.config.batchMode, "per_file"); // default
+    triggerSchema.parse({ ...baseTrigger, type: "rss", config: { feedUrl: "https://example.com/feed.xml" } });
+    const chained = triggerSchema.parse({
+      ...baseTrigger,
+      type: "run_completed",
+      config: { kitRef: { source: "market", marketKitId: "k2" } }
+    });
+    assert.deepEqual(chained.config.statuses, ["succeeded"]); // default
+    triggerSchema.parse({ ...baseTrigger, type: "email_in", config: {} });
+    triggerSchema.parse({
+      ...baseTrigger,
+      type: "message",
+      config: { connectionId: "c1", scope: "mention" }
+    });
+    // Wrong/mismatched config rejects.
+    assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "event", config: { cron: "0 9 * * 1" } }));
+    assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "rss", config: { feedUrl: "http://insecure.example.com/feed" } }));
+    assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "event", config: { sourceId: "src1", eventName: "a/b" } }));
+    assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "unknown", config: {} }));
+    // Mapping is REQUIRED on every trigger.
+    const { mapping: _omitted, ...noMapping } = baseTrigger;
+    assert.throws(() => triggerSchema.parse({ ...noMapping, type: "event", config: { sourceId: "src1" } }));
+    listTriggersResponseSchema.parse({ triggers: [schedule] });
+  });
+
+  it("trigger caps: 10 filters, 5 destinations, rateLimit 1-500", () => {
+    const filter = { path: "action", op: "eq", value: "opened" };
+    triggerFilterSchema.parse(filter);
+    triggerFilterSchema.parse({ path: "issue.labels[0]", op: "exists" });
+    assert.throws(() => triggerFilterSchema.parse({ path: "", op: "eq", value: "x" }));
+    assert.throws(() => triggerFilterSchema.parse({ path: "a", op: "regex", value: "x" }));
+    const withFilters = (n: number) => ({
+      ...baseTrigger,
+      type: "event",
+      config: { sourceId: "src1" },
+      filters: Array.from({ length: n }, () => filter)
+    });
+    triggerSchema.parse(withFilters(10));
+    assert.throws(() => triggerSchema.parse(withFilters(11)));
+    const dest = { type: "email", to: ["a@example.com"] };
+    destinationSchema.parse(dest);
+    const withDests = (n: number) => ({
+      ...baseTrigger,
+      type: "event",
+      config: { sourceId: "src1" },
+      destinations: Array.from({ length: n }, () => dest)
+    });
+    triggerSchema.parse(withDests(5));
+    assert.throws(() => triggerSchema.parse(withDests(6)));
+    // Rate-limit bounds.
+    const withRate = (maxPerHour: number) => ({
+      ...baseTrigger,
+      type: "event",
+      config: { sourceId: "src1" },
+      rateLimit: { maxPerHour }
+    });
+    triggerSchema.parse(withRate(1));
+    triggerSchema.parse(withRate(500));
+    assert.throws(() => triggerSchema.parse(withRate(0)));
+    assert.throws(() => triggerSchema.parse(withRate(501)));
+    assert.throws(() => triggerSchema.parse(withRate(2.5)));
+  });
+
+  it("destinations: per-type shapes validate", () => {
+    destinationSchema.parse({ type: "email", to: ["a@example.com", "b@example.com"] });
+    assert.throws(() => destinationSchema.parse({ type: "email", to: [] }));
+    assert.throws(() => destinationSchema.parse({ type: "email", to: ["not-an-email"] }));
+    assert.throws(() =>
+      destinationSchema.parse({ type: "email", to: Array.from({ length: 6 }, (_, i) => `u${i}@example.com`) })
+    );
+    destinationSchema.parse({ type: "webhook_out", url: "https://example.com/hook", secret: "s" });
+    destinationSchema.parse({ type: "webhook_out", url: "https://example.com/hook", secret: null });
+    assert.throws(() => destinationSchema.parse({ type: "webhook_out", url: "http://example.com/hook" }));
+    destinationSchema.parse({ type: "slack_incoming", url: "https://hooks.slack.com/services/T/B/x" });
+    const conn = destinationSchema.parse({ type: "connection", connectionId: "c1", path: "reports/" });
+    assert.equal(conn.type === "connection" ? conn.what : undefined, "both"); // default
+    assert.throws(() => destinationSchema.parse({ type: "ftp", url: "https://x.example" }));
+  });
+
+  it("trigger create/patch requests mirror the record patterns", () => {
+    createTriggerRequestSchema.parse({
+      type: "event",
+      name: "On upload",
+      kitRef: { source: "local", localKitId: "k1" },
+      approvalId: "a1",
+      mapping: { promptTemplate: "Process {{file.name}}" },
+      config: { sourceId: "src1", eventName: "file.uploaded" }
+    });
+    // promptTemplate REQUIRED on create too (S1).
+    assert.throws(() =>
+      createTriggerRequestSchema.parse({
+        type: "event",
+        name: "On upload",
+        kitRef: { source: "local", localKitId: "k1" },
+        approvalId: "a1",
+        mapping: {},
+        config: { sourceId: "src1" }
+      })
+    );
+    updateTriggerRequestSchema.parse({ enabled: false });
+    updateTriggerRequestSchema.parse({ config: { cron: "0 9 * * *" } });
+    assert.throws(() => updateTriggerRequestSchema.parse({ rateLimit: { maxPerHour: 0 } }));
+  });
+
+  it("connection: config rejects secret-looking keys; secretRef is a string handle", () => {
+    const base = {
+      id: "c1",
+      ownerType: "user",
+      ownerId: "u1",
+      name: "My bucket",
+      type: "s3",
+      config: { bucket: "my-bucket", region: "fra1", endpoint: "https://fra1.digitaloceanspaces.com" },
+      createdAt: "2026-07-01T00:00:00.000Z"
+    };
+    const parsed = connectionSchema.parse(base);
+    assert.equal(parsed.status, "unverified"); // default
+    connectionSchema.parse({ ...base, secretRef: "sec_01ABC" });
+    connectionSchema.parse({ ...base, secretRef: null });
+    // secretRef must be an opaque string handle, never structured secret material.
+    assert.throws(() => connectionSchema.parse({ ...base, secretRef: "" }));
+    assert.throws(() => connectionSchema.parse({ ...base, secretRef: { accessKey: "AKIA..." } }));
+    // S2: config must NEVER carry secret material — any casing/word separator, any depth.
+    for (const key of ["secret", "password", "token", "apiKey", "API_KEY", "Token"]) {
+      assert.throws(
+        () => connectionSchema.parse({ ...base, config: { ...base.config, [key]: "leak" } }),
+        undefined,
+        `config key "${key}" must be rejected`
+      );
+    }
+    assert.throws(() =>
+      connectionSchema.parse({ ...base, config: { nested: { credentials: { password: "leak" } } } })
+    );
+    // Cheap per-type refinement: url-bearing types need https config.url when present.
+    assert.throws(() =>
+      connectionSchema.parse({
+        ...base,
+        type: "webhook_out",
+        config: { url: "http://example.com/hook" }
+      })
+    );
+    // Create request: `secret` is write-only inbound (moved into the SecretStore).
+    createConnectionRequestSchema.parse({
+      name: "My bucket",
+      type: "s3",
+      config: { bucket: "b" },
+      secret: "AKIA...:wJal..."
+    });
+    assert.throws(() =>
+      createConnectionRequestSchema.parse({ name: "x", type: "s3", config: { apikey: "leak" } })
+    );
+  });
+
+  it("fire log: outcome enum + shape (suppressions are logs, never runs)", () => {
+    for (const outcome of [
+      "run_created",
+      "filtered",
+      "suppressed_rate",
+      "skipped_funds",
+      "suppressed_circuit",
+      "error"
+    ]) {
+      triggerFireOutcomeSchema.parse(outcome);
+    }
+    assert.throws(() => triggerFireOutcomeSchema.parse("nope"));
+    triggerFireLogSchema.parse({
+      id: "fl1",
+      triggerId: "t1",
+      at: "2026-07-01T00:00:00.000Z",
+      outcome: "run_created",
+      runId: "run1"
+    });
+    triggerFireLogSchema.parse({
+      id: "fl2",
+      triggerId: "t1",
+      at: "2026-07-01T00:00:00.000Z",
+      outcome: "suppressed_rate",
+      runId: null,
+      detail: "rate limit (20/h) reached"
+    });
+    assert.throws(() =>
+      triggerFireLogSchema.parse({ id: "fl3", triggerId: "t1", at: "2026-07-01T00:00:00.000Z", outcome: "skipped" })
+    );
+  });
+
+  it("run additions: triggerId + persisted outputFiles manifest", () => {
+    const run = fixture("auto-run.json");
+    const parsed = autoRunSchema.parse({
+      ...run,
+      triggerId: "t1",
+      outputFiles: [
+        { path: "summary.md", sizeBytes: 42, storeKey: "outputs/run1/summary.md", expiresAt: "2026-08-01T00:00:00.000Z" },
+        { path: "raw.json", sizeBytes: 10, storeKey: null, expiresAt: null }
+      ]
+    });
+    assert.equal(parsed.triggerId, "t1");
+    assert.equal(parsed.outputFiles?.length, 2);
+    autoRunSchema.parse({ ...run, triggerId: null });
+    autoRunSchema.parse(run); // still valid without the new fields
+    assert.throws(() =>
+      autoRunSchema.parse({ ...run, outputFiles: [{ path: "a", sizeBytes: -1 }] })
+    );
+    assert.throws(() =>
+      autoRunSchema.parse({ ...run, outputFiles: [{ sizeBytes: 1 }] })
+    );
+  });
+
+  it("canStartRun affordability seam: request/response + fail-closed modes", () => {
+    canStartRunRequestSchema.parse({ userId: "u1", mode: "managed" });
+    canStartRunRequestSchema.parse({ userId: "u1", mode: "byo" });
+    assert.throws(() => canStartRunRequestSchema.parse({ userId: "u1", mode: "free" }));
+    assert.throws(() => canStartRunRequestSchema.parse({ mode: "managed" }));
+    canStartRunResponseSchema.parse({ allowed: true });
+    canStartRunResponseSchema.parse({ allowed: false, reason: "insufficient_funds", detail: "balance 0" });
+    canStartRunResponseSchema.parse({ allowed: false, reason: "ledger_unavailable" });
+    assert.throws(() => canStartRunResponseSchema.parse({ allowed: false, reason: "nope" }));
+    assert.deepEqual([...CAN_START_FAIL_CLOSED_MODES], ["managed"]);
+  });
+
+  it("trigger/event-source/connection route builders produce expected paths", () => {
+    assert.equal(autoTriggerRoutes.triggers(), "/api/auto/triggers");
+    assert.equal(autoTriggerRoutes.trigger("t1"), "/api/auto/triggers/t1");
+    assert.equal(autoTriggerRoutes.testFireTrigger("t1"), "/api/auto/triggers/t1/test-fire");
+    assert.equal(autoTriggerRoutes.triggerFireLogs("t1"), "/api/auto/triggers/t1/fire-logs");
+    assert.equal(autoTriggerRoutes.eventSources(), "/api/auto/event-sources");
+    assert.equal(autoTriggerRoutes.eventSourceEvents("src1"), "/api/auto/event-sources/src1/events");
+    assert.equal(autoTriggerRoutes.replayEvent("src1"), "/api/auto/event-sources/src1/replay");
+    assert.equal(autoTriggerRoutes.connections(), "/api/auto/connections");
+    assert.equal(autoTriggerRoutes.connection("c1"), "/api/auto/connections/c1");
+    assert.equal(
+      autoEventIngestRoutes.emit("src1", "file.uploaded"),
+      "/api/hooks/auto/events/src1/file.uploaded"
+    );
   });
 
   it("environments.json satisfies the service manifest schema", () => {
