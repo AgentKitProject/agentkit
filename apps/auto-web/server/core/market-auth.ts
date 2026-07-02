@@ -25,7 +25,7 @@ export async function getWorkosAccessToken(): Promise<string | null> {
   // Under self-hosted OIDC there is no WorkOS access token (the session is an
   // iron-session, not an AuthKit cookie) and hosted Market is off, so this seam
   // is inert: return null without touching `withAuth()`. Hosted (workos) is
-  // unchanged. Mirrors agentkitforge-web.
+  // unchanged. Mirrors agentkitforge.
   if ((process.env.AUTH_PROVIDER ?? "").trim().toLowerCase() === "oidc") {
     return null;
   }

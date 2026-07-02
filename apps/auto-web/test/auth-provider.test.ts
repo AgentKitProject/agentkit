@@ -1,6 +1,6 @@
 // Auth-provider abstraction: provider selection, OIDC claim mapping, and the
 // OIDC-disablement of the device-auth (forge-auth) + market-auth seams. Adapted
-// from agentkitforge-web/test/auth-provider.test.ts.
+// from agentkitforge/test/auth-provider.test.ts.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // AuthKit pulls in `next/cache` which isn't resolvable in the bare vitest env;

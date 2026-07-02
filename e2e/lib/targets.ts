@@ -4,7 +4,7 @@ export const targets = {
   profile: process.env.E2E_PROFILE_URL ?? "https://profile.agentkitproject.com",
   market: process.env.E2E_MARKET_URL ?? "https://market.agentkitproject.com",
   forge: process.env.E2E_FORGE_URL ?? "https://forge.agentkitproject.com",
-  webForge: process.env.E2E_WEBFORGE_URL ?? "https://webapp.forge.agentkitproject.com",
+  webForge: process.env.E2E_WEBFORGE_URL ?? "https://forge.agentkitproject.com",
   auto: process.env.E2E_AUTO_URL ?? "https://auto.agentkitproject.com",
 } as const;
 

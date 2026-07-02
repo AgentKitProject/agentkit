@@ -1,7 +1,7 @@
 const DEFAULT_MARKET_BASE_URL = "https://market.agentkitproject.com";
 // Web Forge (the desktop app is retired). The short apex forge.agentkitproject.com
 // 301-redirects here but drops query params, so link straight to the app.
-const FORGE_BASE_URL = "https://webapp.forge.agentkitproject.com";
+const FORGE_BASE_URL = "https://forge.agentkitproject.com";
 const AUTO_BASE_URL = "https://auto.agentkitproject.com";
 
 export function getForgeWebUrl(): string | undefined {

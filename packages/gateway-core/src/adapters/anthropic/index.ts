@@ -7,7 +7,7 @@
  * Design notes:
  *   - Uses `fetch` directly — no Anthropic SDK dependency — to keep the
  *     package install-clean everywhere (mirrors the pattern in
- *     agentkitforge-web/server/core/ai-draft.ts).
+ *     agentkitforge/server/core/ai-draft.ts).
  *   - Prompt-cache headers (anthropic-beta: prompt-caching-2024-07-31) are
  *     included so large system prompts (the injected kit instructions) benefit
  *     from Anthropic's prompt caching automatically.

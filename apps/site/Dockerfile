@@ -40,7 +40,7 @@ FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/site/package.json              apps/site/package.json
 COPY apps/market-web/package.json        apps/market-web/package.json
-COPY apps/forge-web/package.json         apps/forge-web/package.json
+COPY apps/forge/package.json         apps/forge/package.json
 COPY apps/auto-web/package.json          apps/auto-web/package.json
 COPY apps/profile-web/package.json       apps/profile-web/package.json
 COPY packages/contracts/package.json     packages/contracts/package.json

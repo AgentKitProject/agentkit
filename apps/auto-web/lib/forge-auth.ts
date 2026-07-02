@@ -69,7 +69,7 @@ export async function requireForgeUser(request: Request): Promise<ForgeAuthentic
   // Under AUTH_PROVIDER=oidc (self-hosted) the device-bearer token is issued by
   // the configured OIDC IdP, not WorkOS. Verify it against the issuer's JWKS
   // (discovered IdP-agnostically) rather than the WorkOS JWKS. The WorkOS path
-  // below is unchanged for the hosted deployment. Mirrors agentkitforge-web.
+  // below is unchanged for the hosted deployment. Mirrors agentkitforge.
   if (isForgeOidcProvider()) {
     return requireForgeOidcUser(request);
   }

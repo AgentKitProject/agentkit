@@ -22,7 +22,7 @@ follow-ups raised after the central docs site shipped. It is scoped to `apps/sit
   `og:image`** and **no `og.png`** in `public/`. Social cards show no image.
 - **`apps/profile-web` — favicons present** (`favicon.ico`, `apple-touch-icon.png`,
   `icon.svg`, `site.webmanifest`). OG image status: no `og.png` in `public/`.
-- **`apps/forge-web` & `apps/auto-web` — WEAK.** `public/` only carries Auto-branded
+- **`apps/forge` & `apps/auto-web` — WEAK.** `public/` only carries Auto-branded
   assets (`agentkitauto-icon.png`, `auto-logo.svg`); no `favicon.ico`,
   no `apple-touch-icon.png`, no per-app OG image. Their `layout.tsx` define metadata
   but the referenced icon files are largely absent.

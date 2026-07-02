@@ -1,9 +1,0 @@
-node_modules
-.next
-.env
-.env.local
-.env*.local
-.agentkitforge-web-data
-*.tsbuildinfo
-next-env.d.ts
-.DS_Store

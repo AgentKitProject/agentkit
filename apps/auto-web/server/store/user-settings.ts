@@ -19,7 +19,7 @@ import path from "node:path";
 import { getAllowedProviders } from "@/lib/self-host";
 
 function dataDir(): string {
-  return process.env.AGENTKITFORGE_WEB_DATA_DIR || path.resolve(process.cwd(), ".agentkitforge-web-data");
+  return process.env.AGENTKITFORGE_WEB_DATA_DIR || path.resolve(process.cwd(), ".agentkitforge-data");
 }
 
 function assertSafeSegment(segment: string, label: string): void {

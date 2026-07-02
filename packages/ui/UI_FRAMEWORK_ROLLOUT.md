@@ -20,7 +20,7 @@ to keep new/changed surfaces aligned.
 |---|---|---|---|---|
 | `apps/profile-web` | Next 15 | `SiteShell` (via `SiteChrome`) | teal bridge in `globals.css` + `brandAccent` | adopted |
 | `apps/market-web` | Next 15 | `SiteShell` (via `SiteChrome`) | cyan bridge in `globals.css` + `brandAccent` | adopted |
-| `apps/forge-web` | Next 15 | `AppShell` (sidebar) | `forge.css` bridge + `data-theme` no-flash script | adopted |
+| `apps/forge` | Next 15 | `AppShell` (sidebar) | `forge.css` bridge + `data-theme` no-flash script | adopted |
 | `apps/auto-web` | Next 15 | `AppShell` (sidebar) | `forge.css` bridge + `data-theme` no-flash script | adopted |
 | `apps/forge-desktop` | Vite + Tauri | `AppShell` (sidebar) | `styles.css` bridge | adopted |
 | `apps/site` | Astro 5 | hand-rendered `ak-*` classes (no React island) | `BaseLayout.astro` bridge + `theme-*` body class | adopted |
@@ -172,7 +172,7 @@ _Reference: `apps/market-web`, `apps/profile-web`._
 
 ### 5b. Next.js App Router — application surface (`AppShell`)
 
-_Reference: `apps/forge-web`, `apps/auto-web`._
+_Reference: `apps/forge`, `apps/auto-web`._
 
 Same steps 1–2 and 8, plus:
 

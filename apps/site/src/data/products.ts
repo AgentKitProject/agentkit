@@ -51,5 +51,5 @@ export const products = [
   }
 ] as const;
 
-export const webForgeUrl = 'https://webapp.forge.agentkitproject.com';
+export const webForgeUrl = 'https://forge.agentkitproject.com';
 export const contactEmail = 'hello@agentkit-project.com';

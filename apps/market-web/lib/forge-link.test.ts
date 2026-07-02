@@ -7,7 +7,7 @@ describe("forge web links", () => {
   it("builds a web Forge link with the market: slug", () => {
     const link = buildRunInForgeWebLink({ slug: "sales-report-generator" });
 
-    assert.equal(link, "https://webapp.forge.agentkitproject.com/forge?kit=market%3Asales-report-generator");
+    assert.equal(link, "https://forge.agentkitproject.com/forge?kit=market%3Asales-report-generator");
   });
 
   it("can include a public-safe kit id without adding private data", () => {
@@ -19,7 +19,7 @@ describe("forge web links", () => {
   });
 
   it("hosted getForgeWebUrl points at web Forge (desktop retired)", () => {
-    assert.equal(getForgeWebUrl(), "https://webapp.forge.agentkitproject.com");
+    assert.equal(getForgeWebUrl(), "https://forge.agentkitproject.com");
   });
 
   it("renders the Open in Forge button as a web link, no desktop deep link or private fields", async () => {

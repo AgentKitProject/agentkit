@@ -97,7 +97,7 @@ helm install keycloak ./charts/agentkit-keycloak \
 | `realm.loginWithEmailAllowed` | `true` | Log in with email. |
 | `realm.adminGroup` | `admins` | Group emitted in the `groups` claim → set apps' `ADMIN_OIDC_GROUP` to this. |
 | `realm.appUrls.{market,profile,auto,forgeWeb}` | `""` | Public origin per app → drives that client's redirect URI. Empty ⇒ client omitted. |
-| `realm.clients.{market,profile,auto,forgeWeb}.clientId` | `agentkitmarket`, `agentkitprofile`, `agentkitauto`, `agentkitforge-web` | Client id (must equal each app's `OIDC_CLIENT_ID`). |
+| `realm.clients.{market,profile,auto,forgeWeb}.clientId` | `agentkitmarket`, `agentkitprofile`, `agentkitauto`, `agentkitforge` | Client id (must equal each app's `OIDC_CLIENT_ID`). |
 | `realm.clients.*.secret` | `""` (generated) | Client secret (must equal each app's `OIDC_CLIENT_SECRET`). |
 | `realm.desktopClient.enabled` / `.clientId` | `true` / `agentkitforge-desktop` | Public device-flow client for the CLI (name is historical — desktop app retired). |
 | **SMTP (optional, off)** | | |
@@ -161,7 +161,7 @@ into the apps.
 > `OIDC_*` values to your IdP instead.
 
 For **each** app chart (`agentkitmarket`, `agentkitprofile`, `agentkitauto`,
-`agentkitforge-web`), set the web tier to generic OIDC and point it at this realm:
+`agentkitforge`), set the web tier to generic OIDC and point it at this realm:
 
 ```yaml
 web:
@@ -187,7 +187,7 @@ web:
   | Market | `agentkitmarket` | `<appUrl>/auth/callback` |
   | Profile | `agentkitprofile` | `<appUrl>/auth/callback` |
   | Auto | `agentkitauto` | `<appUrl>/auth/callback` |
-  | Web Forge | `agentkitforge-web` | `<appUrl>/auth/callback` |
+  | Web Forge | `agentkitforge` | `<appUrl>/auth/callback` |
 
 - **Client secret**: `OIDC_CLIENT_SECRET` must equal the realm client's secret.
   Read the generated value from this chart's Secret, e.g. for Market:
@@ -198,7 +198,7 @@ web:
   ```
 
   (Keys: `CLIENT_SECRET_AGENTKITMARKET`, `CLIENT_SECRET_AGENTKITPROFILE`,
-  `CLIENT_SECRET_AGENTKITAUTO`, `CLIENT_SECRET_AGENTKITFORGE_WEB`.) Or pin your
+  `CLIENT_SECRET_AGENTKITAUTO`, `CLIENT_SECRET_AGENTKITFORGE`.) Or pin your
   own secrets via `realm.clients.*.secret` and set the same value on each app.
 
 - **`AUTH_PROVIDER=oidc`** and **`SESSION_SECRET`**: set `web.authProvider: oidc`

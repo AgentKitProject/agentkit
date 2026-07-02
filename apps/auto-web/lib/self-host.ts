@@ -1,6 +1,6 @@
 // Self-host vs hosted-SaaS configuration — the single source of truth for which
 // ecosystem integrations are active on a given AgentKitAuto instance. Ported from
-// agentkitforge-web/lib/self-host.ts (same signal + helpers) and adapted for Auto.
+// agentkitforge/lib/self-host.ts (same signal + helpers) and adapted for Auto.
 //
 // SELF-HOST SIGNAL:
 //   - SELF_HOST=true       — the explicit, sole signal that this instance is

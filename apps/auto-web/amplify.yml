@@ -16,7 +16,7 @@ frontend:
         - 'test "$KITSTORE_BACKEND" != "aws" || test -n "$S3_BUCKET" || (echo "aws backend requires S3_BUCKET" && exit 1)'
         - 'test -n "$AGENTKITFORGE_WEB_SECRET" || (echo "Missing required env var: AGENTKITFORGE_WEB_SECRET" && exit 1)'
         # Bake server config into .env.production so the SSR runtime reliably
-        # sees it (mirrors agentkitforge-web / agentkitmarket-app; avoids a
+        # sees it (mirrors agentkitforge / agentkitmarket-app; avoids a
         # Bridge-4-style silent null-env failure). Values written to a file,
         # never echoed to logs.
         - 'printf "WORKOS_API_KEY=%s\n" "$WORKOS_API_KEY" > .env.production'
@@ -26,7 +26,7 @@ frontend:
         - 'printf "WORKOS_REDIRECT_URI=%s\n" "$WORKOS_REDIRECT_URI" >> .env.production'
         - 'printf "APP_URL=%s\n" "$APP_URL" >> .env.production'
         - 'printf "AGENTKITPROJECT_WORKOS_CLIENT_ID=%s\n" "$AGENTKITPROJECT_WORKOS_CLIENT_ID" >> .env.production'
-        # Kit store — SAME aws backend + tables/bucket as agentkitforge-web so a
+        # Kit store — SAME aws backend + tables/bucket as agentkitforge so a
         # user's kits appear in Auto's kit selector.
         - 'printf "KITSTORE_BACKEND=%s\n" "$KITSTORE_BACKEND" >> .env.production'
         - 'printf "DYNAMODB_KITS_TABLE=%s\n" "$DYNAMODB_KITS_TABLE" >> .env.production'
@@ -34,7 +34,7 @@ frontend:
         - 'printf "S3_BUCKET=%s\n" "$S3_BUCKET" >> .env.production'
         - 'printf "S3_PREFIX=%s\n" "$S3_PREFIX" >> .env.production'
         # AWS_* env names are reserved by Amplify; the SSR aws adapters read these
-        # FORGE_AWS_* vars instead (same shared IAM user as agentkitforge-web).
+        # FORGE_AWS_* vars instead (same shared IAM user as agentkitforge).
         - 'printf "FORGE_AWS_REGION=%s\n" "$FORGE_AWS_REGION" >> .env.production'
         - 'printf "FORGE_AWS_ACCESS_KEY_ID=%s\n" "$FORGE_AWS_ACCESS_KEY_ID" >> .env.production'
         - 'printf "FORGE_AWS_SECRET_ACCESS_KEY=%s\n" "$FORGE_AWS_SECRET_ACCESS_KEY" >> .env.production'
@@ -42,7 +42,7 @@ frontend:
         - 'printf "AGENTKITMARKET_BASE_URL=%s\n" "$AGENTKITMARKET_BASE_URL" >> .env.production'
         - 'printf "AGENTKITFORGE_AI_PROVIDER_CONFIG=%s\n" "$AGENTKITFORGE_AI_PROVIDER_CONFIG" >> .env.production'
         # Gateway managed prepaid-credit inference ledger — SAME tables as
-        # agentkitforge-web, reached by the same FORGE_AWS_* IAM user.
+        # agentkitforge, reached by the same FORGE_AWS_* IAM user.
         - 'printf "GATEWAY_CREDIT_ACCOUNTS_TABLE=%s\n" "$GATEWAY_CREDIT_ACCOUNTS_TABLE" >> .env.production'
         - 'printf "GATEWAY_CREDIT_TXNS_TABLE=%s\n" "$GATEWAY_CREDIT_TXNS_TABLE" >> .env.production'
         - 'printf "GATEWAY_CREDIT_HOLDS_TABLE=%s\n" "$GATEWAY_CREDIT_HOLDS_TABLE" >> .env.production'
@@ -51,7 +51,7 @@ frontend:
         - 'printf "ANTHROPIC_API_KEY=%s\n" "$ANTHROPIC_API_KEY" >> .env.production'
         - 'printf "ADMIN_EMAILS=%s\n" "$ADMIN_EMAILS" >> .env.production'
         # AgentKitAuto run/approval/schedule/webhook tables — SAME live tables as
-        # agentkitforge-web. NOTE: AUTO_WEBHOOKS_TABLE must be the *corrected*
+        # agentkitforge. NOTE: AUTO_WEBHOOKS_TABLE must be the *corrected*
         # table id (…87A4B4A2-1TVPHA7XX7DV9); set via Amplify env, not hardcoded.
         - 'printf "AUTO_RUNS_TABLE=%s\n" "$AUTO_RUNS_TABLE" >> .env.production'
         - 'printf "AUTO_APPROVALS_TABLE=%s\n" "$AUTO_APPROVALS_TABLE" >> .env.production'
@@ -64,7 +64,7 @@ frontend:
         - 'printf "AUTO_CLOUD_RUN_CENTS_PER_MIN=%s\n" "$AUTO_CLOUD_RUN_CENTS_PER_MIN" >> .env.production'
         - 'printf "AUTO_SELFHOST_BILLING=%s\n" "$AUTO_SELFHOST_BILLING" >> .env.production'
         # AgentKitAuto HOSTED execution (Fargate per-run worker). SAME ECS
-        # cluster/task-def as agentkitforge-web. When AUTO_DISPATCH != "fargate"
+        # cluster/task-def as agentkitforge. When AUTO_DISPATCH != "fargate"
         # the app uses the in-process dispatcher (dev/self-host).
         - 'printf "AUTO_DISPATCH=%s\n" "$AUTO_DISPATCH" >> .env.production'
         - 'printf "AUTO_ECS_CLUSTER=%s\n" "$AUTO_ECS_CLUSTER" >> .env.production'

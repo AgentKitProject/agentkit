@@ -35,7 +35,7 @@ frontend:
         # licensed-package endpoint (hosted AgentKitAuto protected-kit resolution).
         # OPTIONAL — when unset the /api/forge/service/* endpoint returns 503 (NO
         # preBuild required-var check). Must equal the SAME value set on
-        # agentkitforge-web. Never echoed to logs; never sent to the browser.
+        # agentkitforge. Never echoed to logs; never sent to the browser.
         - 'printf "MARKET_SERVICE_KEY=%s\n" "$MARKET_SERVICE_KEY" >> .env.production'
         - 'npm ci'
     build:

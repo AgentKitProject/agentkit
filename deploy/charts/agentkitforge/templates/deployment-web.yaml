@@ -1,0 +1,119 @@
+{{- if .Values.web.enabled -}}
+{{- $secretName := include "agentkitforge.webEffectiveSecretName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentkitforge.fullname" . }}
+  labels:
+    {{- include "agentkitforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "agentkitforge.selectorLabelsWeb" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentkitforge.selectorLabelsWeb" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- /* Optional static /etc/hosts entries for the web pod. Default empty
+        (secure default unchanged). Used by the k3s smoke test to resolve the
+        ingress nip.io hosts straight to the node IP when the CNI can't hairpin. */}}
+      {{- with .Values.web.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          command: ["node", "apps/forge/server.js"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.port }}
+              protocol: TCP
+          envFrom:
+            # Non-secret runtime config.
+            - configMapRef:
+                name: {{ include "agentkitforge.webConfigmapName" . }}
+            # All secret values (WorkOS, AGENTKITFORGE_WEB_SECRET, the bundled
+            # service passwords + S3 creds). Optional so the chart renders before
+            # the external secret exists (the pod will crashloop until it does —
+            # expected for GitOps bootstrap).
+            - secretRef:
+                name: {{ $secretName }}
+                optional: true
+          env:
+            {{- /*
+            Auto-compose DATABASE_URL for the bundled Postgres from the secret's
+            POSTGRES_PASSWORD, so the secret only needs the password (not the full
+            connection string). If you point at an external Postgres, put
+            DATABASE_URL directly in the secret — it will override this only if
+            you remove this block; otherwise set postgres.enabled=false. */}}
+            {{- if .Values.postgres.enabled }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: POSTGRES_PASSWORD
+                  optional: true
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgres.user }}:$(POSTGRES_PASSWORD)@{{ include "agentkitforge.postgresHost" . }}:5432/{{ .Values.postgres.database }}"
+            {{- end }}
+            {{- /* S3 access key defaults to the bundled MinIO root user. */}}
+            {{- if .Values.minio.enabled }}
+            - name: S3_ACCESS_KEY_ID
+              value: {{ .Values.minio.rootUser | quote }}
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: MINIO_ROOT_PASSWORD
+                  optional: true
+            {{- end }}
+            {{- /* Optional extra env vars merged verbatim into the web container.
+              Default empty (secure default unchanged). Used by the k3s smoke test
+              to inject NODE_TLS_REJECT_UNAUTHORIZED=0 for self-signed Traefik TLS. */}}
+            {{- with .Values.web.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+          {{- if .Values.database.caSecret }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /etc/db-ca
+              readOnly: true
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+      {{- /* Optional read-only Postgres CA mount for sslmode=verify-full. */}}
+      {{- if .Values.database.caSecret }}
+      volumes:
+        - name: db-ca
+          secret:
+            secretName: {{ .Values.database.caSecret }}
+      {{- end }}
+{{- end }}

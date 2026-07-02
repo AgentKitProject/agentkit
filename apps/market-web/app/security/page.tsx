@@ -33,7 +33,7 @@ export default function SecurityPage() {
           will not take legal action against researchers who follow this policy in good faith.
         </p>
         <h2>Scope</h2>
-        <p>In scope: market.agentkitproject.com, forge.agentkitproject.com, profile.agentkitproject.com, webapp.forge.agentkitproject.com, and associated APIs.</p>
+        <p>In scope: market.agentkitproject.com, forge.agentkitproject.com, profile.agentkitproject.com, forge.agentkitproject.com, and associated APIs.</p>
         <p>Out of scope: third-party services (WorkOS, Stripe, AWS), social engineering, physical attacks.</p>
         <h2>security.txt</h2>
         <p>

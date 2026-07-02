@@ -1,7 +1,7 @@
 # AgentKitAuto — Hosted Execution Deploy Runbook (Phase A)
 
 The hosted execution slice runs each Auto run as a **one-shot AWS Fargate task**.
-The web app (`agentkitforge-web`) creates the queued run and dispatches it via ECS
+The web app (`agentkitforge`) creates the queued run and dispatches it via ECS
 `RunTask`; the Fargate worker (this package's `run-task` entrypoint) executes the
 run end-to-end with `processAutoRun`, calling back into the web app's internal
 `resolve-context` endpoint for the kit prompt + BYO provider config.
@@ -16,9 +16,9 @@ run end-to-end with `processAutoRun`, calling back into the web app's internal
 | Piece | Where | What |
 |---|---|---|
 | Worker image | this repo (`Dockerfile`) | `node` image running `dist/entrypoints/run-task.js`; reads `RUN_ID` + AWS task role + `WEB_FORGE_INTERNAL_URL`/`AUTO_WORKER_SERVICE_KEY`. |
-| CDK infra | `agentkitforge-web/infra` | `AutoRuns`/`AutoApprovals` tables, ECR repo `agentkit-auto-worker`, public-only VPC (no NAT), SG (443+DNS egress), ECS cluster, task + execution roles, task def, SSR-user grants. |
-| Dispatcher | `agentkitforge-web/server/core/auto-fargate-dispatcher.ts` | ECS `RunTask` (FARGATE, public IP, `RUN_ID` override). Selected when `AUTO_DISPATCH=fargate` + `KITSTORE_BACKEND=aws`. |
-| Internal endpoint | `agentkitforge-web/app/api/internal/auto/resolve-context/route.ts` | Service-key-only; returns prompt/tools/model/inferenceMode/byoProvider to the worker. |
+| CDK infra | `agentkitforge/infra` | `AutoRuns`/`AutoApprovals` tables, ECR repo `agentkit-auto-worker`, public-only VPC (no NAT), SG (443+DNS egress), ECS cluster, task + execution roles, task def, SSR-user grants. |
+| Dispatcher | `agentkitforge/server/core/auto-fargate-dispatcher.ts` | ECS `RunTask` (FARGATE, public IP, `RUN_ID` override). Selected when `AUTO_DISPATCH=fargate` + `KITSTORE_BACKEND=aws`. |
+| Internal endpoint | `agentkitforge/app/api/internal/auto/resolve-context/route.ts` | Service-key-only; returns prompt/tools/model/inferenceMode/byoProvider to the worker. |
 
 ## Ordered deploy
 
@@ -38,7 +38,7 @@ resolve a `file:` dep, so this step must land before any Amplify build.
 2. **Repin both consumers** from `file:../agentkitproject-contracts` to
    `^0.13.0`:
    - `agentkitmarket-app/package.json` — was `^0.12.0`, bump to `^0.13.0`
-   - `agentkitforge-web/package.json` — contracts dep is **new** in this
+   - `agentkitforge/package.json` — contracts dep is **new** in this
      slice; add `"@agentkitforge/contracts": "^0.13.0"`
 
 3. Run `npm install` in both repos to refresh their lockfiles, then commit
@@ -54,7 +54,7 @@ export AWS_PROFILE=AdministratorAccess-609086950193
 
 ### (b) Deploy the web CDK stack (tables / ECR / cluster / roles / networking)
 ```bash
-cd agentkitforge-web/infra
+cd agentkitforge/infra
 npm ci
 npm run synth        # credless sanity check (optional)
 # Pass the markup/url + secrets via CDK context. Do NOT commit secret values.
@@ -68,7 +68,7 @@ Record the CfnOutputs: `AUTO_RUNS_TABLE`, `AUTO_APPROVALS_TABLE`, `AutoEcsCluste
 `AutoEcsSubnetIds` (→ `AUTO_ECS_SUBNET_IDS`), `AutoEcsSecurityGroupId`
 (→ `AUTO_ECS_SECURITY_GROUP_ID`), `AutoWorkerRepoUri` (the ECR repo).
 
-> The CDK **references** the out-of-band SSR IAM user `agentkitforge-web-ssr` and
+> The CDK **references** the out-of-band SSR IAM user `agentkitforge-ssr` and
 > the `GatewayCredit*` tables by name (override via `-c ssrUserName=...` /
 > `-c gatewayCreditAccountsTable=...` etc. if the names differ). It does not
 > create them.
@@ -89,7 +89,7 @@ picks up the new image. (For immutable deploys, push a digest/sha tag and regist
 a new task-def revision pointing at it, then update `AUTO_ECS_TASK_DEF`.)
 
 ### (d) Set the new Amplify env vars (web app)
-In the `agentkitforge-web` Amplify app environment, add (these are baked into
+In the `agentkitforge` Amplify app environment, add (these are baked into
 `.env.production` by `amplify.yml`):
 ```
 AUTO_DISPATCH=fargate

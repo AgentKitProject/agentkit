@@ -1,6 +1,6 @@
 // Self-host vs hosted config resolution (lib/self-host.ts). These pin the rule
 // that HOSTED defaults (no flags) are unchanged, and that self-host never falls
-// back to the hosted Market. Adapted from agentkitforge-web/test/self-host.test.ts.
+// back to the hosted Market. Adapted from agentkitforge/test/self-host.test.ts.
 import { describe, expect, it } from "vitest";
 import {
   isSelfHost,

@@ -1,0 +1,107 @@
+# ===========================================================================
+# dex-values.yaml — a throwaway in-cluster IdP for the k3s quickstart.
+#
+# This is NOT a production IdP. It exists so you can test the full OIDC login
+# flow (Forge WebApp + Market) on a homelab k3s node with ZERO external identity
+# provider and ZERO DNS — using a single static test user.
+#
+# Install (after sed-replacing <NODE_IP> across this bundle — see ../README.md):
+#   helm install dex dex/dex --version 0.24.1 \
+#     -f dex/dex-values.yaml --namespace agentkit --create-namespace
+#
+# ---------------------------------------------------------------------------
+# THE ISSUER PITFALL (read this):
+#   The issuer below is the PUBLIC ingress URL. Browsers AND in-cluster pods use
+#   this SAME URL for discovery (/.well-known/openid-configuration). OIDC
+#   requires the discovery `issuer` to byte-match the configured issuer, so we
+#   must not split "public" vs "internal" issuers.
+#
+#   => Every pod that verifies a Dex token (forge-web, market web) MUST be able
+#      to resolve and reach https://dex.<NODE_IP>.nip.io/dex from inside the
+#      cluster. On most single-node k3s this works (Traefik hairpins the
+#      ServiceLB IP). If your CNI cannot hairpin to the node IP, see the
+#      "OIDC issuer-mismatch" troubleshooting section in ../README.md for the
+#      hostAliases / CoreDNS-rewrite fallback.
+# ===========================================================================
+
+replicaCount: 1
+
+image:
+  tag: "v2.44.0"
+
+# k3s default ServiceLB + Traefik. Dex listens on :5556 (HTTP) in-cluster; the
+# ingress terminates TLS (Traefik's default self-signed cert) and proxies here.
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5556
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: dex.<NODE_IP>.nip.io
+      paths:
+        - path: /dex
+          pathType: Prefix
+  # No tls: block → Traefik serves its built-in default (self-signed) cert on
+  # 443 for this host. Good enough to exercise the OIDC flow end-to-end; see the
+  # README TLS note for trusting the cert / using ACME later.
+
+# --- Dex application config (becomes config.yaml in a generated Secret) -------
+config:
+  # The PUBLIC issuer. Path is /dex because the ingress routes /dex here and Dex
+  # serves discovery + endpoints under the issuer path.
+  issuer: https://dex.<NODE_IP>.nip.io/dex
+
+  storage:
+    type: memory
+
+  web:
+    http: 0.0.0.0:5556
+
+  oauth2:
+    # Skip the consent screen for this single-user test IdP.
+    skipApprovalScreen: true
+
+  # --- Static test user ------------------------------------------------------
+  # email:    admin@example.com
+  # password: password
+  # The hash below is bcrypt($2a$,cost 10) of "password". Regenerate with:
+  #   htpasswd -bnBC 10 "" "password" | tr -d ':\n' | sed 's/^\$2y/\$2a/'
+  enablePasswordDB: true
+  staticPasswords:
+    - email: "admin@example.com"
+      hash: "$2a$10$ylOxZ.hjoOPE54DwNhZ5g.cBCkrA8Vmn5lnnvWQR/yjJeWci.9/L2"
+      username: "admin"
+      userID: "00000000-0000-0000-0000-000000000001"
+
+  # NOTE on the Market admin group: Dex's static-password connector does NOT
+  # emit a `groups` claim (it has no concept of static-user group membership).
+  # So for THIS test IdP the Market admin is granted by EMAIL
+  # (values-market.yaml sets web.config.adminEmails: admin@example.com), not by
+  # group. We still configure ADMIN_OIDC_GROUP=agentkit-admins end-to-end so the
+  # exact same overlay works unchanged against a real IdP (Keycloak/Authentik/…)
+  # that DOES emit groups — just put your user in that group there.
+  staticClients:
+    # --- AgentKitForge WebApp ---
+    - id: agentkitforge
+      name: "AgentKitForge WebApp"
+      # SED: gen-secrets.sh / README replaces this with the generated secret.
+      secret: "<FORGE_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://forge.<NODE_IP>.nip.io/auth/callback
+    # --- AgentKitMarket ---
+    - id: agentkitmarket
+      name: "AgentKitMarket"
+      secret: "<MARKET_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://market.<NODE_IP>.nip.io/auth/callback
+    # --- AgentKitAuto ---
+    - id: agentkitauto
+      name: "AgentKitAuto"
+      # SED: gen-secrets.sh / README replaces this with the generated secret.
+      secret: "<AUTO_OIDC_CLIENT_SECRET>"
+      redirectURIs:
+        - https://auto.<NODE_IP>.nip.io/auth/callback

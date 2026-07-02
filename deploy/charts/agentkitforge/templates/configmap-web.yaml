@@ -1,0 +1,103 @@
+{{- if .Values.web.enabled -}}
+{{- $fullname := include "agentkitforge.fullname" . -}}
+{{- /* Auto-default in-cluster service URLs so the secret only needs the genuinely-secret values. */ -}}
+{{- $appUrl := .Values.web.config.appUrl -}}
+{{- $isOidc := eq .Values.web.auth.provider "oidc" -}}
+{{- /* Self-host is signaled ONLY by the explicit selfHost flag. OIDC is just an
+       auth mechanism usable by BOTH hosted and self-host, so provider==oidc does
+       NOT imply self-host. */ -}}
+{{- $selfHost := .Values.web.auth.selfHost -}}
+{{- /* The auth callback URI (WorkOS or OIDC) — defaults to {APP_URL}/auth/callback. */ -}}
+{{- $redirect := .Values.web.config.redirectUri -}}
+{{- if and (not $redirect) $appUrl -}}
+  {{- $redirect = printf "%s/auth/callback" (trimSuffix "/" $appUrl) -}}
+{{- end -}}
+{{- $s3Bucket := .Values.web.config.s3Bucket -}}
+{{- if and (not $s3Bucket) .Values.minio.enabled -}}
+  {{- $s3Bucket = .Values.minio.bucket -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentkitforge.webConfigmapName" . }}
+  labels:
+    {{- include "agentkitforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+data:
+  NODE_ENV: "production"
+  PORT: {{ .Values.web.port | quote }}
+  HOSTNAME: "0.0.0.0"
+  KITSTORE_BACKEND: {{ .Values.web.config.kitstoreBackend | quote }}
+  {{- /* Kit data dir is unused under selfhost, but keep a sane default. */}}
+  AGENTKITFORGE_WEB_DATA_DIR: "/tmp/agentkitforge-web-data"
+  {{- if .Values.minio.enabled }}
+  S3_ENDPOINT: {{ include "agentkitforge.minioEndpoint" . | quote }}
+  {{- end }}
+  {{- if $s3Bucket }}
+  S3_BUCKET: {{ $s3Bucket | quote }}
+  {{- end }}
+  {{- if .Values.web.config.s3Prefix }}
+  S3_PREFIX: {{ .Values.web.config.s3Prefix | quote }}
+  {{- end }}
+  {{- if .Values.web.config.s3Region }}
+  AWS_REGION: {{ .Values.web.config.s3Region | quote }}
+  {{- end }}
+  {{- if $appUrl }}
+  APP_URL: {{ $appUrl | quote }}
+  NEXT_PUBLIC_APP_URL: {{ $appUrl | quote }}
+  {{- end }}
+  {{- /* --- Auth provider (pluggable) --- */}}
+  AUTH_PROVIDER: {{ .Values.web.auth.provider | quote }}
+  {{- if $isOidc }}
+  {{- /* Generic OIDC self-host. The client SECRET + SESSION_SECRET live in the
+    Secret; the rest are non-secret. */}}
+  {{- if .Values.web.auth.oidc.issuer }}
+  OIDC_ISSUER: {{ .Values.web.auth.oidc.issuer | quote }}
+  {{- end }}
+  {{- if .Values.web.auth.oidc.clientId }}
+  OIDC_CLIENT_ID: {{ .Values.web.auth.oidc.clientId | quote }}
+  {{- end }}
+  {{- if .Values.web.auth.oidc.scopes }}
+  OIDC_SCOPES: {{ .Values.web.auth.oidc.scopes | quote }}
+  {{- end }}
+  {{- if $redirect }}
+  OIDC_REDIRECT_URI: {{ $redirect | quote }}
+  {{- end }}
+  {{- if .Values.web.auth.oidc.allowInsecure }}
+  OIDC_ALLOW_INSECURE: "true"
+  {{- end }}
+  {{- else }}
+  {{- /* WorkOS AuthKit (hosted). */}}
+  {{- if $redirect }}
+  WORKOS_REDIRECT_URI: {{ $redirect | quote }}
+  {{- end }}
+  {{- end }}
+  {{- /* --- Self-host / Market gating --- */}}
+  {{- if $selfHost }}
+  SELF_HOST: "true"
+  {{- end }}
+  {{- if .Values.web.config.disableMarket }}
+  DISABLE_MARKET: "true"
+  {{- end }}
+  {{- /* Market base URL: empty by default on self-host (Market OFF). Set it only
+    if the operator points at their OWN Market. */}}
+  {{- if .Values.web.config.marketBaseUrl }}
+  AGENTKITMARKET_BASE_URL: {{ .Values.web.config.marketBaseUrl | quote }}
+  {{- end }}
+  {{- if .Values.web.config.agentkitprojectWorkosClientId }}
+  AGENTKITPROJECT_WORKOS_CLIENT_ID: {{ .Values.web.config.agentkitprojectWorkosClientId | quote }}
+  {{- end }}
+  {{- /* --- Ecosystem link overrides (hidden on self-host unless set) --- */}}
+  {{- with .Values.web.config.ecosystemLinks.projectUrl }}
+  NEXT_PUBLIC_PROJECT_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.web.config.ecosystemLinks.forgeUrl }}
+  NEXT_PUBLIC_FORGE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.web.config.ecosystemLinks.profileUrl }}
+  NEXT_PUBLIC_PROFILE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.web.config.ecosystemLinks.autoUrl }}
+  NEXT_PUBLIC_AUTO_URL: {{ . | quote }}
+  {{- end }}
+{{- end }}

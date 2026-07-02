@@ -1,0 +1,38 @@
+# ===========================================================================
+# 40-auto (sync-wave 2) — AgentKitAuto (web control plane + worker dispatch).
+#
+# MULTI-SOURCE Application:
+#   - chart source: charts/agentkitauto in the agentkitauto-app repo, rendered
+#     with our values file pulled via the `$values` ref.
+#   - $values ref: the agentkitforge repo (where this bundle lives),
+#     providing the values file path.
+# ===========================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentkit-auto
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AgentKitProject/agentkitauto-app.git
+      targetRevision: main
+      path: charts/agentkitauto
+      helm:
+        valueFiles:
+          - $values/deploy/argocd-tailscale/values/values-auto.yaml
+    - repoURL: https://github.com/AgentKitProject/agentkitforge.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentkit
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

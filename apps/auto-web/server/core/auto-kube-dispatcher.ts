@@ -213,7 +213,7 @@ export function buildAutoJob(
       name,
       namespace: cfg.namespace,
       labels: {
-        "app.kubernetes.io/managed-by": "agentkitforge-web",
+        "app.kubernetes.io/managed-by": "agentkitforge",
         "app.kubernetes.io/component": "auto-worker",
         "agentkitforge.dev/auto-run": slug || "x",
       },
@@ -224,7 +224,7 @@ export function buildAutoJob(
       template: {
         metadata: {
           labels: {
-            "app.kubernetes.io/managed-by": "agentkitforge-web",
+            "app.kubernetes.io/managed-by": "agentkitforge",
             "app.kubernetes.io/component": "auto-worker",
           },
         },

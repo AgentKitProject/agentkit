@@ -13,7 +13,7 @@
 // into our hosted ecosystem — the ecosystem tabs are dropped and only links the
 // operator explicitly configures (NEXT_PUBLIC_*_URL) are surfaced.
 //
-// Mirrors apps/forge-web/lib/self-host.ts (same signal + link semantics) so every
+// Mirrors apps/forge/lib/self-host.ts (same signal + link semantics) so every
 // self-hostable app resolves "am I self-hosted, and where do I link" identically.
 // Everything reads process.env at call time (never baked at build) and is pure.
 

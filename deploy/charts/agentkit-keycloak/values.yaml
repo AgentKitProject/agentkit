@@ -171,7 +171,7 @@ realm:
       clientId: "agentkitauto"
       secret: ""
     forgeWeb:
-      clientId: "agentkitforge-web"
+      clientId: "agentkitforge"
       secret: ""
 
   # Public OAuth 2.0 device-flow client for the Forge desktop app / CLI.
@@ -295,6 +295,6 @@ secrets:
   # containers envFrom this Secret. Required keys:
   #   KC_BOOTSTRAP_ADMIN_PASSWORD, KC_DB_PASSWORD,
   #   CLIENT_SECRET_AGENTKITMARKET, CLIENT_SECRET_AGENTKITPROFILE,
-  #   CLIENT_SECRET_AGENTKITAUTO, CLIENT_SECRET_AGENTKITFORGE_WEB,
+  #   CLIENT_SECRET_AGENTKITAUTO, CLIENT_SECRET_AGENTKITFORGE,
   #   and (if smtp.enabled) SMTP_USER / SMTP_PASSWORD.
   existingSecret: ""

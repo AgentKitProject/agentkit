@@ -10,8 +10,8 @@ ecosystem run here; cloud coupling sits behind swappable adapters
 This is the **full-stack entry point**. Each app also has a focused per-chart doc:
 
 - Market only: [`packages/market-core/docs/SELF_HOSTING.md`](../packages/market-core/docs/SELF_HOSTING.md)
-- Web Forge: [`apps/forge-web/docs/SELF_HOSTING.md`](../apps/forge-web/docs/SELF_HOSTING.md)
-- Auto: [`apps/forge-web/docs/SELF_HOST_AUTO.md`](../apps/forge-web/docs/SELF_HOST_AUTO.md)
+- Web Forge: [`apps/forge/docs/SELF_HOSTING.md`](../apps/forge/docs/SELF_HOSTING.md)
+- Auto: [`apps/forge/docs/SELF_HOST_AUTO.md`](../apps/forge/docs/SELF_HOST_AUTO.md)
 
 > **You rarely need to self-host anything.** The **`agentkitforge` CLI** and
 > `@agentkitforge/core` do all local kit work (create / validate / package / import /
@@ -32,7 +32,7 @@ full-stack install runs all three in one namespace:
         ┌───────────────────────┘   │   └───────────────────────┐
         │                           │                           │
   ┌─────┴───────────┐      ┌────────┴─────────┐      ┌───────────┴────────┐
-  │ agentkitmarket  │      │ agentkitforge-web│      │ agentkitauto       │
+  │ agentkitmarket  │      │ agentkitforge    │      │ agentkitauto       │
   │  web + api +    │      │  Next.js web     │      │  web + k8s Job-per- │
   │  worker         │      │                  │      │  run worker + sweep │
   └───┬─────────┬───┘      └───┬──────────┬───┘      └───┬──────────┬──────┘
@@ -98,7 +98,7 @@ commit sha. A versioned release retags the already-built, already-tested multi-a
 |---|---|---|
 | `agentkitmarket` (api/worker) | `ghcr.io/agentkitproject/agentkitmarket-core` | `v0.9.0` |
 | `agentkitmarket` (web) | `ghcr.io/agentkitproject/agentkitmarket-app` | `v0.9.0` |
-| `agentkitforge-web` (web) | `ghcr.io/agentkitproject/agentkitforge-web` | `v0.9.0` |
+| `agentkitforge` (web) | `ghcr.io/agentkitproject/agentkitforge` | `v0.9.0` |
 | `agentkitauto` (web) | `ghcr.io/agentkitproject/agentkitauto-app` | `v0.9.0` |
 | `agentkitauto` (worker) | `ghcr.io/agentkitproject/agentkitauto-worker` | `v0.9.0` |
 
@@ -146,7 +146,7 @@ client.
 | App | Suggested client id | Redirect URI |
 |---|---|---|
 | Market | `agentkitmarket` | `https://market.example.com/auth/callback` |
-| Web Forge | `agentkitforge-web` | `https://forge.example.com/auth/callback` |
+| Web Forge | `agentkitforge` | `https://forge.example.com/auth/callback` |
 | Auto | `agentkitauto` | `https://auto.example.com/auth/callback` |
 | Profile (optional) | `agentkitprofile` | `https://profile.example.com/auth/callback` |
 
@@ -430,7 +430,7 @@ web:
   auth:
     oidc:
       issuer: https://idp.example.com
-      clientId: agentkitforge-web
+      clientId: agentkitforge
   secrets:
     oidcClientSecret: "<forge client secret from your IdP>"
   ingress:
@@ -440,8 +440,8 @@ web:
 ```
 
 ```bash
-helm install agentkitforge-web ./deploy/charts/agentkitforge-web \
-  -f deploy/charts/agentkitforge-web/values-k3s.yaml \
+helm install agentkitforge ./deploy/charts/agentkitforge \
+  -f deploy/charts/agentkitforge/values-k3s.yaml \
   -f forge-values.yaml \
   --namespace agentkit
 ```
@@ -644,10 +644,10 @@ kubectl -n agentkit logs deploy/agentkitmarket-api
 kubectl -n agentkit port-forward svc/agentkitmarket-api 8080:80 &
 curl http://localhost:8080/health
 
-# Web health endpoints. NOTE the Service names: each web Service is "<release>-web",
-# so forge-web's is "agentkitforge-web-web" (release "agentkitforge-web" + the "-web"
-# suffix) and auto's is "agentkitauto-web". (Market's is "agentkitmarket-web".)
-kubectl -n agentkit port-forward svc/agentkitforge-web-web 8081:80 &
+# Web health endpoints. NOTE the Service names: the Forge Service matches its
+# release name "agentkitforge" (no suffix), while auto's is "agentkitauto-web"
+# and Market's is "agentkitmarket-web".
+kubectl -n agentkit port-forward svc/agentkitforge 8081:80 &
 curl http://localhost:8081/health
 kubectl -n agentkit port-forward svc/agentkitauto-web 8082:80 &
 curl http://localhost:8082/health
@@ -679,8 +679,8 @@ helm upgrade agentkitmarket ./deploy/charts/agentkitmarket \
   -f deploy/charts/agentkitmarket/values-k3s.yaml -f market-values.yaml \
   --namespace agentkit
 
-helm upgrade agentkitforge-web ./deploy/charts/agentkitforge-web \
-  -f deploy/charts/agentkitforge-web/values-k3s.yaml -f forge-values.yaml \
+helm upgrade agentkitforge ./deploy/charts/agentkitforge \
+  -f deploy/charts/agentkitforge/values-k3s.yaml -f forge-values.yaml \
   --namespace agentkit
 
 helm upgrade agentkitauto ./deploy/charts/agentkitauto \

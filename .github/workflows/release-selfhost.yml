@@ -37,7 +37,7 @@ jobs:
       - name: Promote self-host images to ${{ inputs.version }}
         run: |
           set -euo pipefail
-          IMAGES="agentkitforge-web agentkitmarket-core agentkitmarket-app agentkitauto-app agentkitauto-worker agentkitprofile-app"
+          IMAGES="agentkitforge agentkitmarket-core agentkitmarket-app agentkitauto-app agentkitauto-worker agentkitprofile-app"
           for img in $IMAGES; do
             src="ghcr.io/agentkitproject/${img}:${{ inputs.source_tag }}"
             dst="ghcr.io/agentkitproject/${img}:${{ inputs.version }}"
