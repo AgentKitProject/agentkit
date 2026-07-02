@@ -47,7 +47,7 @@ type Forge = ReturnType<typeof getForgeClient>;
 type NavDef = { id: SectionId; label: string; icon: ReactNode };
 
 const NAV: NavDef[] = [
-  { id: "my-kits", label: "My Kitz (DRILL)", icon: <PackageIcon size={18} /> }, // ROLLBACK DRILL — intentional break, revert follows
+  { id: "my-kits", label: "My Kits", icon: <PackageIcon size={18} /> },
   { id: "build", label: "Build", icon: <HammerIcon size={18} /> },
   { id: "use", label: "Prepared prompts", icon: <PlayIcon size={18} /> },
   { id: "run", label: "Run / Chat", icon: <SparklesIcon size={18} /> },
