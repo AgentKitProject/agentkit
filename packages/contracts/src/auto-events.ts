@@ -151,7 +151,15 @@ export const createEventSourceRequestSchema = z.object({
   name: z.string().min(1).max(80),
   /** Defaults to "custom". */
   kind: eventSourceKindSchema.default("custom"),
-  provider: eventSourceProviderSchema.optional()
+  provider: eventSourceProviderSchema.optional(),
+  /**
+   * WRITE-ONLY provider signing secret (e.g. the GitHub webhook secret) used to
+   * verify inbound signatures. Stored encrypted-recoverable server-side (S2:
+   * worker/server-only — verifiers need the plaintext for HMAC, unlike our own
+   * bearer token which is only ever hashed). Never echoed in any response;
+   * presence is reflected as `hasSigningSecret`.
+   */
+  signingSecret: z.string().min(1).max(500).optional()
 });
 export type CreateEventSourceRequest = z.infer<typeof createEventSourceRequestSchema>;
 
@@ -169,7 +177,9 @@ export type CreateEventSourceResponse = z.infer<typeof createEventSourceResponse
 /** Request body: PATCH /api/auto/event-sources/{id}. */
 export const updateEventSourceRequestSchema = z.object({
   name: z.string().min(1).max(80).optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  /** WRITE-ONLY: set/replace the provider signing secret (see create). Never echoed. */
+  signingSecret: z.string().min(1).max(500).optional()
 });
 export type UpdateEventSourceRequest = z.infer<typeof updateEventSourceRequestSchema>;
 

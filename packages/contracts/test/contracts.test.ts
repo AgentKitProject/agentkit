@@ -80,6 +80,7 @@ import {
   eventSourceSchema,
   publicEventSourceSchema,
   createEventSourceRequestSchema,
+  updateEventSourceRequestSchema,
   createEventSourceResponseSchema,
   receivedEventSchema,
   emitEventResponseSchema,
@@ -901,6 +902,12 @@ describe("contracts", () => {
     assert.ok(!("tokenHash" in created));
     // Create request: kind defaults to custom; provider optional.
     const req = createEventSourceRequestSchema.parse({ name: "s" });
+    // write-only signingSecret accepted on create + update (never in records —
+    // eventSourceSchema only carries hasSigningSecret)
+    const withSecret = createEventSourceRequestSchema.parse({ name: "s", provider: "github", signingSecret: "whsec_x" });
+    if (withSecret.signingSecret !== "whsec_x") throw new Error("signingSecret dropped on create");
+    const upd = updateEventSourceRequestSchema.parse({ signingSecret: "whsec_y" });
+    if (upd.signingSecret !== "whsec_y") throw new Error("signingSecret dropped on update");
     assert.equal(req.kind, "custom");
     createEventSourceRequestSchema.parse({ name: "s", kind: "provider", provider: "github" });
     assert.throws(() => createEventSourceRequestSchema.parse({ name: "" }));

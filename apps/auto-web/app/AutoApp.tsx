@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { AppShell, SidebarAccountFooter, BRAND_ACCENTS, buildAppSwitcher, type SidebarNavItem } from "@agentkitforge/ui";
 import type { MyKitEntry } from "@/forge-client";
 import { AutoSection } from "./sections/AutoSection";
+import { AutomationsSection } from "./sections/automations/AutomationsSection";
 import { AUTO_SECTIONS, DEFAULT_AUTO_SECTION, isAutoSectionId, type AutoSectionId } from "./sections/section-ids";
 
 // Minimal 18px stroke icons for the sidebar nav (no icon dependency). One per
@@ -24,6 +25,7 @@ const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeL
 const SECTION_ICONS: Record<AutoSectionId, ReactNode> = {
   run: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><path d="M6 4l13 8-13 8z" /></svg>),
   runs: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><path d="M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></svg>),
+  automations: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><circle cx="5" cy="12" r="2.2" /><circle cx="19" cy="6" r="2.2" /><circle cx="19" cy="18" r="2.2" /><path d="M7.1 11l9.7-4.2M7.1 13l9.7 4.2" /></svg>),
   approvals: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>),
   schedules: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3.5 2" /></svg>),
   webhooks: (<svg viewBox="0 0 24 24" width={18} height={18} {...stroke}><path d="M13 3L4 14h7l-1 7 9-11h-7z" /></svg>),
@@ -92,8 +94,12 @@ export function AutoApp({
   // Deep-link the active tab from ?section= (falls back to the default). The
   // separate ?kit= "Run on Auto" deep link still lands on the default "run" tab.
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search).get("section");
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get("section");
     if (p && isAutoSectionId(p)) setSection(p);
+    // A ?template= deep link (Market "use this automation") always lands on the
+    // Automations section, where the wizard opens prefilled from the param.
+    else if (params.get("template")) setSection("automations");
   }, []);
 
   const navItems: SidebarNavItem[] = AUTO_SECTIONS.map((s) => ({
@@ -160,14 +166,18 @@ export function AutoApp({
           {toast.msg}
         </div>
       )}
-      <AutoSection
-        section={section}
-        kits={kits}
-        notify={notify}
-        marketUrl={marketUrl}
-        marketEnabled={marketEnabled}
-        allowedProviders={allowedProviders}
-      />
+      {section === "automations" ? (
+        <AutomationsSection kits={kits} notify={notify} marketEnabled={marketEnabled} />
+      ) : (
+        <AutoSection
+          section={section}
+          kits={kits}
+          notify={notify}
+          marketUrl={marketUrl}
+          marketEnabled={marketEnabled}
+          allowedProviders={allowedProviders}
+        />
+      )}
     </AppShell>
   );
 }

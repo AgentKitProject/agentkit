@@ -6,6 +6,7 @@
 export type AutoSectionId =
   | "run"
   | "runs"
+  | "automations"
   | "approvals"
   | "schedules"
   | "webhooks"
@@ -14,6 +15,7 @@ export type AutoSectionId =
 export const AUTO_SECTIONS: { id: AutoSectionId; label: string; title: string }[] = [
   { id: "run", label: "Run", title: "Start a run" },
   { id: "runs", label: "History", title: "Run history" },
+  { id: "automations", label: "Automations", title: "Automations" },
   { id: "approvals", label: "Approvals", title: "Standing approvals" },
   { id: "schedules", label: "Schedules", title: "Scheduled runs" },
   { id: "webhooks", label: "Triggers", title: "Triggers" },
