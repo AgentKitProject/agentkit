@@ -1,22 +1,36 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { chromium } from "@playwright/test";
+import { hasAuth, loginAllApps } from "./lib/auth";
 
 export const STORAGE_STATE_PATH = "auth/state.json";
 const EMPTY_STATE = JSON.stringify({ cookies: [], origins: [] });
 
-// If a Playwright storageState JSON is supplied via the E2E_STORAGE_STATE_JSON
-// secret (a dedicated test user's captured session), materialize it so the
-// `authed` project can reuse the session WITHOUT automating the WorkOS login
-// form or ever handling a password in CI. When absent, write an EMPTY state so
-// the file always resolves (Playwright errors on a missing storageState path)
-// and the authed specs self-skip via `hasRealSession()`.
-export default function globalSetup(): void {
-  const json = process.env.E2E_STORAGE_STATE_JSON?.trim();
+// Sign the dedicated E2E user in via REAL Keycloak form login (E2E_USER +
+// E2E_PASSWORD env / CI secrets) and persist the storageState all authed
+// projects reuse. One login per run; app 2..n are silent SSO.
+//
+// When no credentials are supplied, write an EMPTY state so the storageState
+// path always resolves (Playwright errors on a missing file) and authed specs
+// self-skip via `hasRealSession()`.
+export default async function globalSetup(): Promise<void> {
   mkdirSync(dirname(STORAGE_STATE_PATH), { recursive: true });
-  writeFileSync(STORAGE_STATE_PATH, json || EMPTY_STATE, { encoding: "utf8" });
+  if (!hasAuth()) {
+    writeFileSync(STORAGE_STATE_PATH, EMPTY_STATE, { encoding: "utf8" });
+    return;
+  }
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext();
+    await loginAllApps(context);
+    await context.storageState({ path: STORAGE_STATE_PATH });
+    await context.close();
+  } finally {
+    await browser.close();
+  }
 }
 
-// True only when a real captured session was supplied (not the empty fallback).
+/** True when the run has an authenticated session (creds were supplied). */
 export function hasRealSession(): boolean {
-  return Boolean(process.env.E2E_STORAGE_STATE_JSON?.trim());
+  return hasAuth();
 }

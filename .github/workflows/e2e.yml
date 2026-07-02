@@ -1,11 +1,18 @@
 name: E2E (Playwright)
 
-# Runs the standalone e2e/ smoke suite against DEPLOYED apps.
-#   - workflow_dispatch: run on demand (defaults to hosted prod).
-#   - workflow_call: invoked by the hosting repo's deploy-verify-rollback gate.
+# Runs the standalone e2e/ suite against DEPLOYED apps (hosted prod by default).
+#   - workflow_dispatch: run any project on demand.
+#   - workflow_call: reusable from other workflows (the promotion pipeline in
+#     agentkit-hosting embeds its own steps for tailnet/gamma runs; this callable
+#     covers plain prod-reachable runs).
+# Note: gamma (tailnet) targets are NOT reachable from GitHub-hosted runners
+# without joining the tailnet — the hosting repo's pipeline handles that.
 on:
   workflow_dispatch:
     inputs:
+      project:
+        description: "Playwright project (smoke | authed | cuj | prod-cuj | canary)"
+        default: smoke
       profile_url:
         description: Profile base URL
         default: https://profile.agentkitproject.com
@@ -13,23 +20,26 @@ on:
         description: Market base URL
         default: https://market.agentkitproject.com
       forge_url:
-        description: Forge (desktop) base URL
+        description: Forge base URL
         default: https://forge.agentkitproject.com
-      webforge_url:
-        description: Web Forge base URL
-        default: https://webapp.forge.agentkitproject.com
       auto_url:
         description: Auto base URL
         default: https://auto.agentkitproject.com
+      auth_url:
+        description: Keycloak base URL
+        default: https://auth.agentkitproject.com
   workflow_call:
     inputs:
+      project: { type: string, required: false, default: smoke }
       profile_url: { type: string, required: false, default: https://profile.agentkitproject.com }
       market_url: { type: string, required: false, default: https://market.agentkitproject.com }
       forge_url: { type: string, required: false, default: https://forge.agentkitproject.com }
-      webforge_url: { type: string, required: false, default: https://webapp.forge.agentkitproject.com }
       auto_url: { type: string, required: false, default: https://auto.agentkitproject.com }
+      auth_url: { type: string, required: false, default: https://auth.agentkitproject.com }
     secrets:
-      E2E_STORAGE_STATE_JSON:
+      E2E_USER:
+        required: false
+      E2E_PASSWORD:
         required: false
 
 jobs:
@@ -42,16 +52,17 @@ jobs:
       E2E_PROFILE_URL: ${{ inputs.profile_url }}
       E2E_MARKET_URL: ${{ inputs.market_url }}
       E2E_FORGE_URL: ${{ inputs.forge_url }}
-      E2E_WEBFORGE_URL: ${{ inputs.webforge_url }}
       E2E_AUTO_URL: ${{ inputs.auto_url }}
-      E2E_STORAGE_STATE_JSON: ${{ secrets.E2E_STORAGE_STATE_JSON }}
+      E2E_AUTH_URL: ${{ inputs.auth_url }}
+      E2E_USER: ${{ secrets.E2E_USER }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm install --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
+      - run: npx playwright test --project=${{ inputs.project }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

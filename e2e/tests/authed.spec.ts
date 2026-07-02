@@ -2,33 +2,30 @@ import { test, expect } from "@playwright/test";
 import { targets } from "../lib/targets";
 import { hasRealSession } from "../global-setup";
 
-// Authenticated critical user journeys for a dedicated test user, covering the
-// features this ecosystem ships (P4 orgs→Profile, private kits, B Auto↔Forge kit
-// DB). Runs ONLY when a captured session is supplied via E2E_STORAGE_STATE_JSON;
-// otherwise the whole file skips (no password ever handled in CI). Capture with:
-//   npx playwright open --save-storage=auth/state.json https://auto.agentkitproject.com
-// then store the file contents as the CI secret.
+// Authenticated READ-ONLY checks for the dedicated E2E user. The session comes
+// from a REAL Keycloak form login in global-setup (E2E_USER + E2E_PASSWORD CI
+// secrets — we own the IdP, so no captured-session dance). The file self-skips
+// when no credentials are supplied.
 //
-// These are READ-ONLY on purpose: this suite is the auto-rollback trigger, so it
-// must not mutate prod state (a flaky mutation would roll back a good deploy).
-// State-mutating flows (create org, toggle a kit private) belong in a separate
-// non-gating suite.
-test.skip(!hasRealSession(), "no E2E_STORAGE_STATE_JSON — authed CUJs skipped");
+// These stay READ-ONLY on purpose: this project runs inside rollback gates, so
+// it must never mutate state. Write journeys live in tests/cuj/ (the `cuj` /
+// `prod-cuj` projects) with RUN_ID-prefixed artifacts + cleanup.
+test.skip(!hasRealSession(), "no E2E_USER/E2E_PASSWORD — authed checks skipped");
 
 test.describe("authed: apps admit the signed-in user", () => {
-  test("Auto opens the run console (not bounced to sign-in)", async ({ page }) => {
+  test("Auto opens the run console (not bounced to sign-in) @canary", async ({ page }) => {
     await page.goto(targets.auto, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/auth\/sign-in|authkit\.app/);
     // Auto's authed shell shows the section nav (Run / History / …).
     await expect(page.getByText(/Start a run|Run history/i).first()).toBeVisible();
   });
 
-  test("Web Forge admits the signed-in user", async ({ page }) => {
-    await page.goto(targets.webForge, { waitUntil: "domcontentloaded" });
+  test("Forge admits the signed-in user @canary", async ({ page }) => {
+    await page.goto(targets.forge, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/auth\/sign-in|authkit\.app/);
   });
 
-  test("Market shows the authed nav", async ({ page }) => {
+  test("Market shows the authed nav @canary", async ({ page }) => {
     await page.goto(targets.market, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/auth\/sign-in|authkit\.app/);
     await expect(page.getByText(/Submissions|Purchases/i).first()).toBeVisible();

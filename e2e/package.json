@@ -8,6 +8,11 @@
     "test": "playwright test",
     "test:smoke": "playwright test --project=smoke",
     "test:authed": "playwright test --project=authed",
+    "test:cuj": "playwright test --project=cuj",
+    "test:prod-cuj": "playwright test --project=prod-cuj",
+    "test:canary": "playwright test --project=canary",
+    "test:gate:gamma": "playwright test --project=smoke --project=authed --project=cuj",
+    "test:gate:prod": "playwright test --project=smoke --project=authed --project=prod-cuj",
     "install:browsers": "playwright install --with-deps chromium",
     "report": "playwright show-report"
   },
