@@ -211,6 +211,31 @@ export class DynamoAutoRunRepository implements AutoRunRepository {
     return (result.Items ?? []).map((i) => stripGsi(i));
   }
 
+  /** L4 concurrency-cap read: ACTIVE (queued/running) runs for the user.
+   *  Server-side COUNT over the user GSI with a status filter; pages through
+   *  LastEvaluatedKey so the count stays exact for large histories. */
+  async countActiveRuns(userId: string): Promise<number> {
+    let count = 0;
+    let lastKey: Record<string, unknown> | undefined;
+    do {
+      const result = await this.db.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          IndexName: "userId-index",
+          KeyConditionExpression: "gsiUserId = :u",
+          FilterExpression: "#s IN (:queued, :running)",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: { ":u": userId, ":queued": "queued", ":running": "running" },
+          Select: "COUNT",
+          ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+        }),
+      );
+      count += result.Count ?? 0;
+      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastKey);
+    return count;
+  }
+
   async updateRunStatus(
     runId: string,
     status: AutoRunStatus,

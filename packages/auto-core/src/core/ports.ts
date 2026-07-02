@@ -97,6 +97,14 @@ export interface AutoRunRepository {
   requestCancel(runId: string): Promise<void>;
   /** Kill-switch read: true if a cancel was requested. */
   isCancelRequested(runId: string): Promise<boolean>;
+  /**
+   * OPTIONAL: the number of ACTIVE (queued/running) runs the user has — the L4
+   * concurrency-cap read. Optional so existing fakes/adapters keep compiling;
+   * the pg + dynamo adapters implement it natively, and the
+   * `countActiveRuns()` helper (core/concurrency.ts) falls back to a
+   * newest-first `listRunsByUser` scan when a repository lacks it.
+   */
+  countActiveRuns?(userId: string): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------

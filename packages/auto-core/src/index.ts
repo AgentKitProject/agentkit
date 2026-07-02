@@ -183,6 +183,47 @@ export {
   verifyWebhookSecret,
 } from "./core/webhook-secret.js";
 
+// ---- Event-driven trigger execution (mapping / verifiers / runner) --------
+export {
+  buildRunInput,
+  evaluateFilters,
+  isSafeMatchPattern,
+  MATCH_PATTERN_MAX_LENGTH,
+  renderPrompt,
+  resolvePath,
+} from "./core/mapping-evaluator.js";
+export type { FilterEvaluation, ResolvedPath } from "./core/mapping-evaluator.js";
+export {
+  extractSnsSubscribeConfirmation,
+  isValidSnsHost,
+  verifyGithub,
+  verifySlack,
+  verifySnsMessage,
+  verifySourceToken,
+  verifyStripe,
+} from "./core/signature-verifiers.js";
+export type {
+  SnsCertFetch,
+  SnsCertFetchResponse,
+  SnsMessageFields,
+  TimestampToleranceOptions,
+} from "./core/signature-verifiers.js";
+export {
+  CIRCUIT_PAUSE_AFTER_CONSECUTIVE,
+  RATE_LIMIT_WINDOW_MS,
+  consumeTriggerEvent,
+  runDueScheduleTriggers,
+} from "./core/trigger-runner.js";
+export type {
+  CanStartRun,
+  ConsumeTriggerEventDeps,
+  CreateAndDispatchTriggerRun,
+  TriggerEventInput,
+  TriggerRunRequest,
+  TriggerSweepError,
+  TriggerSweepSummary,
+} from "./core/trigger-runner.js";
+
 // ---- Network egress (Phase C http_fetch) ---------------------------------
 export {
   guardedHttpFetch,
@@ -251,6 +292,18 @@ export type {
   RunAutoRunDeps,
   RunAutoRunResult,
 } from "./core/run-driver.js";
+
+// ---- Concurrency cap (L4 — per-user active-run limit) --------------------
+export {
+  ACTIVE_RUN_STATUSES,
+  DEFAULT_MAX_CONCURRENT_RUNS,
+  MAX_CONCURRENT_RUNS_ENV_VAR,
+  checkConcurrency,
+  countActiveRuns,
+  isActiveRunStatus,
+  resolveMaxConcurrentRuns,
+} from "./core/concurrency.js";
+export type { ConcurrencyVerdict } from "./core/concurrency.js";
 
 // ---- Workspace (shared filesystem impl) ---------------------------------
 export { FsWorkspaceStore, WorkspaceEscapeError } from "./core/fs-workspace.js";
@@ -328,4 +381,6 @@ export {
   HttpLedgerClient,
   type HttpLedgerClientConfig,
   type AutoV2RatesResponse,
+  type CanStartRunCheckRequest,
+  type CanStartRunCheckResponse,
 } from "./adapters/http/http-ledger-client.js";

@@ -183,6 +183,38 @@ describe("HttpLedgerClient fetchAutoV2Rates", () => {
   });
 });
 
+describe("HttpLedgerClient canStartRun", () => {
+  it("POSTs /can-start {userId, mode} with the service key and returns the verdict", async () => {
+    const { calls, fetchImpl } = recorder(() => ({
+      status: 200,
+      body: { allowed: false, reason: "insufficient_funds", detail: "needs 7c" },
+    }));
+    const verdict = await client(fetchImpl).canStartRun({ userId: "u1", mode: "managed" });
+    expect(verdict).toEqual({ allowed: false, reason: "insufficient_funds", detail: "needs 7c" });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${BASE}/gateway/ledger/can-start`);
+    expect(calls[0]!.body).toEqual({ userId: "u1", mode: "managed" });
+    expect(calls[0]!.headers["x-gateway-service-key"]).toBe(KEY);
+  });
+
+  it("passes an allowed verdict through without extra fields", async () => {
+    const { fetchImpl } = recorder(() => ({ status: 200, body: { allowed: true } }));
+    expect(await client(fetchImpl).canStartRun({ userId: "u1", mode: "byo" })).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("throws on non-2xx with the status only (caller maps to ledger_unavailable)", async () => {
+    const { fetchImpl } = recorder(() => ({ status: 503, body: { error: "secret detail" } }));
+    await expect(client(fetchImpl).canStartRun({ userId: "u1", mode: "managed" })).rejects.toThrow(
+      /HTTP 503/,
+    );
+    await expect(
+      client(fetchImpl).canStartRun({ userId: "u1", mode: "managed" }),
+    ).rejects.not.toThrow(/secret detail/);
+  });
+});
+
 describe("HttpLedgerClient unsupported methods", () => {
   it("topup / recordTransaction / getHold / listTransactions throw", async () => {
     const { fetchImpl } = recorder(() => ({ status: 200, body: {} }));

@@ -157,6 +157,16 @@ export class PostgresAutoRunRepository implements AutoRunRepository {
     return rows.map(rowToRun);
   }
 
+  /** L4 concurrency-cap read: ACTIVE (queued/running) runs for the user. */
+  async countActiveRuns(userId: string): Promise<number> {
+    const { rows } = await this.pool.query(
+      "SELECT COUNT(*) AS n FROM auto_runs WHERE user_id = $1 AND status IN ('queued', 'running')",
+      [userId],
+    );
+    // COUNT comes back as a bigint string from pg; Number() covers both.
+    return Number(rows[0]?.["n"] ?? 0);
+  }
+
   async updateRunStatus(
     runId: string,
     status: AutoRunStatus,

@@ -141,6 +141,28 @@ export function runRepositoryContract(label: string, makeRepos: () => Promise<Co
       expect((await repos.runs.listRunsByUser("u1")).length).toBe(2);
     });
 
+    it("counts ACTIVE (queued/running) runs per user (L4 concurrency cap)", async () => {
+      // Both persistent adapters implement the optional native count.
+      expect(typeof repos.runs.countActiveRuns).toBe("function");
+
+      const queued = await repos.runs.createRun(runInput());
+      const running = await repos.runs.createRun(runInput());
+      const done = await repos.runs.createRun(runInput());
+      const failed = await repos.runs.createRun(runInput());
+      await repos.runs.createRun(runInput({ userId: "other" })); // other user's queued run
+      await repos.runs.updateRunStatus(running.id, "running", { startedAt: NOW });
+      await repos.runs.updateRunStatus(done.id, "succeeded", { finishedAt: NOW });
+      await repos.runs.updateRunStatus(failed.id, "failed", { finishedAt: NOW, error: "x" });
+
+      expect(await repos.runs.countActiveRuns!("u1")).toBe(2); // queued + running
+      expect(await repos.runs.countActiveRuns!("other")).toBe(1);
+      expect(await repos.runs.countActiveRuns!("nobody")).toBe(0);
+
+      // Finishing the queued run drops the count.
+      await repos.runs.updateRunStatus(queued.id, "canceled", { finishedAt: NOW });
+      expect(await repos.runs.countActiveRuns!("u1")).toBe(1);
+    });
+
     it("creates an approval and finds it by kit (non-revoked only)", async () => {
       const created = await repos.approvals.createApproval(approvalInput());
       expect(created.networkPolicy).toEqual({ mode: "deny_all" });

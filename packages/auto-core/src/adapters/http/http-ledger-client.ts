@@ -55,6 +55,24 @@ export interface AutoV2RatesResponse {
   freeActiveMinutesPerMonth: number;
 }
 
+/** Request body for the gateway's READ-ONLY affordability pre-check
+ *  (`POST /gateway/ledger/can-start`) — mirrors contracts'
+ *  canStartRunRequestSchema. */
+export interface CanStartRunCheckRequest {
+  userId: string;
+  /** Billing mode of the prospective run. */
+  mode: "managed" | "byo";
+}
+
+/** The gateway's affordability verdict — mirrors contracts'
+ *  canStartRunResponseSchema. `ledger_unavailable` is never produced by the
+ *  gateway itself; callers map THIS CLIENT's transport/HTTP errors to it. */
+export interface CanStartRunCheckResponse {
+  allowed: boolean;
+  reason?: "insufficient_funds" | "ledger_unavailable";
+  detail?: string;
+}
+
 function notSupported(method: string): never {
   throw new Error(
     `[auto-core] HttpLedgerClient.${method} is not supported over HTTP — Auto never calls it. ` +
@@ -186,6 +204,26 @@ export class HttpLedgerClient implements CreditLedgerRepository {
       runId,
     })) as { billableMinutes: number };
     return body.billableMinutes;
+  }
+
+  /**
+   * READ-ONLY affordability pre-check: asks the gateway whether `userId` can
+   * afford to start a `mode` run right now (`POST /gateway/ledger/can-start`).
+   * Returns the gateway's verdict on 2xx; THROWS on any transport/HTTP failure
+   * (status only, no body leak) — callers map that error to the contracts'
+   * `ledger_unavailable` reason (fail-closed for managed per
+   * CAN_START_FAIL_CLOSED_MODES, open for BYO). Mutates nothing.
+   */
+  async canStartRun(input: CanStartRunCheckRequest): Promise<CanStartRunCheckResponse> {
+    const body = (await this.post("/can-start", {
+      userId: input.userId,
+      mode: input.mode,
+    })) as CanStartRunCheckResponse;
+    return {
+      allowed: body.allowed === true,
+      ...(body.reason !== undefined ? { reason: body.reason } : {}),
+      ...(body.detail !== undefined ? { detail: body.detail } : {}),
+    };
   }
 
   /**
