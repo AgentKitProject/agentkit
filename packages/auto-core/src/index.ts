@@ -181,7 +181,7 @@ export { makeAutoDeps } from "./core/deps.js";
 export type { AutoBackend, MakeAutoDepsOptions } from "./core/deps.js";
 
 // ---- Worker entrypoint ---------------------------------------------------
-export { processAutoRun, ApprovalDeniedError } from "./entrypoints/worker.js";
+export { processAutoRun, ApprovalDeniedError, HandledRunFailureError } from "./entrypoints/worker.js";
 export type {
   ProcessAutoRunDeps,
   ResolveKitContext,

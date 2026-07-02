@@ -127,6 +127,19 @@ export class ApprovalDeniedError extends Error {
   readonly name = "ApprovalDeniedError";
 }
 
+/**
+ * Raised when a run failure was HANDLED — i.e. the run's terminal `failed`
+ * status WAS successfully recorded on the run record before the error was
+ * thrown. Process wrappers (the k8s Job / Fargate `run-task` main) map this to
+ * EXIT 0: the failure is fully accounted for (users see a failed run, billing
+ * is settled or never started), so the Job must read Complete. That keeps the
+ * operator's KubeJobFailed alert meaningful — it fires ONLY when the worker
+ * crashed or could not record the outcome (which stays a non-zero exit).
+ */
+export class HandledRunFailureError extends Error {
+  readonly name = "HandledRunFailureError";
+}
+
 export async function processAutoRun(
   runId: string,
   deps: ProcessAutoRunDeps,
@@ -162,18 +175,23 @@ export async function processAutoRun(
   // is no longer entitled (the Market service returns 403 → the resolver throws).
   // That refusal MUST mark the run terminal (failed), not leave it stuck "queued":
   // a stuck queued run would never reach a terminal status, never settle billing,
-  // and could be re-picked by a retry. We record the failure and re-throw the
-  // ORIGINAL error (status only — never a message that could echo kit text). The
-  // resolver itself is contracted to never put the kit prompt in its error message.
+  // and could be re-picked by a retry. We record the failure, then throw a
+  // HandledRunFailureError carrying the original message (status only — never a
+  // message that could echo kit text; the resolver itself is contracted to never
+  // put the kit prompt in its error message) so the process wrapper exits 0. If
+  // even the status write fails, the ORIGINAL error propagates untyped (the
+  // outcome truly went unrecorded → the wrapper exits non-zero).
   let kit: ResolvedKitContext;
   try {
     kit = await deps.resolveKitContext(run, appr);
   } catch (err) {
-    await runs.updateRunStatus(runId, "failed", {
-      finishedAt: now(),
-      error: err instanceof Error ? err.message : "kit context resolution failed",
-    });
-    throw err;
+    const reason = err instanceof Error ? err.message : "kit context resolution failed";
+    try {
+      await runs.updateRunStatus(runId, "failed", { finishedAt: now(), error: reason });
+    } catch {
+      throw err; // could not record → UNHANDLED
+    }
+    throw new HandledRunFailureError(reason, { cause: err });
   }
 
   // ---- Billing mode + provider selection ---------------------------------

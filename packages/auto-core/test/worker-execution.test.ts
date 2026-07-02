@@ -23,6 +23,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  HandledRunFailureError,
   processAutoRun,
   type ProcessAutoRunDeps,
 } from "../src/entrypoints/worker.js";
@@ -213,8 +214,10 @@ describe("worker execution path (processAutoRun, mocked Anthropic — no real sp
   it("marks the run FAILED (not stuck 'queued') when kit-context resolution throws (M6: lost entitlement)", async () => {
     // A PROTECTED Market kit whose buyer is no longer entitled: the injected
     // resolveKitContext hook throws (the real one surfaces the Market 403). The
-    // worker must record the run as terminal-FAILED and re-throw — never leave it
+    // worker must record the run as terminal-FAILED and throw the TYPED
+    // HandledRunFailureError (original message preserved) — never leave it
     // stuck "queued" (which would never settle / could be re-picked by a retry).
+    // The typed error is what lets run-task's main() exit 0 (handled failure).
     const { runs, approvals, storage } = buildStorage();
     const run = await seedApprovedRun(runs, approvals, { inferenceMode: "managed" });
 
@@ -232,6 +235,10 @@ describe("worker execution path (processAutoRun, mocked Anthropic — no real sp
     };
 
     await expect(processAutoRun(run.id, deps)).rejects.toThrow(/not entitled/i);
+    await expect(processAutoRun(run.id, deps).catch((e: unknown) => e)).resolves.toSatisfy(
+      // Recorded-then-thrown → the typed handled-failure error (exit 0 in main).
+      (e: unknown) => e instanceof HandledRunFailureError,
+    );
     // No inference ran and no result was produced.
     expect(provider.calls).toBe(0);
     const persisted = await runs.getRun(run.id);

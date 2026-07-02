@@ -391,6 +391,11 @@ test("run history surface renders (empty state OK) @reversible", async ({ page }
 
 test("run dispatch surfaces a failed run record (gamma only)", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "run dispatch spends real money on prod — gamma only");
+  // NOTE on cleanup racing the worker: the afterAll kit sweep can delete this
+  // run's kit before the k8s worker Job starts. That's HANDLED by design now:
+  // the worker records the run as failed ("run context unavailable") and exits
+  // 0, so the Job reads Complete and the operator's KubeJobFailed alert stays
+  // quiet (it fires only for genuinely unrecorded outcomes).
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available");
   const label = `${RUN_ID}-run`;

@@ -7,9 +7,21 @@
  * resolver, then executes the run end-to-end via `processAutoRun`.
  *
  * `runTask` is kept PURE (it throws on failure rather than calling
- * `process.exit`), so it stays unit-testable. `main()` is the process wrapper:
- * it catches and maps any rejection (or a "failed" terminal status) to a
- * non-zero exit so ECS marks the task failed.
+ * `process.exit`), so it stays unit-testable. `main()` is the process wrapper
+ * and owns the EXIT-CODE CONTRACT (backoffLimit is 0 on the k8s Job path, so
+ * exit codes never drive retries — they only decide whether the Job reads
+ * Complete or Failed, i.e. whether the operator's KubeJobFailed alert fires):
+ *
+ *   EXIT 0 — the run's outcome WAS recorded. Includes every terminal status the
+ *     driver returns (succeeded / failed / canceled / budget_exceeded) AND every
+ *     HANDLED failure, i.e. a failure whose terminal `failed` status was
+ *     successfully written (approval denied, kit-context resolution failed,
+ *     driver-recorded errors). Alerting on these would be noise: the user
+ *     already sees a failed run.
+ *
+ *   EXIT 1 — the worker itself crashed or COULD NOT record the outcome (missing
+ *     env, storage unreachable, the terminal-status write failed). The run may
+ *     be stuck non-terminal; KubeJobFailed firing here is meaningful.
  *
  * Security: NEVER log the system prompt, kit context, or a BYO API key. On
  * success we log only the run id + terminal status.
@@ -38,8 +50,15 @@ import type { DnsResolver, FetchFn } from "../core/http-fetch.js";
 import {
   fetchResolveContext,
   toResolveKitContext,
+  type ResolveContextResponse,
 } from "../core/http-resolve-context.js";
-import { processAutoRun, type ProcessAutoRunDeps } from "./worker.js";
+import type { AutoRunRepository } from "../core/ports.js";
+import {
+  ApprovalDeniedError,
+  HandledRunFailureError,
+  processAutoRun,
+  type ProcessAutoRunDeps,
+} from "./worker.js";
 
 /** Real DNS resolver for webhook-delivery SSRF guard (A + AAAA). */
 const dnsResolver: DnsResolver = async (hostname: string): Promise<string[]> => {
@@ -288,9 +307,56 @@ export async function loadAutoV2Rates(
 }
 
 /**
- * Executes the run identified by `RUN_ID`. Pure: throws on any failure (missing
- * env, denied approval, or a "failed" terminal status) so the caller decides
- * the exit code.
+ * Fetches the run's resolve-context payload, MARKING THE RUN FAILED when the
+ * fetch fails. This closes the "zombie queued run" gap: the up-front resolve
+ * fetch runs BEFORE processAutoRun writes any status, so a failure here (e.g.
+ * HTTP 404 because the kit was deleted after dispatch — which proves the API IS
+ * reachable) used to kill the worker with the run still `queued` forever.
+ *
+ * Failure handling:
+ *   - fetch fails + the terminal `failed` write SUCCEEDS → throws
+ *     HandledRunFailureError (main() → exit 0; the Job reads Complete).
+ *   - fetch fails + even the status write fails → re-throws the ORIGINAL fetch
+ *     error (main() → exit 1; the outcome truly went unrecorded).
+ *
+ * Deps are injectable (runs repo + fetchImpl) so tests drive it with fakes.
+ */
+export async function resolveContextOrFailRun(args: {
+  runId: string;
+  baseUrl: string;
+  serviceKey: string;
+  runs: Pick<AutoRunRepository, "updateRunStatus">;
+  now: () => string;
+  fetchImpl?: typeof fetch;
+}): Promise<ResolveContextResponse> {
+  const { runId, baseUrl, serviceKey, runs, now } = args;
+  try {
+    return await fetchResolveContext({
+      runId,
+      baseUrl,
+      serviceKey,
+      ...(args.fetchImpl ? { fetchImpl: args.fetchImpl } : {}),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Clear, user-facing reason: the dominant real-world cause is the kit (or
+    // its run context) disappearing between dispatch and Job start.
+    const reason = `run context unavailable (kit deleted?): ${message}`;
+    try {
+      await runs.updateRunStatus(runId, "failed", { finishedAt: now(), error: reason });
+    } catch {
+      throw err; // could not record → UNHANDLED (exit 1)
+    }
+    throw new HandledRunFailureError(reason, { cause: err });
+  }
+}
+
+/**
+ * Executes the run identified by `RUN_ID`. Pure: throws on any failure so the
+ * caller decides the exit code — HandledRunFailureError / ApprovalDeniedError
+ * mean the failure WAS recorded on the run record (main() exits 0); any other
+ * throw means it was not (main() exits 1). A driver-recorded "failed" terminal
+ * status is likewise surfaced as HandledRunFailureError.
  */
 export async function runTask(env: Env = process.env): Promise<void> {
   // Boot hardening (Q2): announce the free/BYO mode once per process when no
@@ -322,10 +388,14 @@ export async function runTask(env: Env = process.env): Promise<void> {
   // Single up-front fetch of the resolve payload: it carries BOTH the kit
   // context AND the per-run inference mode / BYO provider config. We reuse the
   // same payload for the resolveKitContext hook to avoid a second round-trip.
-  const payload = await fetchResolveContext({
+  // On a fetch failure the run is best-effort marked FAILED first (see
+  // resolveContextOrFailRun) so it never sits `queued` forever in the UI.
+  const payload = await resolveContextOrFailRun({
     runId,
     baseUrl: resolveBaseUrl,
     serviceKey: resolveServiceKey,
+    runs: storage.runs,
+    now: () => new Date().toISOString(),
   });
 
   const inferenceMode: InferenceMode = payload.inferenceMode;
@@ -384,20 +454,38 @@ export async function runTask(env: Env = process.env): Promise<void> {
   const result = await processAutoRun(runId, deps);
 
   if (result.status === "failed") {
-    // Throw (no prompt) so main() maps it to a non-zero exit.
-    throw new Error(`Auto run ${runId} finished: failed`);
+    // The driver RECORDED the terminal `failed` status (and settled billing)
+    // before returning — this is a HANDLED failure. Throw the typed error (no
+    // prompt, status only) so main() logs it and exits 0.
+    throw new HandledRunFailureError(`Auto run ${runId} finished: failed`);
   }
 
   // Status only — never the prompt or any output.
   console.log(`Auto run ${runId} finished: ${result.status}`);
 }
 
-/** Process wrapper: run, then exit non-zero on any rejection. */
-export async function main(): Promise<void> {
+/**
+ * Process wrapper — owns the exit-code contract (see the module header):
+ *
+ *   - clean return → exit 0 (terminal succeeded/canceled/budget_exceeded).
+ *   - HandledRunFailureError / ApprovalDeniedError → the run's terminal
+ *     `failed` status WAS recorded → log + EXIT 0, so the k8s Job reads
+ *     Complete and the operator's KubeJobFailed alert only fires for real
+ *     worker crashes. (ApprovalDeniedError is only ever thrown AFTER the
+ *     `failed` write succeeded — see denyAndFail in worker.ts.)
+ *   - anything else → the outcome may be unrecorded → exit 1.
+ *
+ * `runTaskImpl` is injectable for tests; production uses `runTask`.
+ */
+export async function main(runTaskImpl: () => Promise<void> = runTask): Promise<void> {
   try {
-    await runTask();
+    await runTaskImpl();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof HandledRunFailureError || err instanceof ApprovalDeniedError) {
+      console.error(`Auto run failed (handled — run record updated): ${message}`);
+      return; // exit 0
+    }
     console.error(`Auto run failed: ${message}`);
     process.exit(1);
   }
