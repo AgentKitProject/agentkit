@@ -1,0 +1,37 @@
+name: promote-notify
+
+# Kicks the promotion pipeline (agentkit-hosting `promote.yml`) for every main
+# push that ships something: gamma auto-deploy → full E2E → prod promote → the
+# deploy-verify-rollback gate. The pipeline itself lives in the PRIVATE hosting
+# repo (secrets, tailnet access, rollback authority) — this workflow only sends
+# the sha.
+#
+# Requires the HOSTING_DISPATCH_TOKEN secret (fine-grained PAT with Contents:rw
+# on AgentKitProject/agentkit-hosting). Until it exists this is a soft no-op.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "deploy/charts/**"
+      - "e2e/**"
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch promote to agentkit-hosting
+        env:
+          TOKEN: ${{ secrets.HOSTING_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::HOSTING_DISPATCH_TOKEN not set — promotion pipeline NOT triggered for $GITHUB_SHA"
+            exit 0
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/AgentKitProject/agentkit-hosting/dispatches \
+            -d "{\"event_type\":\"promote\",\"client_payload\":{\"sha\":\"$GITHUB_SHA\"}}"
+          echo "dispatched promote for $GITHUB_SHA"
