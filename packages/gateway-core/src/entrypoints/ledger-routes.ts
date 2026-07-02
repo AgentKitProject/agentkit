@@ -33,6 +33,10 @@ import type { CreditLedgerRepository } from "../core/ports.js";
 import type { CreditAccount } from "../core/types.js";
 import type { GatewayJsonResponse } from "../core/router.js";
 import { constantTimeEqual } from "./credit-topup.js";
+import {
+  checkAffordability,
+  type RunBillingMode,
+} from "../core/services/affordability.js";
 
 /** Base path prefix for the ledger endpoints. */
 export const LEDGER_ROUTE_PREFIX = "/gateway/ledger";
@@ -64,6 +68,14 @@ export interface LedgerRoutesDeps {
    * gateway) the rates endpoint returns all-zeros so a self-host pays nothing.
    */
   autoV2Pricing?: () => AutoV2PricingShape;
+  /**
+   * OPTIONAL managed inference floor (US cents) for the `POST /can-start`
+   * affordability pre-check. Defaults to MANAGED_INFERENCE_FLOOR_CENTS inside
+   * `checkAffordability`; the server wires it from
+   * GATEWAY_MANAGED_INFERENCE_FLOOR_CENTS (operator-tunable, mechanism-neutral
+   * public default — not a commercial value).
+   */
+  managedInferenceFloorCents?: number;
 }
 
 function json(status: number, body: unknown): GatewayJsonResponse {
@@ -154,6 +166,34 @@ export async function handleLedgerRequest(
     // ---- Rates (read; pricing provider is the moat) -----------------------
     if (sub === "/auto-v2-rates" && ctx.method === "GET") {
       return json(200, resolvePricing(deps));
+    }
+
+    // ---- canStart (READ-ONLY affordability pre-check) ----------------------
+    // Body mirrors contracts' canStartRunRequestSchema ({userId, mode});
+    // response mirrors canStartRunResponseSchema ({allowed, reason?, detail?}).
+    // Never mutates the ledger. A ledger read failure falls to the generic 500
+    // below — the CLIENT maps transport/HTTP errors to `ledger_unavailable`
+    // (fail-closed for managed per CAN_START_FAIL_CLOSED_MODES, open for BYO).
+    if (sub === "/can-start" && ctx.method === "POST") {
+      const obj = asObject(ctx.body);
+      if (!obj) return json(400, { error: "Request body must be a JSON object." });
+      const userId = requireString(obj, "userId");
+      const mode = requireString(obj, "mode");
+      if (!userId) return json(400, { error: "userId is required." });
+      if (mode !== "managed" && mode !== "byo") {
+        return json(400, { error: 'mode must be "managed" or "byo".' });
+      }
+      const verdict = await checkAffordability(
+        {
+          ledger,
+          pricing: resolvePricing(deps),
+          ...(deps.managedInferenceFloorCents !== undefined
+            ? { managedInferenceFloorCents: deps.managedInferenceFloorCents }
+            : {}),
+        },
+        { userId, mode: mode as RunBillingMode, now },
+      );
+      return json(200, verdict);
     }
 
     // ---- ensureAccount ----------------------------------------------------

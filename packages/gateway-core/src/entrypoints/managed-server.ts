@@ -65,6 +65,7 @@ import {
   type LedgerRoutesDeps,
 } from "./ledger-routes.js";
 import { MIN_TOPUP_CENTS } from "../core/config.js";
+import { resolveManagedInferenceFloorCents } from "../core/services/affordability.js";
 
 // Re-export the Auto v2 pricing shape so a host wiring this entrypoint (the
 // commercial `gateway-hosted` composition) can type the injected provider from
@@ -361,6 +362,12 @@ export interface StartManagedGatewayServerOptions
   serviceKey?: string;
   /** Minimum allowed topup in cents. Defaults to MIN_TOPUP_CENTS. */
   minTopupCents?: number;
+  /**
+   * Managed inference floor (US cents) for the `POST /gateway/ledger/can-start`
+   * affordability pre-check. Defaults to GATEWAY_MANAGED_INFERENCE_FLOOR_CENTS
+   * → MANAGED_INFERENCE_FLOOR_CENTS.
+   */
+  managedInferenceFloorCents?: number;
 }
 
 /**
@@ -500,6 +507,11 @@ export async function startManagedGatewayServer(
     serviceKey,
     ...(options.now ? { now: options.now } : {}),
     ...(options.autoV2Pricing ? { autoV2Pricing: options.autoV2Pricing } : {}),
+    // Managed inference floor for POST /gateway/ledger/can-start — explicit
+    // option wins, else GATEWAY_MANAGED_INFERENCE_FLOOR_CENTS, else the
+    // public default (MANAGED_INFERENCE_FLOOR_CENTS).
+    managedInferenceFloorCents:
+      options.managedInferenceFloorCents ?? resolveManagedInferenceFloorCents(),
   });
   const preRoute = chainPreRoutes(topupPreRoute, ledgerPreRoute);
 

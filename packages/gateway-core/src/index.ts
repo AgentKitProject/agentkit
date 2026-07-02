@@ -93,6 +93,23 @@ export type {
   ToolResultInput,
 } from "./core/services/streaming-turn.js";
 
+// Affordability pre-check (canStartRun — READ-ONLY run-start cost preflight)
+export {
+  checkAffordability,
+  estimateRunStartCents,
+  resolveManagedInferenceFloorCents,
+  utcYearMonth,
+  MANAGED_INFERENCE_FLOOR_CENTS,
+  MANAGED_INFERENCE_FLOOR_ENV_VAR,
+} from "./core/services/affordability.js";
+export type {
+  AffordabilityVerdict,
+  CheckAffordabilityDeps,
+  CheckAffordabilityInput,
+  RunBillingMode,
+  RunStartPricing,
+} from "./core/services/affordability.js";
+
 // Gateway session lifecycle + entitlement seam
 export {
   createGatewaySession,

@@ -31,6 +31,7 @@ const KEY = "svc-secret-key-abc123";
 function makeDeps(over?: {
   serviceKey?: string | undefined;
   autoV2Pricing?: () => AutoV2PricingShape;
+  managedInferenceFloorCents?: number;
 }) {
   const ledger = new InMemoryCreditLedgerRepository();
   return {
@@ -38,6 +39,9 @@ function makeDeps(over?: {
     serviceKey: over && "serviceKey" in over ? over.serviceKey : KEY,
     now: () => NOW,
     ...(over?.autoV2Pricing ? { autoV2Pricing: over.autoV2Pricing } : {}),
+    ...(over?.managedInferenceFloorCents !== undefined
+      ? { managedInferenceFloorCents: over.managedInferenceFloorCents }
+      : {}),
   };
 }
 
@@ -312,6 +316,81 @@ describe("auto-v2-rates", () => {
   it("still requires the service key", async () => {
     const res = await call(makeDeps(), "wrong", "/auto-v2-rates", "GET");
     expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// can-start (READ-ONLY affordability pre-check)
+// ---------------------------------------------------------------------------
+
+describe("can-start", () => {
+  const pricing = () => ({
+    invocationFeeCents: 1,
+    activeMinuteRateCents: 1,
+    freeActiveMinutesPerMonth: 60,
+  });
+
+  it("allows a funded managed user (invocation + minute + floor covered)", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
+    await d.ledger.topup("u1", 700, NOW);
+    // Exhaust the free allowance so the estimate includes the minute fee.
+    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    const res = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ allowed: true });
+  });
+
+  it("allows a ZERO-balance user with free minutes remaining (free tier counts)", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
+    const res = await call(d, KEY, "/can-start", "POST", { userId: "u-new", mode: "managed" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ allowed: true });
+  });
+
+  it("denies a broke managed user with 200 {allowed:false, reason:insufficient_funds}", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
+    await d.ledger.topup("u1", 6, NOW); // needs 7 (1 + 1 + 5)
+    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    const res = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ allowed: false, reason: "insufficient_funds" });
+  });
+
+  it("byo preflights only OUR fees (no inference floor)", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
+    await d.ledger.topup("u1", 2, NOW); // exactly invocation + minute
+    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    const byo = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "byo" });
+    expect(byo.body).toEqual({ allowed: true });
+    const managed = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
+    expect(managed.body).toMatchObject({ allowed: false, reason: "insufficient_funds" });
+  });
+
+  it("always allows when no pricing provider is injected (public / self-host)", async () => {
+    const d = makeDeps({ managedInferenceFloorCents: 5 });
+    const res = await call(d, KEY, "/can-start", "POST", { userId: "broke", mode: "managed" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ allowed: true });
+  });
+
+  it("NEVER mutates the ledger (no account/hold/txn created by a check)", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
+    await call(d, KEY, "/can-start", "POST", { userId: "ghost", mode: "managed" });
+    expect(d.ledger.accounts.size).toBe(0);
+    expect(d.ledger.holds.size).toBe(0);
+    expect(d.ledger.txns.length).toBe(0);
+  });
+
+  it("400 on a missing userId or a bad mode", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing });
+    expect((await call(d, KEY, "/can-start", "POST", { mode: "managed" })).status).toBe(400);
+    expect((await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "weird" })).status).toBe(400);
+    expect((await call(d, KEY, "/can-start", "POST", "nope")).status).toBe(400);
+  });
+
+  it("still requires the service key", async () => {
+    const d = makeDeps({ autoV2Pricing: pricing });
+    expect((await call(d, "wrong", "/can-start", "POST", { userId: "u1", mode: "byo" })).status).toBe(403);
   });
 });
 
