@@ -25,7 +25,7 @@ const templatePath = join(__dirname, "og-card.template.svg");
 
 // Per-app card + favicon source.
 const config = {
-  title: "Web Forge",
+  title: "Forge",
   tagline: "Build and run portable Agent Kits in your browser.",
   accent: "#4f46e5", // Forge indigo
   faviconSource: join(publicDir, "brand", "agentkitforge-icon.svg"),

@@ -1,6 +1,6 @@
 # Self-Hosting the AgentKitProject Ecosystem on Kubernetes
 
-Run the **full open-core stack** — **Market**, **Web Forge**, and **AgentKitAuto** —
+Run the **full open-core stack** — **Market**, **Forge**, and **AgentKitAuto** —
 on **your own** Kubernetes cluster, with **your own** OIDC identity provider, plain
 Kubernetes Secrets, and **no** dependency on AWS, WorkOS, Stripe, or any
 `*.agentkitproject.com` service. The same web and worker images that run the hosted
@@ -10,13 +10,13 @@ ecosystem run here; cloud coupling sits behind swappable adapters
 This is the **full-stack entry point**. Each app also has a focused per-chart doc:
 
 - Market only: [`packages/market-core/docs/SELF_HOSTING.md`](../packages/market-core/docs/SELF_HOSTING.md)
-- Web Forge: [`apps/forge/docs/SELF_HOSTING.md`](../apps/forge/docs/SELF_HOSTING.md)
+- Forge: [`apps/forge/docs/SELF_HOSTING.md`](../apps/forge/docs/SELF_HOSTING.md)
 - Auto: [`apps/forge/docs/SELF_HOST_AUTO.md`](../apps/forge/docs/SELF_HOST_AUTO.md)
 
 > **You rarely need to self-host anything.** The **`agentkitforge` CLI** and
 > `@agentkitforge/core` do all local kit work (create / validate / package / import /
 > export) on a workstation with no account and no server. Self-hosting applies only to
-> the optional cloud services below (web Forge, Market, Auto, Profile).
+> the optional cloud services below (Forge, Market, Auto, Profile).
 
 ---
 
@@ -146,7 +146,7 @@ client.
 | App | Suggested client id | Redirect URI |
 |---|---|---|
 | Market | `agentkitmarket` | `https://market.example.com/auth/callback` |
-| Web Forge | `agentkitforge` | `https://forge.example.com/auth/callback` |
+| Forge | `agentkitforge` | `https://forge.example.com/auth/callback` |
 | Auto | `agentkitauto` | `https://auto.example.com/auth/callback` |
 | Profile (optional) | `agentkitprofile` | `https://profile.example.com/auth/callback` |
 
@@ -331,7 +331,7 @@ secret.
 > (forge-web and auto have only **one** `existingSecret` — the web one — which is why
 > their pg/minio passwords must live in it; see the gotcha above.)
 
-#### Web Forge — BYO secret keys (`web.secrets.existingSecret`)
+#### Forge — BYO secret keys (`web.secrets.existingSecret`)
 
 | Key | Notes |
 |---|---|
@@ -416,7 +416,7 @@ password, and the MinIO root password, and wires the backend admin key into the 
 tier automatically. The api runs `schema.sql` on startup under a Postgres advisory
 lock and auto-creates the MinIO bucket.
 
-### 6b. Web Forge
+### 6b. Forge
 
 ```yaml
 # forge-values.yaml  (keep out of git)

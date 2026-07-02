@@ -16,7 +16,6 @@ export const DEFAULT_FOOTER_LINKS: FooterLinks = {
     { label: "AgentKitProject", href: "https://agentkitproject.com" },
     { label: "Market", href: "https://market.agentkitproject.com" },
     { label: "Forge", href: "https://forge.agentkitproject.com" },
-    { label: "Web Forge", href: "https://webapp.forge.agentkitproject.com" },
     {
       label: "Auto",
       href: "https://auto.agentkitproject.com",

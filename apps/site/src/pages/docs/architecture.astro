@@ -15,8 +15,8 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
 
   <h2>The pieces</h2>
   <ul>
-    <li><strong>Forge is the client.</strong> The <a href="/docs/forge-desktop/">desktop app</a> is React 19 + Vite in a Tauri 2 shell; <a href="/docs/web-forge/">Web Forge</a> is the hosted / self-hostable browser edition. Both build, edit, validate, package, import, and export <code>.agentkit.zip</code> kits.</li>
-    <li><strong>All non-UI Forge capability lives in <code>@agentkitforge/core</code>:</strong> validation, packaging, import/export, drafts, prepared prompts, build-context, the spec (<code>SPEC.md</code>), the <a href="/docs/cli/">CLI</a>, and the hosted-Market client. The desktop app's Rust layer is reserved for OS-shell concerns only (secure storage, deep links, dialogs, updater).</li>
+    <li><strong>Forge is the client.</strong> <a href="/docs/web-forge/">Forge</a> is the hosted / self-hostable browser app (a Next.js app); the <a href="/docs/cli/">CLI</a> covers local-first and headless work. Both build, edit, validate, package, import, and export <code>.agentkit.zip</code> kits.</li>
+    <li><strong>All non-UI Forge capability lives in <code>@agentkitforge/core</code>:</strong> validation, packaging, import/export, drafts, prepared prompts, build-context, the spec (<code>SPEC.md</code>), the <a href="/docs/cli/">CLI</a>, and the hosted-Market client. The browser client and the CLI share this same engine.</li>
     <li><strong>Market is the catalog.</strong> A Next.js 15 web app serves the public catalog, submission UI, and admin review queue, and is the only writer to the Market backend. See <a href="/docs/market/">Market</a>.</li>
     <li><strong>Profile is shared identity.</strong> A Next.js account + public-profile app; the canonical display name lives here. See <a href="/docs/profile/">Profile</a>.</li>
     <li><strong>AgentKitAuto runs kits unattended</strong> in the cloud — on demand, on schedules, and from webhooks. See <a href="/docs/auto/">AgentKitAuto</a>.</li>
@@ -39,9 +39,8 @@ import DocsLayout from '../../layouts/DocsLayout.astro';
   </p>
 
   <div class="docs-note">
-    <strong>Where logic belongs.</strong> If it's an OS-shell concern (secure storage,
-    deep links, dialogs, updater) it lives in the desktop app's Rust layer. Everything
-    else lives in <code>@agentkitforge/core</code> so the desktop app, Web Forge, and the
-    CLI behave identically.
+    <strong>Where logic belongs.</strong> All non-UI capability lives in
+    <code>@agentkitforge/core</code> so Forge (the browser client) and the CLI behave
+    identically.
   </div>
 </DocsLayout>

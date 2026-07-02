@@ -92,7 +92,7 @@ describe("Header", () => {
 
   it("static nav items open in same tab; external web-app items open in new tab", () => {
     // Mirrors DEFAULT_NAV: static/marketing items have no external flag,
-    // web-app destinations (Web Forge, Auto, Account) are external: true.
+    // web-app destinations (Forge, Auto, Account) are external: true.
     render(
       <Header
         nav={[
@@ -100,8 +100,8 @@ describe("Header", () => {
           { label: "Market", href: "https://market.agentkitproject.com" },
           { label: "Docs", href: "https://docs.agentkitproject.com" },
           { label: "Roadmap", href: "https://agentkitproject.com/roadmap" },
-          { label: "Web Forge", href: "https://webapp.forge.agentkitproject.com", external: true },
-          { label: "Auto", href: "https://webapp.forge.agentkitproject.com/forge?section=auto", external: true },
+          { label: "Forge", href: "https://forge.agentkitproject.com", external: true },
+          { label: "Auto", href: "https://auto.agentkitproject.com", external: true },
           { label: "Account", href: "https://profile.agentkitproject.com", external: true },
         ]}
       />,
@@ -113,7 +113,7 @@ describe("Header", () => {
       expect(link).not.toHaveAttribute("target");
     }
     // Web-app items: new-tab navigation.
-    for (const label of ["Web Forge", "Auto", "Account"]) {
+    for (const label of ["Forge", "Auto", "Account"]) {
       const link = within(primary).getByRole("link", { name: label });
       expect(link).toHaveAttribute("target", "_blank");
       expect(link).toHaveAttribute("rel", "noreferrer noopener");
@@ -127,9 +127,6 @@ describe("Footer", () => {
     // Ecosystem
     expect(screen.getByRole("link", { name: "Market" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Forge" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Web Forge" }),
-    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Roadmap" })).toBeInTheDocument();
     // Legal
     expect(screen.getByRole("link", { name: "Privacy" })).toBeInTheDocument();

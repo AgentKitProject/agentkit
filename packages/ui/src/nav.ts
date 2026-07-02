@@ -20,16 +20,15 @@ export type NavItem = {
  * its OWN tab active (see `navWithActive`), and may append page-specific items.
  * Absolute URLs so the same nav works from any site.
  *
- * `external: true` is set ONLY on true web-app destinations (Web Forge, Auto,
+ * `external: true` is set ONLY on true web-app destinations (Forge, Auto,
  * Account) that the user expects to open as a persistent session in their current
  * tab — launching them in a new tab avoids displacing the marketing page they are
- * on. Static/marketing destinations (Home, Forge site, Market catalog, Docs,
- * Roadmap) do NOT set `external` so they navigate in the same tab as expected.
+ * on. Static/marketing destinations (Home, Market catalog, Docs, Roadmap) do NOT
+ * set `external` so they navigate in the same tab as expected.
  */
 export const DEFAULT_NAV: NavItem[] = [
   { label: "Home", href: "https://agentkitproject.com" },
-  { label: "Forge", href: "https://forge.agentkitproject.com" },
-  { label: "Web Forge", href: "https://webapp.forge.agentkitproject.com", external: true },
+  { label: "Forge", href: "https://forge.agentkitproject.com", external: true },
   {
     label: "Auto",
     href: "https://auto.agentkitproject.com",

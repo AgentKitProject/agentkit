@@ -5,7 +5,7 @@ import { githubOrgUrl } from '../../data/products';
 <DocsLayout
   title="Self-hosting on Kubernetes"
   eyebrow="Tools & operations"
-  description="Run Market, Web Forge, and Auto on your own cluster with the provided Helm charts."
+  description="Run Market, Forge, and Auto on your own cluster with the provided Helm charts."
 >
   <p>
     AgentKitProject is designed to be self-hosted: local-first, open ecosystem, no vendor
@@ -26,7 +26,7 @@ import { githubOrgUrl } from '../../data/products';
     </thead>
     <tbody>
       <tr><td><code>agentkitmarket</code></td><td>Self-hosted Market: web UI + API server + background worker, with optional bundled Postgres / MinIO / Redis.</td></tr>
-      <tr><td><code>agentkitforge</code></td><td>Self-hosted Web Forge (Next.js standalone, <code>KITSTORE_BACKEND=selfhost</code>) with bundled Postgres + MinIO.</td></tr>
+      <tr><td><code>agentkitforge</code></td><td>Self-hosted Forge (Next.js standalone, <code>KITSTORE_BACKEND=selfhost</code>) with bundled Postgres + MinIO.</td></tr>
       <tr><td><code>agentkitauto</code></td><td>Self-hosted AgentKitAuto with an in-cluster Kubernetes Job-per-run worker, bundled Postgres + MinIO.</td></tr>
       <tr><td><code>agentkitprofile</code></td><td>Account hub (display name, handle, security, connected apps) and the <strong>system of record for organizations</strong> (members, roles, invites, shared API key, budgets). Required only if you want orgs / public profile pages (<code>/u/&lt;handle&gt;</code>); for a single user, identity and publisher names already come from your OIDC IdP.</td></tr>
       <tr><td><code>agentkitgateway</code></td><td>Managed-inference gateway: in-cluster inference + credit ledger service.</td></tr>
@@ -85,7 +85,7 @@ import { githubOrgUrl } from '../../data/products';
 
   <div class="docs-note">
     <strong>Full guide.</strong> The end-to-end, battle-tested walkthrough for
-    standing up all three apps (Market + Web Forge + Auto) on one cluster with your
+    standing up all three apps (Market + Forge + Auto) on one cluster with your
     own OIDC IdP — images, versioned releases, OIDC setup, the per-chart secrets
     model, install, and verification — lives in
     <a href="https://github.com/AgentKitProject/agentkit/blob/main/deploy/SELF_HOSTING.md"><code>deploy/SELF_HOSTING.md</code></a>.

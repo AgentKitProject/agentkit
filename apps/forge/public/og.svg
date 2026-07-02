@@ -1,7 +1,7 @@
 <!--
   OG-card template (1200x630) — v3.
   Placeholders replaced by scripts/generate-og.mjs:
-    Web Forge    — large headline (e.g. "AgentKitMarket")
+    Forge    — large headline (e.g. "AgentKitMarket")
     Build and run portable Agent Kits in your browser.  — one-line subtitle
     #4f46e5   — accent hex (per-app brand color from BRAND_ACCENTS)
   One shared template; the per-app accent drives the personality. v3 adds a
@@ -100,7 +100,7 @@
   <text x="160" y="176" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="18" font-weight="500" letter-spacing="1" fill="#6f86a8">Open ecosystem for Agent Kits</text>
 
   <!-- App title -->
-  <text x="78" y="372" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="86" font-weight="800" letter-spacing="-2.5" fill="url(#title)">Web Forge</text>
+  <text x="78" y="372" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-size="86" font-weight="800" letter-spacing="-2.5" fill="url(#title)">Forge</text>
   <!-- Accent underline beneath the title -->
   <rect x="82" y="398" width="120" height="5" rx="2.5" fill="#4f46e5"/>
 

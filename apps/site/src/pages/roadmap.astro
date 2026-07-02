@@ -3,7 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import { forgeUrl, marketUrl, profileUrl } from '../data/products';
 
 const doneItems = [
-  'AgentKitForge desktop app — cross-platform, signed, auto-update (v0.6.x; retired in favor of web Forge + CLI)',
+  'AgentKitForge desktop app — the original Tauri client (v0.6.x; retired in favor of Forge + CLI)',
   'Forge (hosted + self-hostable) — browser app + agentkitforge CLI',
   'AgentKitProfile auth/profile — shared account, display name, handle',
   'AgentKitMarket public catalog — browse, submit, admin review, download',
@@ -78,7 +78,7 @@ const sections = [
       'Market Phase 1 is complete and live: public catalog, signed-in submissions via Forge device auth, admin validation and review queue, signed-in downloads, and the contracts/shared-UI foundations.',
     items: [
       'public catalog — browse without sign-in',
-      'Forge device auth → submit from desktop',
+      'Forge device auth → submit from Forge',
       'server validation queue + admin review',
       'signed-in downloads',
       'publisher snapshot (display name, handle)',
@@ -90,15 +90,15 @@ const sections = [
     badge: 'Done',
     tone: 'done',
     title: 'AgentKitForge bridges',
-    subtitle: 'Desktop + Web Forge + Market integration — shipped',
+    subtitle: 'Forge + Market integration — shipped',
     body:
-      'All Forge bridges are complete: device auth, Market submit/download/import, installed kit metadata, update-check, Web Forge, and the core parity migration (all Market logic now in @agentkitforge/core with CLI).',
+      'All Forge bridges are complete: device auth, Market submit/download/import, installed kit metadata, update-check, Forge, and the core parity migration (all Market logic now in @agentkitforge/core with CLI).',
     items: [
       'sign in with AgentKitProject account',
       'submit kits to Market from Forge',
       'import .agentkit.zip from Market',
       'installed kit metadata + update-check',
-      'Web Forge (hosted + self-hostable)',
+      'Forge (hosted + self-hostable)',
       'CLI: agentkitforge market login|submit|import'
     ]
   }
@@ -153,7 +153,7 @@ const principles = [
         </article>
         <article class="card accent-forge">
           <h3>AgentKitForge</h3>
-          <p>Build, edit, run, package, export, and install Agent Kits. Desktop + Web Forge, both live.</p>
+          <p>Build, edit, run, package, export, and install Agent Kits. Forge (browser + CLI), live.</p>
         </article>
         <article class="card accent-auto">
           <h3>AgentKitAuto</h3>
