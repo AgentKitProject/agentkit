@@ -332,6 +332,13 @@ export function TriggerWizard({
     : null;
 
   const createSourceInline = async () => {
+    // A signature-verified provider (GitHub/Stripe/Slack) MUST have its signing
+    // secret, or every inbound delivery fails a signature check server-side and
+    // the trigger silently never fires. Require it up front (mirrors the
+    // messaging-source guard) rather than create a dead source.
+    if (preset?.signatureVerified && !signingSecret.trim()) {
+      return notify(`${preset.label} needs its signing secret so we can verify each delivery.`, true);
+    }
     const nm = newSourceName.trim() || preset?.label || "My event source";
     setSourceBusy(true);
     try {
@@ -761,7 +768,18 @@ export function TriggerWizard({
   const [busy, setBusy] = useState(false);
 
   const addDestination = () => {
-    if (destinations.length >= 5) return notify("An automation can have at most 5 destinations.", true);
+    // A message automation auto-injects a message_reply destination on submit
+    // (reply-in-thread), which counts toward the contract's max of 5 — reserve
+    // a slot for it so we never build a 6-destination request the server rejects.
+    const willInjectReply = kind === "message" && replyInThread && botConnectionId.trim().length > 0;
+    const maxUserDestinations = willInjectReply ? 4 : 5;
+    if (destinations.length >= maxUserDestinations)
+      return notify(
+        willInjectReply
+          ? "An automation can have at most 5 destinations (one is reserved for the thread reply)."
+          : "An automation can have at most 5 destinations.",
+        true,
+      );
     let dest: Destination;
     if (destType === "email") {
       const to = destEmails
@@ -907,6 +925,15 @@ export function TriggerWizard({
           kind === "message"
             ? withReplyDestination(destinations, replyInThread, botConnectionId)
             : destinations;
+        // Defense-in-depth: reply can be toggled on AFTER 5 destinations were
+        // added; the contract caps destinations at 5, so block here too.
+        if (effectiveDestinations.length > 5) {
+          setBusy(false);
+          return notify(
+            "That's 6 destinations with the thread reply — remove one (the max is 5).",
+            true,
+          );
+        }
         const base = {
           name: trimmedName,
           kitRef,
@@ -1645,7 +1672,11 @@ export function TriggerWizard({
                       <p className="form-copy">Pick one of the verified integrations above to continue.</p>
                     )}
                     <Button
-                      disabled={sourceBusy || (sourceGroup === "verified" && !preset)}
+                      disabled={
+                        sourceBusy ||
+                        (sourceGroup === "verified" && !preset) ||
+                        Boolean(preset?.signatureVerified && !signingSecret.trim())
+                      }
                       loading={sourceBusy}
                       onClick={() => void createSourceInline()}
                     >

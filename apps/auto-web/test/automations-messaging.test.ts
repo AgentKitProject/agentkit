@@ -239,6 +239,18 @@ describe("message_reply destination", () => {
     expect(next.filter((d) => d.type === "message_reply")).toHaveLength(1);
     expect(next[0]).toEqual({ type: "message_reply", connectionId: "new", replyToOrigin: true });
   });
+
+  it("withReplyDestination counts toward the max — a full (5) list becomes 6, so the UI must reserve a slot", () => {
+    // Contract caps destinations at 5. withReplyDestination does NOT cap (it
+    // just prepends), so the wizard reserves a slot when reply will inject
+    // (addDestination max 4) + guards submit. This locks the injecting behavior
+    // that motivated that reservation.
+    const five: Destination[] = Array.from({ length: 5 }, (_, i) => ({
+      type: "email" as const,
+      to: [`a${i}@example.com`],
+    }));
+    expect(withReplyDestination(five, true, "conn-1")).toHaveLength(6);
+  });
 });
 
 // ---------------------------------------------------------------------------
