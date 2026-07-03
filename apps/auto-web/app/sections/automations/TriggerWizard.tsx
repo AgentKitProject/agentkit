@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Field, Input, Pill, Select, Textarea } from "@agentkitforge/ui";
 import type {
   AutoApproval,
+  Connection,
   CreateEventSourceResponse,
   CreateTriggerRequest,
   Destination,
@@ -53,12 +54,31 @@ import {
   type SchedulePhrase
 } from "@/lib/automations/cron";
 import {
+  createConnection,
   createEventSource,
   createTrigger,
+  listConnections,
   listSourceEvents,
-  updateTrigger
+  updateTrigger,
+  verifyConnection
 } from "@/lib/automations/client";
-import { buildEmitUrl, presetById, PROVIDER_PRESETS } from "@/lib/automations/presets";
+import {
+  buildEmitUrl,
+  customEmitInstructions,
+  GENERIC_PRESETS,
+  presetById,
+  VERIFIED_PRESETS
+} from "@/lib/automations/presets";
+import {
+  buildS3ConnectionRequest,
+  buildTriggerMapping,
+  buildWatchConfig,
+  isWatchableConnectionType,
+  saveWatchDraft,
+  takeWatchDraft,
+  validateS3ConnectFields,
+  type S3ConnectFields
+} from "@/lib/automations/watch-connect";
 import { insertPlaceholderAt } from "@/lib/automations/field-tree";
 import type { AutomationTemplate } from "@/lib/automations/template-link";
 import { FieldTree } from "./FieldTree";
@@ -130,7 +150,7 @@ function draftValue(raw: string): string | number | boolean | null {
 }
 
 export type WizardInitial =
-  | { mode: "create"; template?: AutomationTemplate }
+  | { mode: "create"; template?: AutomationTemplate; restoreWatchDraft?: boolean }
   | { mode: "edit"; trigger: Trigger };
 
 export function TriggerWizard({
@@ -156,20 +176,30 @@ export function TriggerWizard({
 }) {
   const editTrigger = initial.mode === "edit" ? initial.trigger : null;
   const template = initial.mode === "create" ? initial.template : undefined;
+  // A watch-step draft stashed before an OAuth full-page redirect (gdrive /
+  // dropbox), restored once when the app reloads with ?connection=created.
+  const restoredDraft = useMemo(
+    () => (initial.mode === "create" && initial.restoreWatchDraft ? takeWatchDraft() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   // ---- WHEN ----
   const [step, setStep] = useState<Step>("when");
-  // "schedule" | "event" are wizard-built; "other" = editing a trigger type the
-  // wizard doesn't build (watch/rss/…): config is shown read-only + untouched.
-  const [kind, setKind] = useState<"schedule" | "event" | "other" | null>(() => {
+  // "schedule" | "event" | "watch" are wizard-built; "other" = editing a trigger
+  // type the wizard doesn't reconfigure (rss/run_completed/watch-in-edit/…):
+  // config is shown read-only + untouched.
+  const [kind, setKind] = useState<"schedule" | "event" | "watch" | "other" | null>(() => {
+    if (restoredDraft) return "watch";
     if (editTrigger) {
       return editTrigger.type === "schedule" ? "schedule" : editTrigger.type === "event" ? "event" : "other";
     }
     if (template?.trigger.type === "schedule") return "schedule";
     if (template?.trigger.type === "event") return "event";
+    if (template?.trigger.type === "watch") return "watch";
     return null;
   });
-  const [name, setName] = useState(editTrigger?.name ?? template?.name ?? "");
+  const [name, setName] = useState(restoredDraft?.name ?? editTrigger?.name ?? template?.name ?? "");
 
   // Schedule phrase state (prefilled from an edited/template cron when it maps).
   const initialCron =
@@ -217,8 +247,28 @@ export function TriggerWizard({
   const [sourceBusy, setSourceBusy] = useState(false);
   // The one-time plaintext token from an inline create — shown ONCE.
   const [createdSource, setCreatedSource] = useState<CreateEventSourceResponse | null>(null);
+  // The event-source GROUP the user is configuring (only when creating a NEW
+  // source — an existing source already carries its own kind/provider):
+  //   "custom"   — your own app/device (the no-preset generic token path).
+  //   "verified" — a signature-verified integration (github/stripe/slack/sns).
+  //   "generic"  — the single "Generic webhook" entry (a generic token source
+  //                with a "using…" picker that swaps only the instructions).
+  const [sourceGroup, setSourceGroup] = useState<"custom" | "verified" | "generic">("custom");
+  // Which generic-webhook provider's instructions to show under "Generic
+  // webhook" (defaults to the first). Mechanically still a custom token source.
+  const [genericPresetId, setGenericPresetId] = useState<string>(GENERIC_PRESETS[0]?.id ?? "");
 
-  const preset = presetId ? presetById(presetId) : undefined;
+  // The active preset drives instructions + (for verified) provider/signing UI:
+  //   verified → the selected verified preset; generic → the "using…" pick;
+  //   custom   → none (the default POST-JSON copy).
+  const preset =
+    sourceGroup === "verified"
+      ? presetId
+        ? presetById(presetId)
+        : undefined
+      : sourceGroup === "generic"
+        ? presetById(genericPresetId)
+        : undefined;
   const selectedSource = sources.find((s) => s.id === sourceId) ?? createdSource ?? null;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const emitUrl = selectedSource
@@ -253,6 +303,147 @@ export function TriggerWizard({
       setSourceBusy(false);
     }
   };
+
+  // ---- WHEN: folder-watch (kind === "watch") ----
+  // Connections the watch step can poll (s3/gdrive/dropbox), fetched inline
+  // (this wizard is the first connection-creation UI — there is no separate
+  // Connections section yet).
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connectionId, setConnectionId] = useState("");
+  const [connBusy, setConnBusy] = useState(false);
+  // Inline create sub-form: "s3" (form) or null (chooser).
+  const [connCreate, setConnCreate] = useState<"s3" | null>(null);
+  const [s3Fields, setS3Fields] = useState<S3ConnectFields>({
+    name: "",
+    bucket: "",
+    region: "",
+    endpoint: "",
+    accessKeyId: "",
+    secretAccessKey: ""
+  });
+  const [connVerify, setConnVerify] = useState<{ ok: boolean; message: string } | null>(null);
+  // OAuth providers whose app credentials aren't configured on this instance
+  // (the start route 501s) — feature-detected so we can disable those buttons.
+  const [oauthUnavailable, setOauthUnavailable] = useState<Record<string, boolean>>({});
+
+  // Watch config fields (prefilled from a restored OAuth draft when present).
+  const [watchPrefix, setWatchPrefix] = useState(restoredDraft?.prefix ?? "");
+  const [watchPattern, setWatchPattern] = useState(restoredDraft?.pattern ?? "");
+  const [watchBatchMode, setWatchBatchMode] = useState<"per_file" | "per_batch">(
+    restoredDraft?.batchMode ?? "per_file"
+  );
+  const [watchInterval, setWatchInterval] = useState(restoredDraft?.intervalMinutes ?? 5);
+  const [watchIncludeExisting, setWatchIncludeExisting] = useState(restoredDraft?.includeExisting ?? false);
+
+  const watchConnections = (connections ?? []).filter((c) => isWatchableConnectionType(c.type));
+
+  const loadConnections = async (): Promise<Connection[]> => {
+    try {
+      const list = await listConnections();
+      setConnections(list);
+      return list;
+    } catch (e) {
+      notify(errMsg(e), true);
+      setConnections([]);
+      return [];
+    }
+  };
+
+  // Fetch connections when the watch step is active (once), and — on an OAuth
+  // draft restore — auto-select the newest watchable connection (the one just
+  // created by the callback).
+  useEffect(() => {
+    if (kind !== "watch" || connections !== null) return;
+    void loadConnections().then((list) => {
+      if (restoredDraft && !connectionId) {
+        const watchable = list.filter((c) => isWatchableConnectionType(c.type));
+        // Newest created connection wins (the just-finished OAuth one).
+        const newest = [...watchable].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+        if (newest) {
+          setConnectionId(newest.id);
+          notify(`Connected ${newest.name}. Finish the folder-watch setup below.`);
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  const createS3Connection = async () => {
+    const invalid = validateS3ConnectFields(s3Fields);
+    if (invalid) return notify(invalid, true);
+    setConnBusy(true);
+    setConnVerify(null);
+    try {
+      const created = await createConnection(buildS3ConnectionRequest(s3Fields));
+      await loadConnections();
+      setConnectionId(created.id);
+      setConnCreate(null);
+      // Clear the credential fields immediately (never keep the secret in state
+      // longer than the create call needs it).
+      setS3Fields({ name: "", bucket: "", region: "", endpoint: "", accessKeyId: "", secretAccessKey: "" });
+      notify(`Connection "${created.name}" created.`);
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setConnBusy(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (!connectionId) return;
+    setConnBusy(true);
+    try {
+      const res = await verifyConnection(connectionId);
+      setConnVerify(
+        res.verifyError
+          ? { ok: false, message: res.verifyError }
+          : { ok: true, message: "Connection verified — credentials work." }
+      );
+    } catch (e) {
+      setConnVerify({ ok: false, message: errMsg(e) });
+    } finally {
+      setConnBusy(false);
+    }
+  };
+
+  // Begin the OAuth connect flow for gdrive/dropbox. The full-page redirect
+  // loses React state, so we stash the watch-step draft first; on return
+  // (?connection=created) the parent re-opens the wizard with restoreWatchDraft.
+  const startOAuthConnect = async (provider: "gdrive" | "dropbox") => {
+    setConnBusy(true);
+    try {
+      // Feature-detect: the start route 501s when OAUTH_* isn't configured.
+      const probe = await fetch(`/api/auto/connections/oauth/${provider}/start`, {
+        method: "GET",
+        credentials: "include",
+        redirect: "manual"
+      });
+      // A configured provider 302s to the consent screen (opaque/0 status under
+      // redirect:"manual"); 501 means this instance has no app credentials.
+      if (probe.status === 501) {
+        setOauthUnavailable((prev) => ({ ...prev, [provider]: true }));
+        notify(`${provider === "gdrive" ? "Google Drive" : "Dropbox"} isn't configured on this instance.`, true);
+        return;
+      }
+      saveWatchDraft({
+        version: 1,
+        name: name.trim(),
+        prefix: watchPrefix,
+        pattern: watchPattern,
+        batchMode: watchBatchMode,
+        intervalMinutes: watchInterval,
+        includeExisting: watchIncludeExisting
+      });
+      // Real navigation (not the probe fetch) performs the OAuth redirect.
+      window.location.assign(`/api/auto/connections/oauth/${provider}/start`);
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setConnBusy(false);
+    }
+  };
+
+  const selectedConnection = watchConnections.find((c) => c.id === connectionId) ?? null;
 
   // ---- RUN ----
   const [kitSel, setKitSel] = useState<string>(() =>
@@ -393,7 +584,8 @@ export function TriggerWizard({
   const whenReady =
     kind === "other" ||
     (kind === "schedule" && cronError === null && effectiveCron.length > 0) ||
-    (kind === "event" && sourceId.length > 0);
+    (kind === "event" && sourceId.length > 0) ||
+    (kind === "watch" && connectionId.length > 0);
   const runReady = kitSel.length > 0 && selectedApproval !== undefined && promptTemplate.trim().length > 0;
 
   const stepIndex = STEPS.indexOf(step);
@@ -401,7 +593,15 @@ export function TriggerWizard({
   const nextStep = () => {
     if (step === "when") {
       if (!name.trim()) return notify("Name this automation first.", true);
-      if (!whenReady) return notify(kind === null ? "Pick a trigger type." : "Finish the trigger setup first.", true);
+      if (!whenReady)
+        return notify(
+          kind === null
+            ? "Pick a trigger type."
+            : kind === "watch"
+              ? "Pick or connect a folder to watch first."
+              : "Finish the trigger setup first.",
+          true
+        );
       setStep("run");
     } else if (step === "run") {
       if (!runReady) {
@@ -431,11 +631,7 @@ export function TriggerWizard({
         ...(f.op === "exists" ? {} : { value: draftValue(f.value) })
       }));
     if (cleanFilters.length > 10) return notify("At most 10 filters.", true);
-    const mapping = {
-      promptTemplate: promptTemplate.trim(),
-      attachPayloadAs: attachPayload ? "event.json" : null,
-      fileHandling: "attach" as const
-    };
+    const mapping = buildTriggerMapping(promptTemplate, attachPayload);
     const rateLimit = { maxPerHour: Math.min(500, Math.max(1, Math.trunc(maxPerHour) || 20)) };
 
     setBusy(true);
@@ -471,11 +667,24 @@ export function TriggerWizard({
         const req: CreateTriggerRequest =
           kind === "schedule"
             ? { ...base, type: "schedule", config: { cron: effectiveCron, timezone } }
-            : {
-                ...base,
-                type: "event",
-                config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
-              };
+            : kind === "watch"
+              ? {
+                  ...base,
+                  type: "watch",
+                  config: buildWatchConfig({
+                    connectionId,
+                    prefix: watchPrefix,
+                    pattern: watchPattern,
+                    batchMode: watchBatchMode,
+                    intervalMinutes: watchInterval,
+                    includeExisting: watchIncludeExisting
+                  })
+                }
+              : {
+                  ...base,
+                  type: "event",
+                  config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
+                };
         await createTrigger(req);
         notify("Automation created.");
       }
@@ -526,7 +735,11 @@ export function TriggerWizard({
         : `${describePhrase(phrase)} (${timezone})`
       : kind === "event"
         ? `When "${eventName.trim() || "any"}" events arrive on ${selectedSource?.name ?? "an event source"}`
-        : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
+        : kind === "watch"
+          ? `When a file appears in ${selectedConnection?.name ?? "a folder"}${
+              watchPrefix.trim() ? ` (${watchPrefix.trim()})` : ""
+            } — polled every ${watchInterval}m`
+          : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
 
   return (
     <div className="form-layout form-layout--single">
@@ -570,8 +783,9 @@ export function TriggerWizard({
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
                   {(
                     [
-                      { k: "schedule" as const, title: "On a schedule", copy: "Run at a time you choose — hourly, daily, weekly…" },
-                      { k: "event" as const, title: "When an event arrives", copy: "Run when Zapier, GitHub, Stripe, or any service sends an event." }
+                      { k: "schedule" as const, icon: "⏰", title: "On a schedule", copy: "Run at a time you choose — hourly, daily, weekly…" },
+                      { k: "watch" as const, icon: "📁", title: "When a file appears", copy: "Watch a folder in S3, Google Drive, or Dropbox and run on each new file." },
+                      { k: "event" as const, icon: "📥", title: "When an event arrives", copy: "Run from your own app or device, a verified integration, or any webhook." }
                     ] as const
                   ).map((card) => (
                     <Card
@@ -583,7 +797,12 @@ export function TriggerWizard({
                         outline: kind === card.k ? "2px solid var(--color-accent)" : "none"
                       }}
                     >
-                      <strong>{card.title}</strong>
+                      <strong>
+                        <span aria-hidden style={{ marginRight: 6 }}>
+                          {card.icon}
+                        </span>
+                        {card.title}
+                      </strong>
                       <p className="form-copy" style={{ margin: "4px 0 0" }}>
                         {card.copy}
                       </p>
@@ -592,8 +811,7 @@ export function TriggerWizard({
                 </div>
                 <p className="form-copy" style={{ marginTop: 8 }}>
                   Advanced: for a raw webhook with a shared secret (legacy), use the{" "}
-                  <a href="?section=webhooks">Triggers</a> section — or create an event source here and POST
-                  JSON to its emit URL from anything that can make an HTTP request.
+                  <a href="?section=webhooks">Triggers</a> section.
                 </p>
               </Field>
             )}
@@ -700,6 +918,206 @@ export function TriggerWizard({
               </>
             )}
 
+            {/* ---- When a file appears: folder watch (inline connect) ---- */}
+            {kind === "watch" && (
+              <>
+                <Field label="Watch a folder in…">
+                  <Select
+                    value={connectionId}
+                    onChange={(e) => {
+                      setConnectionId(e.target.value);
+                      setConnVerify(null);
+                    }}
+                  >
+                    <option value="">Connect a new folder…</option>
+                    {watchConnections.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.type})
+                      </option>
+                    ))}
+                  </Select>
+                  <p className="form-copy" style={{ marginTop: 4 }}>
+                    A connection is a reusable link to storage (S3-compatible, Google Drive, or Dropbox). The
+                    watcher polls it for new files and runs your kit on each one.
+                  </p>
+                </Field>
+
+                {/* No connection chosen → show the create options directly. */}
+                {!connectionId && (
+                  <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+                    <h4 style={{ marginTop: 0 }}>Connect a folder</h4>
+                    {connCreate === null ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setConnCreate("s3");
+                            setConnVerify(null);
+                          }}
+                        >
+                          S3 / S3-compatible
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={connBusy || oauthUnavailable.gdrive}
+                          onClick={() => void startOAuthConnect("gdrive")}
+                        >
+                          {oauthUnavailable.gdrive ? "Google Drive (not configured)" : "Google Drive"}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={connBusy || oauthUnavailable.dropbox}
+                          onClick={() => void startOAuthConnect("dropbox")}
+                        >
+                          {oauthUnavailable.dropbox ? "Dropbox (not configured)" : "Dropbox"}
+                        </Button>
+                      </div>
+                    ) : (
+                      /* ---- Inline S3 create form ---- */
+                      <>
+                        <Field label="Connection name">
+                          <Input
+                            value={s3Fields.name}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, name: e.target.value }))}
+                            placeholder="e.g. Inbox bucket"
+                            maxLength={80}
+                          />
+                        </Field>
+                        <Field label="Bucket">
+                          <Input
+                            value={s3Fields.bucket}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, bucket: e.target.value }))}
+                            placeholder="my-bucket"
+                          />
+                        </Field>
+                        <Field label="Region (optional)">
+                          <Input
+                            value={s3Fields.region ?? ""}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, region: e.target.value }))}
+                            placeholder="us-east-1"
+                          />
+                        </Field>
+                        <Field label="Endpoint (optional — for MinIO / DigitalOcean Spaces / other S3-compatible)">
+                          <Input
+                            value={s3Fields.endpoint ?? ""}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, endpoint: e.target.value }))}
+                            placeholder="https://nyc3.digitaloceanspaces.com"
+                          />
+                        </Field>
+                        <Field label="Access key id">
+                          <Input
+                            autoComplete="off"
+                            value={s3Fields.accessKeyId}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, accessKeyId: e.target.value }))}
+                            placeholder="AKIA…"
+                          />
+                        </Field>
+                        <Field label="Secret access key">
+                          <Input
+                            type="password"
+                            autoComplete="off"
+                            value={s3Fields.secretAccessKey}
+                            onChange={(e) => setS3Fields((p) => ({ ...p, secretAccessKey: e.target.value }))}
+                            placeholder="stored encrypted — never shown again"
+                          />
+                        </Field>
+                        <p className="form-copy" style={{ marginTop: 0 }}>
+                          Your keys are sent once and stored encrypted server-side; they are never echoed back
+                          or shown in the browser again.
+                        </p>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Button disabled={connBusy} loading={connBusy} onClick={() => void createS3Connection()}>
+                            {connBusy ? "Connecting…" : "Create connection"}
+                          </Button>
+                          <Button variant="secondary" onClick={() => setConnCreate(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </Card>
+                )}
+
+                {/* Connection chosen → watch config + optional verify. */}
+                {connectionId && (
+                  <>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                      <Button variant="secondary" size="sm" disabled={connBusy} onClick={() => void testConnection()}>
+                        {connBusy ? "Testing…" : "Test connection"}
+                      </Button>
+                      {connVerify && (
+                        <span
+                          style={{
+                            fontSize: "0.82em",
+                            color: connVerify.ok ? "var(--color-accent)" : "var(--color-error)"
+                          }}
+                        >
+                          {connVerify.ok ? "✓ " : "✕ "}
+                          {connVerify.message}
+                        </span>
+                      )}
+                    </div>
+
+                    <Field label="Folder / prefix (optional)">
+                      <Input
+                        value={watchPrefix}
+                        onChange={(e) => setWatchPrefix(e.target.value)}
+                        placeholder="inbox/  (blank = the whole target)"
+                      />
+                    </Field>
+                    <Field label="Only files matching this name pattern (optional)">
+                      <Input
+                        value={watchPattern}
+                        onChange={(e) => setWatchPattern(e.target.value)}
+                        placeholder="e.g. *.csv"
+                      />
+                      <p className="form-copy" style={{ marginTop: 4 }}>
+                        Matched literally against the filename (the same safe pattern the &quot;matches&quot;
+                        filter uses) — no code.
+                      </p>
+                    </Field>
+                    <Field label="Run for…">
+                      <Select
+                        value={watchBatchMode}
+                        onChange={(e) => setWatchBatchMode(e.target.value as "per_file" | "per_batch")}
+                      >
+                        <option value="per_file">One run per new file</option>
+                        <option value="per_batch">One run per batch of new files</option>
+                      </Select>
+                    </Field>
+                    <Field label="Check for new files every (minutes)">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="1440"
+                        step="1"
+                        value={watchInterval}
+                        onChange={(e) => setWatchInterval(Number(e.target.value))}
+                      />
+                    </Field>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}>
+                      <input
+                        type="checkbox"
+                        style={{ width: "auto", minHeight: 0 }}
+                        checked={watchIncludeExisting}
+                        onChange={(e) => setWatchIncludeExisting(e.target.checked)}
+                      />
+                      Also process files already there
+                    </label>
+                    {watchIncludeExisting && (
+                      <p className="form-copy" style={{ color: "var(--color-error)", marginTop: 4 }}>
+                        Warning: this fires a run for <strong>every existing file</strong> in the folder on the
+                        first sweep (subject to your rate limit). Leave off to only act on files added from now on.
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
             {/* ---- When an event arrives ---- */}
             {kind === "event" && (
               <>
@@ -715,36 +1133,116 @@ export function TriggerWizard({
                   </Select>
                 </Field>
 
-                <Field label="Where will events come from? (optional preset)">
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {PROVIDER_PRESETS.map((p) => (
-                      <Button
-                        key={p.id}
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setPresetId(p.id === presetId ? null : p.id);
-                          if (!eventName) setEventName(p.defaultEventName);
-                        }}
-                        style={p.id === presetId ? { outline: "2px solid var(--color-accent)" } : undefined}
-                      >
-                        {p.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Field>
-
                 {!sourceId && (
                   <>
+                    <Field label="Where will events come from?">
+                      {/* --- Custom (your own app or device) — listed FIRST --- */}
+                      <Card
+                        onClick={() => {
+                          setSourceGroup("custom");
+                          setPresetId(null);
+                        }}
+                        style={{
+                          padding: "10px 12px",
+                          marginBottom: 8,
+                          cursor: "pointer",
+                          outline: sourceGroup === "custom" ? "2px solid var(--color-accent)" : "none"
+                        }}
+                      >
+                        <strong>Your own app or device</strong>
+                        <p className="form-copy" style={{ margin: "2px 0 0" }}>
+                          The simplest path: POST JSON to a private emit URL from curl, a script, an IoT
+                          device, iOS Shortcuts — anything. No preset needed.
+                        </p>
+                      </Card>
+
+                      {/* --- Verified integrations --- */}
+                      <Card
+                        onClick={() => setSourceGroup("verified")}
+                        style={{
+                          padding: "10px 12px",
+                          marginBottom: 8,
+                          cursor: "pointer",
+                          outline: sourceGroup === "verified" ? "2px solid var(--color-accent)" : "none"
+                        }}
+                      >
+                        <strong>Verified integrations</strong>
+                        <p className="form-copy" style={{ margin: "2px 0 6px" }}>
+                          GitHub, Stripe, Slack, or CloudWatch (SNS) — each delivery is signature-verified.
+                        </p>
+                        {sourceGroup === "verified" && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {VERIFIED_PRESETS.map((p) => (
+                              <Button
+                                key={p.id}
+                                variant="secondary"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPresetId(p.id === presetId ? null : p.id);
+                                  if (!eventName) setEventName(p.defaultEventName);
+                                }}
+                                style={p.id === presetId ? { outline: "2px solid var(--color-accent)" } : undefined}
+                              >
+                                {p.label}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </Card>
+
+                      {/* --- Generic webhook (one entry; "using…" swaps copy) --- */}
+                      <Card
+                        onClick={() => {
+                          setSourceGroup("generic");
+                          setPresetId(null);
+                        }}
+                        style={{
+                          padding: "10px 12px",
+                          cursor: "pointer",
+                          outline: sourceGroup === "generic" ? "2px solid var(--color-accent)" : "none"
+                        }}
+                      >
+                        <strong>Generic webhook</strong>
+                        <p className="form-copy" style={{ margin: "2px 0 6px" }}>
+                          A token-secured webhook for a service that isn&apos;t signature-verified — Zapier,
+                          IFTTT, Twilio, Grafana, and more.
+                        </p>
+                        {sourceGroup === "generic" && (
+                          <label
+                            style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            using
+                            <Select
+                              value={genericPresetId}
+                              onChange={(e) => {
+                                setGenericPresetId(e.target.value);
+                                const p = presetById(e.target.value);
+                                if (p && !eventName) setEventName(p.defaultEventName);
+                              }}
+                              style={{ maxWidth: 260 }}
+                            >
+                              {GENERIC_PRESETS.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                        )}
+                      </Card>
+                    </Field>
+
                     <Field label="Name the new source">
                       <Input
                         value={newSourceName}
                         onChange={(e) => setNewSourceName(e.target.value)}
-                        placeholder={preset ? preset.label : "e.g. My Zapier events"}
+                        placeholder={preset ? preset.label : "e.g. My events"}
                         maxLength={80}
                       />
                     </Field>
-                    {preset?.signatureVerified && preset.provider !== "sns" && (
+                    {sourceGroup === "verified" && preset?.signatureVerified && preset.provider !== "sns" && (
                       <Field label={`${preset.label} signing secret (verifies each delivery)`}>
                         <Input
                           type="password"
@@ -755,7 +1253,14 @@ export function TriggerWizard({
                         />
                       </Field>
                     )}
-                    <Button disabled={sourceBusy} loading={sourceBusy} onClick={() => void createSourceInline()}>
+                    {sourceGroup === "verified" && !preset && (
+                      <p className="form-copy">Pick one of the verified integrations above to continue.</p>
+                    )}
+                    <Button
+                      disabled={sourceBusy || (sourceGroup === "verified" && !preset)}
+                      loading={sourceBusy}
+                      onClick={() => void createSourceInline()}
+                    >
                       {sourceBusy ? "Creating…" : "Create event source"}
                     </Button>
                   </>
@@ -815,14 +1320,7 @@ export function TriggerWizard({
                         </Button>
                       </div>
                     </Field>
-                    {(preset
-                      ? preset.instructions(emitUrl)
-                      : [
-                          `POST JSON to the URL above from any service or script.`,
-                          `Example: curl -X POST '${emitUrl}' -H 'content-type: application/json' -d '{"hello":"world"}'`,
-                          "Prefer sending the token as a header instead of the URL: Authorization: Bearer <token>."
-                        ]
-                    ).map((line, i) => (
+                    {(preset ? preset.instructions(emitUrl) : customEmitInstructions(emitUrl)).map((line, i) => (
                       <p key={i} className="form-copy" style={{ margin: "4px 0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                         {i + 1}. {line}
                       </p>
@@ -1064,7 +1562,7 @@ export function TriggerWizard({
               <div style={{ fontSize: "0.85em", display: "grid", gap: 4 }}>
                 <div>
                   <strong>{name.trim() || "(unnamed)"}</strong>{" "}
-                  {kind !== "other" && <Badge tone="neutral">{kind === "schedule" ? "schedule" : "event"}</Badge>}
+                  {kind !== "other" && kind !== null && <Badge tone="neutral">{kind}</Badge>}
                 </div>
                 <div>When: {triggerSummary}</div>
                 <div>

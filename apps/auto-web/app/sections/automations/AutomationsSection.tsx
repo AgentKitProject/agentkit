@@ -182,6 +182,22 @@ export function AutomationsSection({
     window.history.replaceState({}, "", url.toString());
   }, [templateApplied, notify]);
 
+  // ---- ?connection=created — return leg of an OAuth folder connect started in
+  // the watch wizard. Re-open the wizard on the watch step (it restores the
+  // saved draft from sessionStorage + selects the newly-created connection).
+  // Read once, then strip the param so a refresh doesn't re-open the wizard.
+  const [connectionRestored, setConnectionRestored] = useState(false);
+  useEffect(() => {
+    if (connectionRestored || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connection") !== "created") return;
+    setConnectionRestored(true);
+    setWizard({ mode: "create", restoreWatchDraft: true });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("connection");
+    window.history.replaceState({}, "", url.toString());
+  }, [connectionRestored]);
+
   // ---- trigger row actions ----
   const toggleTrigger = async (t: Trigger) => {
     try {

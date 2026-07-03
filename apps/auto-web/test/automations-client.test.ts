@@ -7,14 +7,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eventSourceProviderSchema } from "@agentkitforge/contracts";
 import {
+  createConnection,
   createEventSource,
+  listConnections,
   listTriggers,
   replayEvent,
   resumeTrigger,
   rotateEventSourceToken,
-  testFireTrigger
+  testFireTrigger,
+  verifyConnection
 } from "@/lib/automations/client";
-import { buildEmitUrl, PROVIDER_PRESETS, TOKEN_PLACEHOLDER } from "@/lib/automations/presets";
+import {
+  buildEmitUrl,
+  GENERIC_PRESETS,
+  PROVIDER_PRESETS,
+  TOKEN_PLACEHOLDER,
+  VERIFIED_PRESETS
+} from "@/lib/automations/presets";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn(async () => ({
@@ -87,6 +96,35 @@ describe("automations client", () => {
     expect((fn.mock.calls[0] as unknown as [string])[0]).toBe("/api/auto/event-sources/src1/rotate-token");
   });
 
+  it("listConnections unwraps { connections } from the connections route with cookies", async () => {
+    const fn = mockFetch(200, { connections: [{ id: "c1", type: "s3" }] });
+    const conns = await listConnections();
+    expect(conns).toEqual([{ id: "c1", type: "s3" }]);
+    expect(fn).toHaveBeenCalledWith("/api/auto/connections", expect.objectContaining({ credentials: "include" }));
+  });
+
+  it("createConnection POSTs the connection body to the connections route", async () => {
+    const fn = mockFetch(201, { id: "c1", type: "s3" });
+    await createConnection({
+      type: "s3",
+      name: "Inbox",
+      config: { bucket: "b", region: "us-east-1" },
+      secret: '{"accessKeyId":"AKIA","secretAccessKey":"shh"}',
+      ownerType: "user"
+    });
+    const [url, init] = fn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/auto/connections");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toMatchObject({ type: "s3", name: "Inbox" });
+  });
+
+  it("verifyConnection POSTs to the verify subroute and returns the probe result", async () => {
+    const fn = mockFetch(200, { id: "c1", type: "s3", status: "ok" });
+    const res = await verifyConnection("c1");
+    expect(res.status).toBe("ok");
+    expect((fn.mock.calls[0] as unknown as [string])[0]).toBe("/api/auto/connections/c1/verify");
+  });
+
   it("surfaces server error messages", async () => {
     mockFetch(403, { error: "nope" });
     await expect(listTriggers()).rejects.toThrow("nope");
@@ -111,6 +149,30 @@ describe("provider presets", () => {
     for (const p of PROVIDER_PRESETS.filter((p) => !p.signatureVerified)) {
       expect(p.provider).toBeUndefined();
     }
+  });
+
+  it("categorizes into exactly 4 verified + 10 generic (Verified + one Generic group)", () => {
+    // The verified group = the 4 signature-verified, first-party integrations.
+    expect(VERIFIED_PRESETS.map((p) => p.id).sort()).toEqual(
+      ["cloudwatch-sns", "github", "slack-workflow", "stripe"].sort()
+    );
+    expect(VERIFIED_PRESETS.every((p) => p.category === "verified" && p.signatureVerified)).toBe(true);
+    // The generic group = the remaining 10, consolidated under one entry's
+    // "using…" picker. Each is a plain token source (no provider, not verified).
+    expect(GENERIC_PRESETS).toHaveLength(10);
+    expect(GENERIC_PRESETS.every((p) => p.category === "generic" && !p.signatureVerified && !p.provider)).toBe(true);
+    // The two groups together are the whole (unchanged) preset list.
+    expect(VERIFIED_PRESETS.length + GENERIC_PRESETS.length).toBe(PROVIDER_PRESETS.length);
+  });
+
+  it("the Generic 'using…' pick swaps the copy-paste instructions (no capability lost)", () => {
+    const url = buildEmitUrl("https://auto.example.com", "src1", "e", "tok");
+    const zapier = GENERIC_PRESETS.find((p) => p.id === "zapier")!;
+    const twilio = GENERIC_PRESETS.find((p) => p.id === "twilio-sms")!;
+    expect(zapier.instructions(url).join("\n")).toContain("Zapier");
+    expect(twilio.instructions(url).join("\n")).toContain("Twilio");
+    // Different picks → different instruction bodies (the swap does something).
+    expect(zapier.instructions(url)).not.toEqual(twilio.instructions(url));
   });
 
   it("every preset substitutes the real emit URL into its instructions", () => {

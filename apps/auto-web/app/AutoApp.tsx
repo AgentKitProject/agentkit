@@ -100,6 +100,10 @@ export function AutoApp({
     // A ?template= deep link (Market "use this automation") always lands on the
     // Automations section, where the wizard opens prefilled from the param.
     else if (params.get("template")) setSection("automations");
+    // ?connection=created — the return leg of a gdrive/dropbox OAuth connect
+    // started inside the folder-watch wizard: land on Automations so the wizard
+    // re-opens on the watch step with the saved draft + the new connection.
+    else if (params.get("connection") === "created") setSection("automations");
   }, []);
 
   const navItems: SidebarNavItem[] = AUTO_SECTIONS.map((s) => ({

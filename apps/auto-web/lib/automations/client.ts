@@ -5,9 +5,12 @@
 // cannot drift from the server.
 import {
   autoTriggerRoutes,
+  type Connection,
+  type CreateConnectionRequest,
   type CreateEventSourceRequest,
   type CreateEventSourceResponse,
   type CreateTriggerRequest,
+  type ListConnectionsResponse,
   type ListEventSourcesResponse,
   type ListReceivedEventsResponse,
   type ListTriggerFireLogsResponse,
@@ -149,4 +152,32 @@ export async function listSourceEvents(sourceId: string) {
 /** Re-fan-out a stored event to its source's triggers. */
 export function replayEvent(sourceId: string, eventId: string): Promise<void> {
   return post<void>(autoTriggerRoutes.replayEvent(sourceId), { eventId });
+}
+
+// ---------------------------------------------------------------------------
+// Connections (folder-watch: s3 / gdrive / dropbox). The write-only `secret`
+// (S2) is moved server-side straight into the SecretStore — it is never echoed.
+// ---------------------------------------------------------------------------
+
+export async function listConnections(): Promise<Connection[]> {
+  const { connections } = await jsonFetch<ListConnectionsResponse>(autoTriggerRoutes.connections());
+  return connections;
+}
+
+/**
+ * Create a connection (folder-watch inline create → type "s3"). gdrive/dropbox
+ * are created via the OAuth flow, not this POST (the server 501s a direct
+ * create for them).
+ */
+export function createConnection(req: CreateConnectionRequest): Promise<Connection> {
+  return post<Connection>(autoTriggerRoutes.connections(), req);
+}
+
+/** Verify probe result: the (re-stamped) connection plus the failure detail. */
+export type VerifyConnectionResult = Connection & { verifyError?: string };
+
+/** POST /api/auto/connections/{id}/verify — cheap side-effect-free probe;
+ *  stamps status ok|error and returns the connection (+ verifyError on failure). */
+export function verifyConnection(id: string): Promise<VerifyConnectionResult> {
+  return post<VerifyConnectionResult>(`${autoTriggerRoutes.connection(id)}/verify`);
 }

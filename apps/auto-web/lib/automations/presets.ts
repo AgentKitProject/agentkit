@@ -28,8 +28,20 @@ export function buildEmitUrl(origin: string, sourceId: string, eventName: string
 export type ProviderPreset = {
   id: string;
   label: string;
-  /** What this preset sets on the created source. Non-verified integrations
-   *  stay kind "custom" (provider undefined). */
+  /**
+   * Which group this preset belongs to in the redesigned "When an event
+   * arrives" step:
+   *   "verified" — a first-party, signature-verified integration (github /
+   *                stripe / slack / sns): sets `provider`, shows the
+   *                signing-secret input.
+   *   "generic"  — a generic token webhook: mechanically identical to the
+   *                no-preset "Custom" path; only the copy-paste `instructions`
+   *                differ. Surfaced under the single "Generic webhook" entry's
+   *                "using…" picker (not as its own top-level button).
+   */
+  category: "verified" | "generic";
+  /** What this preset sets on the created source. Non-verified (generic)
+   *  integrations stay kind "custom" (provider undefined). */
   provider?: EventSourceProvider;
   /** True → show the signing-secret input (provider signature verification). */
   signatureVerified: boolean;
@@ -45,6 +57,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "zapier",
     label: "Zapier",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "zap",
     blurb: "Fire this automation from any Zap.",
@@ -58,6 +71,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "ifttt",
     label: "IFTTT",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "ifttt",
     blurb: "Use the \"Webhooks\" action in any Applet.",
@@ -71,6 +85,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "n8n-make",
     label: "n8n / Make",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "workflow",
     blurb: "Call from an HTTP Request node/module.",
@@ -85,6 +100,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "slack-workflow",
     label: "Slack Workflow Builder",
     provider: "slack",
+    category: "verified",
     signatureVerified: true,
     defaultEventName: "slack",
     blurb: "Trigger from a Slack workflow step (signature-verified).",
@@ -98,6 +114,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "twilio-sms",
     label: "Twilio SMS",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "sms",
     blurb: "Run a kit whenever a text message arrives.",
@@ -111,6 +128,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "home-assistant",
     label: "Home Assistant",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "home",
     blurb: "Fire from any Home Assistant automation.",
@@ -124,6 +142,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "github",
     label: "GitHub",
     provider: "github",
+    category: "verified",
     signatureVerified: true,
     defaultEventName: "github",
     blurb: "Repo/org webhooks (pushes, issues, PRs) — signature-verified.",
@@ -138,6 +157,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "stripe",
     label: "Stripe",
     provider: "stripe",
+    category: "verified",
     signatureVerified: true,
     defaultEventName: "stripe",
     blurb: "Payments/subscriptions events — signature-verified.",
@@ -152,6 +172,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "cloudwatch-sns",
     label: "CloudWatch (SNS)",
     provider: "sns",
+    category: "verified",
     signatureVerified: true,
     defaultEventName: "alarm",
     blurb: "AWS alarms via an SNS HTTPS subscription — signature-verified.",
@@ -165,6 +186,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "grafana",
     label: "Grafana",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "grafana",
     blurb: "Alerting contact point → webhook.",
@@ -178,6 +200,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "alertmanager",
     label: "Alertmanager",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "alerts",
     blurb: "Prometheus Alertmanager webhook receiver.",
@@ -190,6 +213,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "datadog",
     label: "Datadog",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "datadog",
     blurb: "Monitor alerts via the Webhooks integration.",
@@ -203,6 +227,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "sentry",
     label: "Sentry",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "sentry",
     blurb: "Error/issue alerts via a webhook alert rule.",
@@ -216,6 +241,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "uptimerobot",
     label: "UptimeRobot",
+    category: "generic",
     signatureVerified: false,
     defaultEventName: "uptime",
     blurb: "Up/down monitor alerts.",
@@ -230,4 +256,33 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 
 export function presetById(id: string): ProviderPreset | undefined {
   return PROVIDER_PRESETS.find((p) => p.id === id);
+}
+
+/**
+ * The signature-verified, first-party integrations — surfaced as the
+ * "Verified integrations" group (GitHub, Stripe, Slack, CloudWatch/SNS). Each
+ * sets `provider` and shows the signing-secret input.
+ */
+export const VERIFIED_PRESETS: ProviderPreset[] = PROVIDER_PRESETS.filter((p) => p.category === "verified");
+
+/**
+ * The generic token-webhook presets (Zapier / IFTTT / n8n·Make / Twilio /
+ * Home Assistant / Grafana / Alertmanager / Datadog / Sentry / UptimeRobot).
+ * These are mechanically identical to the no-preset "Custom" path; only their
+ * copy-paste `instructions` differ. Surfaced under the single "Generic webhook"
+ * entry's "using…" picker rather than as ten top-level buttons.
+ */
+export const GENERIC_PRESETS: ProviderPreset[] = PROVIDER_PRESETS.filter((p) => p.category === "generic");
+
+/**
+ * The default copy-paste steps for the no-preset "Custom" (your own app or
+ * device) path: POST JSON to the emit URL from curl / IoT / iOS Shortcuts /
+ * scripts. The wizard shows these when no preset is selected.
+ */
+export function customEmitInstructions(emitUrl: string): string[] {
+  return [
+    "POST JSON to the URL above from any app, device, or script (curl, IoT, iOS Shortcuts, a cron job — anything that makes an HTTP request).",
+    `Example: curl -X POST '${emitUrl}' -H 'content-type: application/json' -d '{"hello":"world"}'`,
+    "Prefer sending the token as a header instead of in the URL: Authorization: Bearer <token>."
+  ];
 }
