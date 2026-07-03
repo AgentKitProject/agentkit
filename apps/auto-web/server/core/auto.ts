@@ -76,7 +76,8 @@ import {
   type AiProviderType,
   type ChatProvider,
   type CreditLedgerRepository,
-  type ToolDefinition
+  type ToolDefinition,
+  FREE_TRIAL_PERIOD_KEY
 } from "@agentkitforge/gateway-core";
 import { randomUUID } from "node:crypto";
 import { autoHookRoutes } from "@agentkitforge/contracts";
@@ -276,8 +277,13 @@ export function resetAutoV2RatesCache(): void {
 export function estimateMinRunCostCents(rates: AutoV2Rates, freeMinutesRemaining: number): number {
   const invocation = Math.max(0, rates.invocationFeeCents);
   const activeMinute = Math.max(0, rates.activeMinuteRateCents);
-  const firstMinuteCost = freeMinutesRemaining > 0 ? 0 : activeMinute;
-  return invocation + firstMinuteCost;
+  // ONE-TIME FREE TRIAL: remaining trial minutes waive the invocation fee AND
+  // the first minute (mirrors gateway-core estimateRunStartCents + the
+  // run-driver's grace) — a $0-balance user can genuinely use the trial.
+  const graced = freeMinutesRemaining > 0;
+  const firstMinuteCost = graced ? 0 : activeMinute;
+  const invocationDue = graced ? 0 : invocation;
+  return invocationDue + firstMinuteCost;
 }
 
 /** A user's Auto v2 billing snapshot for the UI (balance + free-minute state). */
@@ -333,7 +339,7 @@ export async function getBillingSummary(
   await ledger.ensureAccount(userId, now());
   const account = await ledger.getAccount(userId);
   const balanceCents = account?.availableBalanceCents ?? 0;
-  const freeUsed = await ledger.getFreeMinutesUsed(userId, utcYearMonth(now()));
+  const freeUsed = await ledger.getFreeMinutesUsed(userId, FREE_TRIAL_PERIOD_KEY);
   const freeMinutesRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
   return {
     metered: true,
@@ -1311,7 +1317,7 @@ export async function startRun(input: {
     const balance = account?.availableBalanceCents ?? 0;
     // Free active-minutes remaining this UTC month (the first active-minute is
     // free while any remain, so it doesn't count toward the minimum estimate).
-    const freeUsed = await ledger.getFreeMinutesUsed(input.userId, utcYearMonth(now()));
+    const freeUsed = await ledger.getFreeMinutesUsed(input.userId, FREE_TRIAL_PERIOD_KEY);
     const freeRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
     const requiredCents = estimateMinRunCostCents(rates, freeRemaining);
     if (requiredCents > 0 && balance < requiredCents) {

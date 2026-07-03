@@ -217,12 +217,14 @@ export interface CreditLedgerRepository {
   // Auto v2 free active-minute allowance (per user, per calendar-month)
   // -------------------------------------------------------------------------
   //
-  // Auto v2 gives every user a monthly allowance of FREE active-minutes (the
-  // INVOCATION fee is NOT free-tiered). The ledger is the per-user billing
-  // authority, so the monthly free-minute counter lives here next to the
-  // balance. The key is (userId, yearMonth) where yearMonth is a UTC "YYYY-MM"
-  // string; a new month is simply a new (absent → 0) row, so calendar-month
-  // reset needs no separate job.
+  // Auto v2 gives every user a ONE-TIME free trial of active-minutes (no
+  // monthly reset — 2026-07-03 maintainer decision). While any trial minutes
+  // remain, the run-driver ALSO waives the invocation fee and shrinks its
+  // up-front hold, so a $0-balance user can genuinely consume the trial. The
+  // ledger is the per-user billing authority, so the trial counter lives here
+  // next to the balance. The key is (userId, periodKey); the trial uses the
+  // FIXED lifetime key FREE_TRIAL_PERIOD_KEY ("trial") — the parameter is
+  // still named `yearMonth` for wire compatibility with existing adapters.
 
   /**
    * Returns the active-minutes already consumed from this user's free allowance

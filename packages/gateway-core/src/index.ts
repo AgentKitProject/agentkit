@@ -99,6 +99,7 @@ export {
   estimateRunStartCents,
   resolveManagedInferenceFloorCents,
   utcYearMonth,
+  FREE_TRIAL_PERIOD_KEY,
   MANAGED_INFERENCE_FLOOR_CENTS,
   MANAGED_INFERENCE_FLOOR_ENV_VAR,
 } from "./core/services/affordability.js";

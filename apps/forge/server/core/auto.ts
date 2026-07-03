@@ -72,7 +72,8 @@ import {
   AnthropicChatProvider,
   createManagedAnthropicProvider,
   type ChatProvider,
-  type ToolDefinition
+  type ToolDefinition,
+  FREE_TRIAL_PERIOD_KEY
 } from "@agentkitforge/gateway-core";
 import { randomUUID } from "node:crypto";
 import { autoHookRoutes } from "@agentkitforge/contracts";
@@ -243,8 +244,13 @@ export function resetAutoV2RatesCache(): void {
 export function estimateMinRunCostCents(rates: AutoV2Rates, freeMinutesRemaining: number): number {
   const invocation = Math.max(0, rates.invocationFeeCents);
   const activeMinute = Math.max(0, rates.activeMinuteRateCents);
-  const firstMinuteCost = freeMinutesRemaining > 0 ? 0 : activeMinute;
-  return invocation + firstMinuteCost;
+  // ONE-TIME FREE TRIAL: remaining trial minutes waive the invocation fee AND
+  // the first minute (mirrors gateway-core estimateRunStartCents + the
+  // run-driver's grace) — a $0-balance user can genuinely use the trial.
+  const graced = freeMinutesRemaining > 0;
+  const firstMinuteCost = graced ? 0 : activeMinute;
+  const invocationDue = graced ? 0 : invocation;
+  return invocationDue + firstMinuteCost;
 }
 
 /**
@@ -889,7 +895,7 @@ export async function startRun(input: {
     await ledger.ensureAccount(input.userId, now());
     const account = await ledger.getAccount(input.userId);
     const balance = account?.availableBalanceCents ?? 0;
-    const freeUsed = await ledger.getFreeMinutesUsed(input.userId, utcYearMonth(now()));
+    const freeUsed = await ledger.getFreeMinutesUsed(input.userId, FREE_TRIAL_PERIOD_KEY);
     const freeRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
     const requiredCents = estimateMinRunCostCents(rates, freeRemaining);
     if (requiredCents > 0 && balance < requiredCents) {

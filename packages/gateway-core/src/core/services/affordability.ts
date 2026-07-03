@@ -22,10 +22,11 @@
  *            (only OUR run fees — the user's own provider's acceptance is
  *             unknowable, so we never estimate their inference)
  *
- * FREE TIER: the monthly free active-minute allowance counts toward
- * affordability. Per maintainer policy a user with free active-minutes
- * REMAINING this month is ALLOWED even at zero balance — the free tier must let
- * a new user fire runs; the run-level billing gate still governs actual spend.
+ * FREE TRIAL: the ONE-TIME lifetime free active-minute trial counts toward
+ * affordability. Per maintainer policy a user with trial minutes REMAINING is
+ * ALLOWED even at zero balance — the trial must let a new user fire runs (the
+ * run-driver mirrors this: invocation waived + grace-shrunk hold). No monthly
+ * reset — the allowance is granted once, ever (FREE_TRIAL_PERIOD_KEY).
  */
 
 import type { CreditLedgerRepository } from "../ports.js";
@@ -80,7 +81,9 @@ export interface RunStartPricing {
   invocationFeeCents: number;
   /** Per-active-minute rate in US cents. */
   activeMinuteRateCents: number;
-  /** Per-user, per-calendar-month free active-minute allowance. */
+  /** Per-user ONE-TIME lifetime free active-minute trial. Field name kept
+   *  for wire/dep compatibility (historical "per month" naming) — there is NO
+   *  monthly reset. */
   freeActiveMinutesPerMonth: number;
 }
 
@@ -102,7 +105,8 @@ export interface CheckAffordabilityInput {
    * the composed estimate — free-tier and unmetered handling still apply.
    */
   estimateCents?: number;
-  /** ISO timestamp "now" — selects the UTC month for the free-minute read. */
+  /** ISO timestamp "now" (audit/estimates; the trial read uses the fixed
+   *  lifetime key, not a month derived from this). */
   now: string;
 }
 
@@ -118,9 +122,18 @@ export interface AffordabilityVerdict {
 // ---------------------------------------------------------------------------
 
 /**
- * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — MUST match the
- * key the run-driver's free-minute depletion uses so the pre-check reads the
- * SAME month row.
+ * ONE-TIME FREE TRIAL (maintainer 2026-07-03): the free active-minute
+ * allowance is a LIFETIME trial, not a recurring monthly grant. All trial
+ * reads/depletions use this FIXED period key — the same atomic + per-run
+ * idempotent ledger machinery, one row per user, forever. It must NEVER
+ * change once shipped (a new key would re-grant every user's trial).
+ */
+export const FREE_TRIAL_PERIOD_KEY = "trial";
+
+/**
+ * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp. NO LONGER used
+ * for the free trial (see FREE_TRIAL_PERIOD_KEY) — retained for monthly
+ * aggregations like org usage periods.
  */
 export function utcYearMonth(iso: string): string {
   const d = new Date(iso);
@@ -149,9 +162,13 @@ export function estimateRunStartCents(
   const invocation = Math.max(0, pricing.invocationFeeCents);
   const activeMinute = Math.max(0, pricing.activeMinuteRateCents);
   if (invocation === 0 && activeMinute === 0) return 0; // unmetered → no gate
-  const firstMinute = freeMinutesRemaining > 0 ? 0 : activeMinute;
+  // TRULY-FREE TRIAL: remaining free minutes waive the invocation fee too
+  // (the run-driver mirrors this — no invocation debit + a grace-shrunk hold).
+  const graced = freeMinutesRemaining > 0;
+  const firstMinute = graced ? 0 : activeMinute;
+  const invocationDue = graced ? 0 : invocation;
   const floor = mode === "managed" ? Math.max(0, managedInferenceFloorCents) : 0;
-  return invocation + firstMinute + floor;
+  return invocationDue + firstMinute + floor;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +199,13 @@ export async function checkAffordability(
     return { allowed: true };
   }
 
-  // Free tier: remaining free active-minutes this UTC month count toward
+  // ONE-TIME FREE TRIAL: remaining lifetime trial minutes count toward
   // affordability. POLICY: any remaining allowance → allowed, even at zero
-  // balance (the free tier must admit new users; the run-level billing gate
+  // balance (the trial must admit new users; the run-level billing gate
   // still governs actual spend).
   const allowance = Math.max(0, pricing.freeActiveMinutesPerMonth);
   if (allowance > 0) {
-    const used = await deps.ledger.getFreeMinutesUsed(input.userId, utcYearMonth(input.now));
+    const used = await deps.ledger.getFreeMinutesUsed(input.userId, FREE_TRIAL_PERIOD_KEY);
     const freeMinutesRemaining = Math.max(0, allowance - used);
     if (freeMinutesRemaining > 0) {
       return { allowed: true };

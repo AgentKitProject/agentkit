@@ -1125,14 +1125,14 @@ export function AutoSection({
           >
             <Pill tone="brand">balance: ${(billing.balanceCents / 100).toFixed(2)}</Pill>
             <Pill tone={billing.freeMinutesRemaining > 0 ? "brand" : "neutral"}>
-              {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free min left this month
+              {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free trial min left
             </Pill>
           </div>
         )}
         {billing?.metered && (
           <p className="form-copy" style={{ marginTop: 0 }}>
             Each run costs a {billing.invocationFeeCents}¢ start fee plus {billing.activeMinuteRateCents}¢
-            per active minute (the first {billing.freeMinutesPerMonth} active minutes each month are free).
+            per active minute (your first {billing.freeMinutesPerMonth} active minutes are a free one-time trial).
             This applies to bring-your-own-key runs too — you still pay your own provider for tokens.
           </p>
         )}
@@ -1328,13 +1328,13 @@ export function AutoSection({
             <p className="form-copy" style={{ marginTop: 0 }}>
               <strong>{selectionLabel(runKitId)}</strong> is a purchased protected kit. It runs on AgentKitAuto and is
               billed to <strong>your</strong> Auto credits: a {billing.invocationFeeCents}¢ start fee plus{" "}
-              {billing.activeMinuteRateCents}¢ per active minute (the first {billing.freeMinutesPerMonth} active
-              minutes each month are free).
+              {billing.activeMinuteRateCents}¢ per active minute (your first {billing.freeMinutesPerMonth} active
+              minutes are a free one-time trial).
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
               <Pill tone="brand">balance: ${(billing.balanceCents / 100).toFixed(2)}</Pill>
               <Pill tone={billing.freeMinutesRemaining > 0 ? "brand" : "neutral"}>
-                {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free min left this month
+                {billing.freeMinutesRemaining} / {billing.freeMinutesPerMonth} free trial min left
               </Pill>
               {marketUrl && (
                 <a href={`${marketUrl}/account/credits`} style={{ textDecoration: "none" }}>

@@ -18,13 +18,14 @@ import {
   estimateRunStartCents,
   resolveManagedInferenceFloorCents,
   utcYearMonth,
+  FREE_TRIAL_PERIOD_KEY,
   MANAGED_INFERENCE_FLOOR_CENTS,
   type RunStartPricing,
 } from "../src/core/services/affordability.js";
 import { InMemoryCreditLedgerRepository } from "../src/adapters/memory/credit-ledger.js";
 
 const NOW = "2026-07-02T12:00:00.000Z";
-const YM = "2026-07";
+const YM = FREE_TRIAL_PERIOD_KEY; // the trial uses the fixed lifetime key
 
 /** Illustrative mechanism-test rates — NOT commercial values. */
 const RATES: RunStartPricing = {
@@ -56,9 +57,11 @@ describe("estimateRunStartCents", () => {
     expect(estimateRunStartCents("byo", NO_FREE, FLOOR)).toBe(1 + 1);
   });
 
-  it("remaining free minutes waive the first-minute component", () => {
-    expect(estimateRunStartCents("managed", RATES, FLOOR, 10)).toBe(1 + 0 + 5);
-    expect(estimateRunStartCents("byo", RATES, FLOOR, 10)).toBe(1);
+  it("remaining free minutes waive invocation AND first minute (truly-free trial)", () => {
+    // Only the managed inference floor remains — the trial is genuinely free
+    // of run fees; a BYO run with free minutes needs nothing at all.
+    expect(estimateRunStartCents("managed", RATES, FLOOR, 10)).toBe(0 + 0 + 5);
+    expect(estimateRunStartCents("byo", RATES, FLOOR, 10)).toBe(0);
   });
 
   it("unmetered rates → 0 regardless of mode (floor not applied)", () => {

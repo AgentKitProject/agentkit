@@ -44,12 +44,13 @@ afterEach(() => {
 });
 
 describe("estimateMinRunCostCents — pre-flight minimum cost", () => {
-  it("with free minutes remaining: only the invocation fee is required (first minute free)", async () => {
+  it("with free minutes remaining: NOTHING is required (truly-free trial waives invocation too)", async () => {
     const { estimateMinRunCostCents } = await import("@/server/core/auto");
     const rates = { invocationFeeCents: 1, activeMinuteRateCents: 1, freeActiveMinutesPerMonth: 60 };
-    // freeMinutesRemaining > 0 → the first active-minute is free → estimate = invocation only.
-    expect(estimateMinRunCostCents(rates, 60)).toBe(1);
-    expect(estimateMinRunCostCents(rates, 1)).toBe(1);
+    // freeMinutesRemaining > 0 → invocation AND first minute waived → a
+    // $0-balance user can genuinely use the one-time trial.
+    expect(estimateMinRunCostCents(rates, 60)).toBe(0);
+    expect(estimateMinRunCostCents(rates, 1)).toBe(0);
   });
 
   it("with NO free minutes remaining: invocation + one active-minute is required", async () => {
@@ -69,7 +70,7 @@ describe("estimateMinRunCostCents — pre-flight minimum cost", () => {
     const { estimateMinRunCostCents } = await import("@/server/core/auto");
     const rates = { invocationFeeCents: 5, activeMinuteRateCents: 3, freeActiveMinutesPerMonth: 60 };
     expect(estimateMinRunCostCents(rates, 0)).toBe(8); // 5 + 3
-    expect(estimateMinRunCostCents(rates, 10)).toBe(5); // first minute free
+    expect(estimateMinRunCostCents(rates, 10)).toBe(0); // trial waives invocation + first minute
   });
 
   // The pre-flight check is `balance >= estimate`. These assert the sufficiency
@@ -162,9 +163,9 @@ describe("getBillingSummary — metered backend (BYO account auto-creation + fre
     const ts = new Date().toISOString();
     await ledger.ensureAccount("paid-user", ts);
     await ledger.topup("paid-user", 500, ts, "test-grant");
-    // Consume 20 of 60 free minutes this UTC month.
-    const ym = `${new Date(ts).getUTCFullYear()}-${String(new Date(ts).getUTCMonth() + 1).padStart(2, "0")}`;
-    await ledger.consumeFreeActiveMinutes("paid-user", ym, 20, 60, "run-prior");
+    // Consume 20 of the 60 one-time trial minutes (fixed lifetime key).
+    const { FREE_TRIAL_PERIOD_KEY } = await import("@agentkitforge/gateway-core");
+    await ledger.consumeFreeActiveMinutes("paid-user", FREE_TRIAL_PERIOD_KEY, 20, 60, "run-prior");
 
     const { getBillingSummary, resetAutoV2RatesCache } = await import("@/server/core/auto");
     resetAutoV2RatesCache();

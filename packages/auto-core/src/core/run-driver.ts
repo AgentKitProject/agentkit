@@ -63,6 +63,7 @@
 
 import {
   runManagedTurn,
+  FREE_TRIAL_PERIOD_KEY,
   type ChatProvider,
   type CreditLedgerRepository,
   type ChatRequest,
@@ -138,13 +139,14 @@ export interface RunAutoRunDeps {
    */
   activeMinuteRateCents?: number;
   /**
-   * Auto v2 FREE active-minute allowance per user per calendar-month (Slice 2).
-   * The first `freeActiveMinutesPerMonth` active-minutes a user consumes in a UTC
-   * month are NOT charged the active-minute fee (the INVOCATION fee is NOT
-   * free-tiered). Default 0 (no free tier) — non-zero only on the HOSTED managed
-   * path where run-task resolves it from @agentkit-commercial/gateway. Only the
-   * active-MINUTE fee is reduced; depletion is tracked per user/month in the
-   * ledger and is idempotent per run.
+   * Auto ONE-TIME free trial of active-minutes per user (LIFETIME — no monthly
+   * reset; the historical "PerMonth" name is kept for wire/dep compatibility).
+   * While any trial minutes remain: the active-minute fee is waived for those
+   * minutes, the INVOCATION fee is waived entirely, and the up-front hold is
+   * grace-shrunk — a $0-balance user can genuinely consume the trial. Default
+   * 0 (no trial) — non-zero only on the HOSTED managed path where run-task
+   * resolves it from @agentkit-commercial/gateway. Depletion is tracked under
+   * the fixed FREE_TRIAL_PERIOD_KEY ledger row and is idempotent per run.
    */
   freeActiveMinutesPerMonth?: number;
   /**
@@ -233,11 +235,10 @@ function elapsedMinutes(startIso: string, endIso: string): number {
 }
 
 /**
- * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — the bucket for a
- * user's free active-minute allowance (Auto v2 Slice 2). UTC so the monthly
- * reset is deterministic regardless of deployment/user timezone. The run's
- * START time keys the allowance, so a run straddling a month boundary depletes
- * the month it began in (consistent with the up-front hold).
+ * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — used for
+ * MONTHLY aggregations (org usage periods). The free trial does NOT use it:
+ * trial reads/depletions use the fixed lifetime FREE_TRIAL_PERIOD_KEY (the
+ * 60 minutes are a ONE-TIME trial, never reset — maintainer 2026-07-03).
  */
 function utcYearMonth(iso: string): string {
   const d = new Date(iso);
@@ -291,9 +292,13 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   // run-task resolves them from @agentkit-commercial/gateway.
   const invocationFeeCents = Math.max(0, deps.invocationFeeCents ?? 0);
   const activeMinuteRateCents = Math.max(0, deps.activeMinuteRateCents ?? 0);
-  // Auto v2 Slice 2: per-user, per-calendar-month FREE active-minute allowance.
-  // 0 → no free tier. Only the active-MINUTE fee is reduced; the invocation fee
-  // is never free-tiered.
+  // Auto v2 Slice 2 → ONE-TIME FREE TRIAL (maintainer 2026-07-03): the free
+  // active-minutes are a LIFETIME trial (fixed ledger key, NO monthly reset;
+  // the field name keeps its historical "PerMonth" spelling for wire/dep
+  // compatibility). 0 → no trial. While any trial minutes remain the
+  // INVOCATION fee is ALSO waived and the up-front hold shrinks by the
+  // remaining allowance, so a $0-balance user can genuinely consume the trial
+  // (aligns with gateway-core checkAffordability's zero-balance admission).
   const freeActiveMinutesPerMonth = Math.max(0, deps.freeActiveMinutesPerMonth ?? 0);
   const chargeRunFee = invocationFeeCents > 0 || activeMinuteRateCents > 0;
   // Budget-derived cap on active minutes (also caps the run's wall-clock). When
@@ -303,6 +308,8 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     activeMinuteRateCents > 0 ? Math.ceil(budgetCents / activeMinuteRateCents) : 0;
   const startedAtIso = now();
   let runFeeHoldId: string | undefined;
+  let runFeeHoldCents = 0;
+  let runFeeSettled = false;
 
   /** Settle the v2 ACTIVE-MINUTE fee (idempotent — runs once): the up-front hold
    *  is settled with ceil(actual active minutes) * rate, capped by the
@@ -310,7 +317,11 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
    *  separate up-front debit (see below) and is NOT part of this settle. Folds
    *  the active-minute fee into the run's persisted total spend. */
   const settleActiveMinutes = async (): Promise<void> => {
-    if (runFeeHoldId === undefined) return;
+    // Guarded by a flag, NOT the hold id: with a grace-shrunk (possibly zero)
+    // hold the metering below must still run — it is what depletes the monthly
+    // free allowance. Skipping it would make the free tier infinite.
+    if (runFeeSettled || !chargeRunFee) return;
+    runFeeSettled = true;
     const holdId = runFeeHoldId;
     runFeeHoldId = undefined;
     let minutes = elapsedMinutes(startedAtIso, now());
@@ -330,7 +341,7 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     if (runActiveMinutes > 0) {
       billableMinutes = await ledger.consumeFreeActiveMinutes(
         run.userId,
-        utcYearMonth(startedAtIso),
+        FREE_TRIAL_PERIOD_KEY,
         runActiveMinutes,
         freeActiveMinutesPerMonth,
         run.id,
@@ -338,10 +349,33 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     }
     const activeMinuteCents =
       activeMinuteRateCents > 0 ? billableMinutes * activeMinuteRateCents : 0;
-    // Idempotent active-minute sourceRef; settles the hold (releases overshoot).
-    await ledger.settleHold(holdId, activeMinuteCents, now(), `auto-active-${run.id}`);
-    spentActiveMinuteCents = activeMinuteCents;
-    if (activeMinuteCents > 0) await runs.recordSpend(run.id, activeMinuteCents);
+    // Settle within the hold (settleHold requires actual <= reserved). With a
+    // grace-shrunk hold, billable cents can exceed it in one rare race: a
+    // CONCURRENT run depleted the allowance after this run's hold was sized.
+    // The excess is debited directly — idempotent via sourceRef, best-effort
+    // (an unpayable excess must not mask the run's terminal status).
+    const settleCents = holdId !== undefined ? Math.min(activeMinuteCents, runFeeHoldCents) : 0;
+    if (holdId !== undefined) {
+      await ledger.settleHold(holdId, settleCents, now(), `auto-active-${run.id}`);
+    }
+    let chargedCents = settleCents;
+    const excessCents = activeMinuteCents - settleCents;
+    if (excessCents > 0) {
+      try {
+        await ledger.debit(
+          run.userId,
+          excessCents,
+          now(),
+          "Auto run active-minutes (beyond hold)",
+          `auto-active-extra-${run.id}`,
+        );
+        chargedCents += excessCents;
+      } catch {
+        /* best-effort — see above */
+      }
+    }
+    spentActiveMinuteCents = chargedCents;
+    if (chargedCents > 0) await runs.recordSpend(run.id, chargedCents);
   };
 
   // Seed the conversation with the user's task.
@@ -468,11 +502,28 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       // dispatch for a clean 402, but the worker path is defended here too.)
       await ledger.ensureAccount(run.userId, now());
 
+      // TRULY-FREE TRIAL: remaining free active-minutes this UTC month waive
+      // the invocation fee and shrink the up-front hold, so a $0-balance user
+      // can genuinely use the free tier (matches checkAffordability's
+      // zero-balance admission). Metering still depletes the allowance at
+      // settle. A failed allowance read → no grace (conservative: the paid
+      // path is unaffected).
+      let freeMinutesRemainingAtStart = 0;
+      if (freeActiveMinutesPerMonth > 0) {
+        try {
+          const used = await ledger.getFreeMinutesUsed(run.userId, FREE_TRIAL_PERIOD_KEY);
+          freeMinutesRemainingAtStart = Math.max(0, freeActiveMinutesPerMonth - used);
+        } catch {
+          /* no grace */
+        }
+      }
+
       // 1) Invocation fee: a single idempotent debit at run start. The
       //    `auto-invocation-{runId}` sourceRef makes a retried run a no-op
       //    double-charge-wise (the ledger dedupes on sourceRef). Debited here so
-      //    even a 0-minute run still pays the flat fee.
-      if (invocationFeeCents > 0) {
+      //    even a 0-minute run still pays the flat fee. WAIVED while any free
+      //    minutes remain (truly-free trial).
+      if (invocationFeeCents > 0 && freeMinutesRemainingAtStart === 0) {
         await ledger.debit(
           run.userId,
           invocationFeeCents,
@@ -485,10 +536,13 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       }
 
       // 2) Active-minute fee: reserve the up-front hold for the budget-derived
-      //    estimated minutes; settled with the ACTUAL ceil(minutes) at finalize.
-      const holdCents = estimatedMin * activeMinuteRateCents;
+      //    estimated minutes MINUS the remaining free allowance; settled with
+      //    the ACTUAL ceil(minutes) at finalize.
+      const holdCents =
+        Math.max(0, estimatedMin - freeMinutesRemainingAtStart) * activeMinuteRateCents;
       if (holdCents > 0) {
         runFeeHoldId = await ledger.reserveHold(run.userId, holdCents, now());
+        runFeeHoldCents = holdCents;
       }
     }
 

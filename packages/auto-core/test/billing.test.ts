@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { FREE_TRIAL_PERIOD_KEY } from "@agentkitforge/gateway-core";
 import { computeDebitCents, type CreditLedgerRepository } from "@agentkitforge/gateway-core";
 import { runAutoRun } from "../src/core/run-driver.js";
 import { makeSandboxExecutor } from "../src/core/sandbox-executor.js";
@@ -576,7 +577,7 @@ describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
     const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-a")!;
     expect(settle.cents).toBe(0);
     // Usage depleted by the run's whole active-minutes.
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(10);
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(10);
   });
 
   it("straddling the boundary: only the minutes past the allowance are billed", async () => {
@@ -588,7 +589,7 @@ describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
     const second = await runWith({ ledger, activeMin: 12, freeAllowance: FREE, runId: "run-b" });
     expect(second.spentActiveMinuteCents).toBe(7 * RATE);
     expect(ledger.settles.some((s) => s.sourceRef === "auto-active-run-b" && s.cents === 7)).toBe(true);
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(67);
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(67);
   });
 
   it("allowance exhausted: the whole run is billed", async () => {
@@ -598,13 +599,12 @@ describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
     expect(out.spentActiveMinuteCents).toBe(8 * RATE);
   });
 
-  it("calendar-month rollover resets the allowance (UTC year-month)", async () => {
+  it("NO calendar-month reset: the trial is one-time, ever (fixed lifetime key)", async () => {
     const ledger = new TrackingLedger();
-    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-jun", baseIso: "2026-06-18T00:00:00.000Z" }); // June exhausted
+    await runWith({ ledger, activeMin: 60, freeAllowance: FREE, runId: "run-jun", baseIso: "2026-06-18T00:00:00.000Z" }); // trial exhausted in June
     const july = await runWith({ ledger, activeMin: 10, freeAllowance: FREE, runId: "run-jul", baseIso: "2026-07-02T00:00:00.000Z" });
-    expect(july.spentActiveMinuteCents).toBe(0); // July starts fresh
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(60);
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-07")).toBe(10);
+    expect(july.spentActiveMinuteCents).toBe(10 * RATE); // July does NOT start fresh
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(70);
   });
 
   it("freeActiveMinutesPerMonth 0 (no free tier) bills every minute, same as Slice 1", async () => {
@@ -619,19 +619,113 @@ describe("Auto v2 billing: free active-minute allowance (Slice 2)", () => {
     // second application replays the first result and does not bump usage again.
     const ledger = new TrackingLedger();
     await runWith({ ledger, activeMin: 70, freeAllowance: FREE, runId: "run-r" }); // 60 free + 10 billable
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70);
-    const replay = await ledger.consumeFreeActiveMinutes("u1", "2026-06", 70, FREE, "run-r");
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(70);
+    const replay = await ledger.consumeFreeActiveMinutes("u1", FREE_TRIAL_PERIOD_KEY, 70, FREE, "run-r");
     expect(replay).toBe(10); // same billable as the first application
-    expect(await ledger.getFreeMinutesUsed("u1", "2026-06")).toBe(70); // unchanged
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(70); // unchanged
   });
 
-  it("passes the run id and UTC year-month to the ledger for per-run idempotent depletion", async () => {
+  it("passes the run id and the FIXED trial key to the ledger for per-run idempotent depletion", async () => {
     const ledger = new TrackingLedger();
     await runWith({ ledger, activeMin: 3, freeAllowance: FREE, runId: "run-x", baseIso: "2026-06-18T00:00:00.000Z" });
     const call = ledger.consumeFreeCalls.find((c) => c.runId === "run-x")!;
     expect(call).toBeDefined();
     expect(call.runActiveMinutes).toBe(3);
     expect(call.freeAllowance).toBe(FREE);
-    expect(call.yearMonth).toBe("2026-06");
+    expect(call.yearMonth).toBe(FREE_TRIAL_PERIOD_KEY);
+  });
+});
+
+describe("Auto v2 billing: truly-free trial (grace at run start)", () => {
+  const RATE = 1; // cents/min
+  const FREE = 60; // free minutes/month
+
+  /** Like the Slice-2 runner but with the INVOCATION fee active, so the grace
+   *  waiver is observable. `depleteAtTurn` simulates a CONCURRENT run eating
+   *  the whole allowance between this run's start and its settle. */
+  async function runWith(opts: {
+    ledger: TrackingLedger;
+    activeMin: number;
+    runId: string;
+    budgetCents: number;
+    depleteAtTurn?: boolean;
+  }) {
+    const baseMs = Date.parse("2026-06-18T00:00:00.000Z");
+    const { runs, workspace, run } = await setup({ budgetCents: opts.budgetCents, inferenceMode: "byo" });
+    run.id = opts.runId;
+    const clock = makeClock(baseMs);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req) => {
+      clock.advanceMinutes(opts.activeMin);
+      if (opts.depleteAtTurn) opts.ledger.freeUsage.set(`u1\x00${FREE_TRIAL_PERIOD_KEY}`, FREE);
+      return origSend(req);
+    };
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger: opts.ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: INVOCATION, activeMinuteRateCents: RATE,
+        freeActiveMinutesPerMonth: FREE,
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    return out;
+  }
+
+  it("free minutes remaining: invocation WAIVED + hold shrunk by the allowance", async () => {
+    const ledger = new TrackingLedger();
+    // budget 100 → estimatedMin 100; grace 60 → hold (100-60)*1 = 40.
+    const out = await runWith({ ledger, activeMin: 10, runId: "run-g1", budgetCents: 100 });
+    expect(ledger.debits.filter((d) => d.sourceRef === "auto-invocation-run-g1")).toHaveLength(0);
+    expect(out.spentInvocationCents).toBe(0);
+    expect(ledger.reserves).toEqual([{ cents: 40 }]);
+    // Within the allowance → settle 0; usage still depletes.
+    expect(ledger.settles.find((s) => s.sourceRef === "auto-active-run-g1")!.cents).toBe(0);
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(10);
+    expect(out.spentActiveMinuteCents).toBe(0);
+  });
+
+  it("allowance exhausted: invocation debited + full budget-derived hold (legacy path)", async () => {
+    const ledger = new TrackingLedger();
+    ledger.freeUsage.set(`u1\x00${FREE_TRIAL_PERIOD_KEY}`, FREE); // month already spent
+    const out = await runWith({ ledger, activeMin: 10, runId: "run-g2", budgetCents: 100 });
+    expect(ledger.debits.filter((d) => d.sourceRef === "auto-invocation-run-g2")).toEqual([
+      { cents: INVOCATION, description: "Auto run invocation fee", sourceRef: "auto-invocation-run-g2" },
+    ]);
+    expect(out.spentInvocationCents).toBe(INVOCATION);
+    expect(ledger.reserves).toEqual([{ cents: 100 }]);
+    expect(out.spentActiveMinuteCents).toBe(10);
+  });
+
+  it("grace covers the whole estimate: NO hold reserved, yet the allowance still depletes", async () => {
+    const ledger = new TrackingLedger();
+    // budget 30 → estimatedMin 30 ≤ 60 free → holdCents 0 (a $0-balance user runs).
+    const out = await runWith({ ledger, activeMin: 5, runId: "run-g3", budgetCents: 30 });
+    expect(ledger.reserves).toHaveLength(0);
+    expect(ledger.settles.filter((s) => s.sourceRef === "auto-active-run-g3")).toHaveLength(0);
+    // The metering MUST still run — otherwise the free tier would be infinite.
+    expect(ledger.consumeFreeCalls.map((c) => c.runId)).toContain("run-g3");
+    expect(await ledger.getFreeMinutesUsed("u1", FREE_TRIAL_PERIOD_KEY)).toBe(5);
+    expect(out.spentActiveMinuteCents).toBe(0);
+  });
+
+  it("concurrent depletion race: billable beyond the shrunk hold is debited via auto-active-extra", async () => {
+    const ledger = new TrackingLedger();
+    // Hold sized with grace 60 → 40¢; a concurrent run then eats the allowance,
+    // so all 50 active-minutes bill: settle caps at the 40¢ hold + 10¢ extra debit.
+    const out = await runWith({ ledger, activeMin: 50, runId: "run-g4", budgetCents: 100, depleteAtTurn: true });
+    expect(ledger.reserves).toEqual([{ cents: 40 }]);
+    expect(ledger.settles.find((s) => s.sourceRef === "auto-active-run-g4")!.cents).toBe(40);
+    expect(ledger.debits.filter((d) => d.sourceRef === "auto-active-extra-run-g4")).toEqual([
+      { cents: 10, description: "Auto run active-minutes (beyond hold)", sourceRef: "auto-active-extra-run-g4" },
+    ]);
+    expect(out.spentActiveMinuteCents).toBe(50);
   });
 });

@@ -23,6 +23,7 @@ import {
   type AutoV2PricingShape,
 } from "../src/entrypoints/ledger-routes.js";
 import { makeLedgerPreRoute } from "../src/entrypoints/managed-server.js";
+import { FREE_TRIAL_PERIOD_KEY } from "../src/core/services/affordability.js";
 import { InMemoryCreditLedgerRepository } from "../src/adapters/memory/credit-ledger.js";
 
 const NOW = "2026-06-25T00:00:00.000Z";
@@ -334,7 +335,7 @@ describe("can-start", () => {
     const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
     await d.ledger.topup("u1", 700, NOW);
     // Exhaust the free allowance so the estimate includes the minute fee.
-    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    await d.ledger.consumeFreeActiveMinutes("u1", FREE_TRIAL_PERIOD_KEY, 60, 60, "run-past");
     const res = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ allowed: true });
@@ -350,7 +351,7 @@ describe("can-start", () => {
   it("denies a broke managed user with 200 {allowed:false, reason:insufficient_funds}", async () => {
     const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
     await d.ledger.topup("u1", 6, NOW); // needs 7 (1 + 1 + 5)
-    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    await d.ledger.consumeFreeActiveMinutes("u1", FREE_TRIAL_PERIOD_KEY, 60, 60, "run-past");
     const res = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ allowed: false, reason: "insufficient_funds" });
@@ -359,7 +360,7 @@ describe("can-start", () => {
   it("byo preflights only OUR fees (no inference floor)", async () => {
     const d = makeDeps({ autoV2Pricing: pricing, managedInferenceFloorCents: 5 });
     await d.ledger.topup("u1", 2, NOW); // exactly invocation + minute
-    await d.ledger.consumeFreeActiveMinutes("u1", "2026-06", 60, 60, "run-past");
+    await d.ledger.consumeFreeActiveMinutes("u1", FREE_TRIAL_PERIOD_KEY, 60, 60, "run-past");
     const byo = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "byo" });
     expect(byo.body).toEqual({ allowed: true });
     const managed = await call(d, KEY, "/can-start", "POST", { userId: "u1", mode: "managed" });
