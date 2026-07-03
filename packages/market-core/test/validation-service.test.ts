@@ -130,3 +130,72 @@ describe('runValidationJob', () => {
     expect(recorded.submissionUpdates[0]!.update.status).toBe('validation_failed');
   });
 });
+
+describe('runValidationJob — suggested automations extraction', () => {
+  it('extracts automations via the injected seam, schema-filters them, and rides the summary', async () => {
+    const payload = new TextEncoder().encode('zip-bytes');
+    const objectStore = fakeObjectStore(new Map([[message.packageKey, payload]]));
+    const recorded: RecordedAdmin = { jobUpdates: [], submissionUpdates: [] };
+    const seen: Uint8Array[] = [];
+    const extractAutomations = async (bytes: Uint8Array) => {
+      seen.push(bytes);
+      return [
+        {
+          name: 'Daily digest',
+          trigger: { type: 'schedule', config: { cron: '0 9 * * *' } },
+          promptTemplate: 'Summarize the day.'
+        },
+        // Smuggled fields must be rejected by the strict contracts schema →
+        // the WHOLE array fails safeParse → omitted... so instead assert the
+        // strictness separately below with a second run.
+      ];
+    };
+
+    await runValidationJob(message, { objectStore, admin: fakeAdmin(recorded), extractAutomations });
+
+    // The extractor received the exact streamed bytes.
+    expect(seen).toHaveLength(1);
+    expect(Buffer.from(seen[0]!).toString()).toBe('zip-bytes');
+
+    const finalJob = recorded.jobUpdates.at(-1)!;
+    expect(finalJob.update.status).toBe('passed');
+    const summary = finalJob.update.result as { automations?: unknown[] };
+    expect(summary.automations).toHaveLength(1);
+    expect((summary.automations![0] as { name: string }).name).toBe('Daily digest');
+    // The submission update carries the same summary object (publish copies it on).
+    const sub = recorded.submissionUpdates[0]!.update as { validationSummary?: { automations?: unknown[] } };
+    expect(sub.validationSummary?.automations).toHaveLength(1);
+  });
+
+  it('rejects smuggled fields (strict schema) and omits the automations field entirely', async () => {
+    const payload = new TextEncoder().encode('zip-bytes');
+    const objectStore = fakeObjectStore(new Map([[message.packageKey, payload]]));
+    const recorded: RecordedAdmin = { jobUpdates: [], submissionUpdates: [] };
+    const extractAutomations = async () => [
+      {
+        name: 'Sneaky',
+        trigger: { type: 'schedule' },
+        promptTemplate: 'x',
+        approvalId: 'appr-1' // smuggling attempt — strict schema must reject
+      }
+    ];
+
+    await runValidationJob(message, { objectStore, admin: fakeAdmin(recorded), extractAutomations });
+
+    const summary = recorded.jobUpdates.at(-1)!.update.result as { automations?: unknown[]; status: string };
+    expect(summary.status).toBe('passed'); // extraction failure never fails the job
+    expect(summary.automations).toBeUndefined();
+  });
+
+  it('default extractor on non-zip bytes → no automations field, job still passes', async () => {
+    const payload = new TextEncoder().encode('definitely not a zip');
+    const objectStore = fakeObjectStore(new Map([[message.packageKey, payload]]));
+    const recorded: RecordedAdmin = { jobUpdates: [], submissionUpdates: [] };
+
+    await runValidationJob(message, { objectStore, admin: fakeAdmin(recorded) });
+
+    const summary = recorded.jobUpdates.at(-1)!.update.result as { automations?: unknown[]; status: string };
+    expect(summary.status).toBe('passed');
+    expect(summary.automations).toBeUndefined();
+  });
+});

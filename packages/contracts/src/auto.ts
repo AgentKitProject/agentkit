@@ -39,7 +39,11 @@ export const autoRunStatusSchema = z.enum([
 export type AutoRunStatus = z.infer<typeof autoRunStatusSchema>;
 
 /** How a run was triggered. Defaults to "on_demand" for pre-Phase-B records. */
-export const runTriggerSchema = z.enum(["on_demand", "schedule", "webhook"]);
+// "event": a run created by the unified trigger layer for a non-schedule
+// trigger (webhook/watch/rss/run_completed/email_in/message). "webhook" is the
+// legacy value for the pre-unification webhook path; readers should treat the
+// two alike. triggerId carries the precise provenance.
+export const runTriggerSchema = z.enum(["on_demand", "schedule", "webhook", "event"]);
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
 
 /** How a run's model inference is billed. */

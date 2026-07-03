@@ -160,7 +160,7 @@ export default async function KitDetailPage({
           )}
         </div>
 
-        <KitAutomationsCard automations={kit.automations} slug={slug} autoBaseUrl={getAutoWebUrl()} />
+        <KitAutomationsCard automations={kit.automations} slug={slug} kitId={kit.kitId} autoBaseUrl={getAutoWebUrl()} />
 
         {kit.versionMetadata ? (
           <div className="detail-panel">

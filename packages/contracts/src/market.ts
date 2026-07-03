@@ -99,6 +99,59 @@ export const forgeDownloadResponseSchema = z.object({
 });
 export type ForgeDownloadResponse = z.infer<typeof forgeDownloadResponseSchema>;
 
+/**
+ * A kit's suggested-automation trigger, as surfaced on the public kit detail.
+ * Mirrors @agentkitforge/core's `agentKitAutomationTriggerSchema` (the
+ * `automations:` manifest block in SPEC.md). Contracts cannot import core
+ * (core depends on contracts), so the shape is pinned here and core's schema
+ * mirrors it; core's automations test + the market-core provider test keep
+ * the two in lockstep.
+ *
+ * Suggestions only: strict objects so approvals, budgets, destinations, and
+ * connections can never ride along — the human completes those in the Auto
+ * wizard.
+ */
+export const publicKitAutomationTriggerSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("schedule"),
+      config: z
+        .object({
+          cron: z.string().min(1).max(120).optional(),
+          timezone: z.string().min(1).max(64).optional()
+        })
+        .strict()
+        .optional()
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("event"),
+      config: z
+        .object({
+          eventName: z.string().min(1).max(120).optional()
+        })
+        .strict()
+        .optional()
+    })
+    .strict()
+]);
+export type PublicKitAutomationTrigger = z.infer<typeof publicKitAutomationTriggerSchema>;
+
+/** One suggested automation declared by the kit author (public kit detail). */
+export const publicKitAutomationSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    description: z.string().max(300).optional(),
+    trigger: publicKitAutomationTriggerSchema,
+    promptTemplate: z.string().min(1).max(4000)
+  })
+  .strict();
+export type PublicKitAutomation = z.infer<typeof publicKitAutomationSchema>;
+
+/** The kit's suggested automations, capped at 10 (the SPEC manifest cap). */
+export const publicKitAutomationsSchema = z.array(publicKitAutomationSchema).max(10);
+
 /** A published kit version's public metadata (from the catalog detail). */
 export const publicKitVersionSchema = z.object({
   version: z.string(),
@@ -133,6 +186,13 @@ export const publicKitDetailSchema = z
     currentVersion: z.string().nullable(),
     latestVersion: publicKitVersionSchema.nullable(),
     versions: z.array(publicKitVersionSchema).optional(),
+    /**
+     * Suggested automations extracted server-side from the published version's
+     * `agentkit.yaml` at validation time. Additive/optional: absent on kits
+     * published before extraction shipped and on kits that declare none —
+     * consumers must degrade gracefully (the Market UI hides the card).
+     */
+    automations: publicKitAutomationsSchema.optional(),
     publishedAt: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional()
   })

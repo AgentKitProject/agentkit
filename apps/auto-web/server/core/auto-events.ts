@@ -116,10 +116,9 @@ export const TRIGGER_DEFAULT_BUDGET_CENTS = 500;
 
 /**
  * L4 concurrency cap breach. Thrown by the wrapped createAndDispatch BEFORE
- * any run is created, so consumeTriggerEvent records an `error` fire log with
- * this detail. TODO(contracts): triggerFireOutcomeSchema has no dedicated
- * "suppressed_concurrency" outcome yet — add one in a future contracts version
- * and map this error to it (contracts are frozen for this workstream).
+ * any run is created; consumeTriggerEvent recognizes it BY NAME and records a
+ * "suppressed_concurrency" fire log (contracts 0.22.0) with no circuit
+ * penalty — load-shedding, not breakage.
  */
 export class ConcurrencyCapError extends Error {
   constructor(message: string) {
@@ -703,11 +702,9 @@ const createAndDispatch: CreateAndDispatchTriggerRun = async ({ trigger, input }
     // run.input.event — the chain loop guard's carrier.
     ...(input.event !== undefined ? { event: input.event } : {}),
     kitContext: { serviceUserId: trigger.userId },
-    // RunTrigger has no "trigger"/"event" value yet (contracts frozen for this
-    // workstream): schedule-type triggers reuse "schedule", every other type
-    // reuses "webhook" (an inbound event). triggerId carries the REAL
-    // provenance. TODO(contracts): add a dedicated RunTrigger value.
-    trigger: trigger.type === "schedule" ? "schedule" : "webhook",
+    // Contracts 0.22.0: non-schedule trigger types use the dedicated "event"
+    // RunTrigger value; triggerId carries the precise provenance.
+    trigger: trigger.type === "schedule" ? "schedule" : "event",
     triggerId: trigger.id,
   });
 };

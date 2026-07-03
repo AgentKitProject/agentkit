@@ -211,6 +211,9 @@ export const triggerFireOutcomeSchema = z.enum([
   "skipped_funds",
   /** Circuit breaker is paused (consecutive failures). */
   "suppressed_circuit",
+  /** L4 concurrent-run cap suppressed the fire (no run created; distinct from
+   *  "error" so operators can tell load-shedding from breakage). */
+  "suppressed_concurrency",
   /** The fire attempt errored. */
   "error",
   /** requireApproval held the fire pending an explicit Approve/Deny (Wave 4).

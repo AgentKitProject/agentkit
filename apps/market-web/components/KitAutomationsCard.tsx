@@ -12,15 +12,18 @@ import type { KitAutomationSummary } from "@/lib/kit-automations";
 export function KitAutomationsCard({
   automations,
   slug,
+  kitId,
   autoBaseUrl
 }: {
   automations?: KitAutomationSummary[];
   slug: string;
+  kitId?: string;
   autoBaseUrl?: string;
 }) {
   const items = buildKitAutomationsCardModel({
     automations: automations ?? [],
     slug,
+    kitId,
     autoBaseUrl
   });
 

@@ -1,9 +1,10 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import YAML from "yaml";
 import { afterEach, describe, expect, test } from "vitest";
-import { getKitAutomations } from "../src/app/automations.js";
+import { getKitAutomations, getKitAutomationsFromZip } from "../src/app/automations.js";
 import { inspectAgentKitCandidate } from "../src/app/inspect.js";
 import { getAgentKitSummary } from "../src/app/summary.js";
 import {
@@ -292,6 +293,52 @@ describe("automations in summary and inspect outputs", () => {
 
     expect(inspection.exists).toBe(false);
     expect(inspection.automations).toEqual([]);
+  });
+});
+
+describe("getKitAutomationsFromZip", () => {
+  async function zipWithManifest(manifest: unknown): Promise<Uint8Array> {
+    const zip = new JSZip();
+    zip.file("agentkit.yaml", YAML.stringify(manifest));
+    zip.file("AGENTKIT.md", "# Agent Kit");
+    return zip.generateAsync({ type: "uint8array" });
+  }
+
+  test("extracts well-formed automations from a packaged kit's agentkit.yaml", async () => {
+    const bytes = await zipWithManifest({
+      schemaVersion: "0.1",
+      name: "Example",
+      automations: [scheduleAutomation, eventAutomation]
+    });
+
+    const automations = await getKitAutomationsFromZip(bytes);
+
+    expect(automations).toHaveLength(2);
+    expect(automations[0].name).toBe(scheduleAutomation.name);
+    expect(automations[1].trigger.type).toBe("event");
+  });
+
+  test("returns [] when the manifest has no automations block", async () => {
+    const bytes = await zipWithManifest({ schemaVersion: "0.1", name: "Example" });
+    expect(await getKitAutomationsFromZip(bytes)).toEqual([]);
+  });
+
+  test("returns [] for a zip without agentkit.yaml", async () => {
+    const zip = new JSZip();
+    zip.file("README.md", "not a kit");
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    expect(await getKitAutomationsFromZip(bytes)).toEqual([]);
+  });
+
+  test("returns [] for non-zip bytes and for malformed automations", async () => {
+    expect(await getKitAutomationsFromZip(new TextEncoder().encode("not a zip"))).toEqual([]);
+
+    const malformed = await zipWithManifest({
+      schemaVersion: "0.1",
+      name: "Example",
+      automations: [{ ...scheduleAutomation, destinations: ["slack://finance"] }]
+    });
+    expect(await getKitAutomationsFromZip(malformed)).toEqual([]);
   });
 });
 

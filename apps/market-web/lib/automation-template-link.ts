@@ -27,8 +27,15 @@ export type AutomationTemplate = {
     /** The instruction source the user reviews in the wizard before enabling. */
     promptTemplate: string;
   };
-  /** Kit reference, e.g. `market:<slug>` — matches the existing Auto kit param shape. */
-  kitRef: string;
+  /**
+   * Kit reference in the contracts OBJECT form (`kitRefSchema`): the Auto
+   * wizard's decoder validates against that schema and a malformed kitRef
+   * invalidates the WHOLE template. Market kits must carry `marketKitId`
+   * (schema-required) plus `slug` (the wizard's selector matches entitled
+   * kits by slug). The old `"market:<slug>"` STRING form is rejected by the
+   * decoder — never emit it.
+   */
+  kitRef: { source: "market"; marketKitId: string; slug: string };
 };
 
 /**
@@ -73,8 +80,7 @@ export function decodeAutomationTemplateParam(value: string): AutomationTemplate
   if (
     typeof parsed.name !== "string" ||
     parsed.name.length === 0 ||
-    typeof parsed.kitRef !== "string" ||
-    parsed.kitRef.length === 0 ||
+    !isMarketKitRef(parsed.kitRef) ||
     !isRecord(trigger) ||
     (trigger.type !== "schedule" && trigger.type !== "event") ||
     (trigger.config !== undefined && !isRecord(trigger.config)) ||
@@ -94,6 +100,16 @@ export function decodeAutomationTemplateParam(value: string): AutomationTemplate
     mapping: { promptTemplate: mapping.promptTemplate },
     kitRef: parsed.kitRef
   };
+}
+
+/** The contracts OBJECT kitRef for a market kit (see AutomationTemplate). */
+function isMarketKitRef(value: unknown): value is { source: "market"; marketKitId: string; slug: string } {
+  if (!isRecord(value)) return false;
+  return (
+    value.source === "market" &&
+    typeof value.marketKitId === "string" && value.marketKitId.length > 0 &&
+    typeof value.slug === "string" && value.slug.length > 0
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

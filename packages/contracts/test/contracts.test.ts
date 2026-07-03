@@ -44,6 +44,9 @@ import {
   marketBackendAuditRoutes,
   browserAuditRoutes,
   profileRoutes,
+  publicKitAutomationSchema,
+  publicKitAutomationsSchema,
+  publicKitDetailSchema,
   publicKitDetailResponseSchema,
   publicPublisherProfileSchema,
   serviceManifestSchema,
@@ -121,6 +124,51 @@ describe("contracts", () => {
     publicPublisherProfileSchema.parse(fixture("public-publisher-profile.json"));
     forgeUploadBackendRequestSchema.parse(fixture("forge-upload-backend-request.json"));
     publicKitDetailResponseSchema.parse(fixture("public-kit-detail.json"));
+  });
+
+  it("kit-detail automations are optional, strict, and capped at 10", () => {
+    const scheduleAutomation = {
+      name: "Daily financial summary",
+      description: "Summarize yesterday's transactions every morning.",
+      trigger: { type: "schedule", config: { cron: "0 9 * * *", timezone: "America/New_York" } },
+      promptTemplate: "Summarize the last 24 hours of transactions."
+    };
+    const eventAutomation = {
+      name: "New invoice triage",
+      trigger: { type: "event", config: { eventName: "invoice.received" } },
+      promptTemplate: "Triage the incoming invoice and draft a review note."
+    };
+
+    assert.equal(publicKitAutomationSchema.safeParse(scheduleAutomation).success, true);
+    assert.equal(publicKitAutomationSchema.safeParse(eventAutomation).success, true);
+
+    // Strict: suggestions may never carry approvals/budgets/destinations/connections.
+    assert.equal(
+      publicKitAutomationSchema.safeParse({ ...scheduleAutomation, approvalId: "smuggled" }).success,
+      false
+    );
+    assert.equal(
+      publicKitAutomationSchema.safeParse({
+        ...scheduleAutomation,
+        trigger: { type: "schedule", config: { cron: "0 9 * * *", connectionId: "conn_1" } }
+      }).success,
+      false
+    );
+
+    // Capped at the SPEC manifest limit of 10.
+    assert.equal(
+      publicKitAutomationsSchema.safeParse(Array.from({ length: 11 }, () => eventAutomation)).success,
+      false
+    );
+
+    // Additive/optional on the kit detail: old records without the field still parse.
+    const detail = fixture("public-kit-detail.json").item;
+    const { automations: _omitted, ...legacyDetail } = detail;
+    assert.equal(publicKitDetailSchema.safeParse(legacyDetail).success, true);
+    const parsed = publicKitDetailSchema.parse(detail);
+    assert.equal(parsed.automations?.length, 2);
+    assert.equal(parsed.automations?.[0]?.trigger.type, "schedule");
+    assert.equal(parsed.automations?.[1]?.trigger.type, "event");
   });
 
   it("route builders match the canonical route table", () => {

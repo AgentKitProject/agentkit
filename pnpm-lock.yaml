@@ -464,6 +464,9 @@ importers:
       '@agentkitforge/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@agentkitforge/core':
+        specifier: workspace:*
+        version: link:../core
       '@aws-sdk/client-dynamodb':
         specifier: ^3.1068.0
         version: 3.1075.0

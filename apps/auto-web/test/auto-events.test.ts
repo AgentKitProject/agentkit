@@ -675,7 +675,7 @@ describe("ingest → fan-out → inspector (cookie surfaces)", () => {
     // Run created through the REAL startRun path with trigger provenance.
     const run = storageRef.current.state.runs[0]!;
     expect(run.triggerId).toBe(created.id);
-    expect(run.trigger).toBe("webhook");
+    expect(run.trigger).toBe("event"); // contracts 0.22.0 dedicated RunTrigger value
     expect((run.input as { prompt: string }).prompt).toBe("Handle released");
     // S1: the payload travels as an attached FILE, never free prompt text.
     expect((run.input as { files: { path: string }[] }).files[0]!.path).toBe("event.json");

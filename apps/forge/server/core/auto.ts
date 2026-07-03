@@ -829,7 +829,7 @@ export async function startRun(input: {
   /** How this run was triggered. Defaults to "on_demand" (Phase A). The Phase B
    *  scheduler passes "schedule" + scheduleId; the Phase C webhook consumer passes
    *  "webhook" + webhookId — the SAME create + gate + dispatch path is reused. */
-  trigger?: "on_demand" | "schedule" | "webhook";
+  trigger?: "on_demand" | "schedule" | "webhook" | "event";
   /** The AutoSchedule that produced this run (only with trigger "schedule"). */
   scheduleId?: string;
   /** The AutoWebhook that produced this run (only with trigger "webhook"). */

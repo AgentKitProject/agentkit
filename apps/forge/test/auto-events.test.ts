@@ -692,7 +692,7 @@ describe("fan-out + concurrency caps", () => {
     expect(storageRef.current.state.runs).toHaveLength(20);
   });
 
-  it("L4: over the concurrency cap → typed error fire log, NO run created", async () => {
+  it("L4: over the concurrency cap → suppressed_concurrency fire log, NO run created, no circuit penalty", async () => {
     process.env.AUTO_MAX_CONCURRENT_RUNS = "2";
     seedApproval();
     const { id, token } = await makeSource();
@@ -703,13 +703,18 @@ describe("fan-out + concurrency caps", () => {
     });
     expect(res.status).toBe(202);
     // The dispatcher is a no-op, so the 2 created runs stay ACTIVE (queued) and
-    // the remaining fires breach the cap.
+    // the remaining fires breach the cap — load-shedding, NOT an error.
     expect(storageRef.current.state.runs).toHaveLength(2);
     const logs = [...storageRef.current.state.fireLogs.values()].flat();
     const outcomes = logs.map((l) => l.outcome).sort();
-    expect(outcomes).toEqual(["error", "error", "run_created", "run_created"]);
-    const errorLog = logs.find((l) => l.outcome === "error")!;
-    expect(String(errorLog.detail)).toMatch(/active run/i);
+    expect(outcomes).toEqual(["run_created", "run_created", "suppressed_concurrency", "suppressed_concurrency"]);
+    const shedLog = logs.find((l) => l.outcome === "suppressed_concurrency")!;
+    expect(String(shedLog.detail)).toMatch(/active run/i);
+    // Shedding does not count toward the circuit breaker.
+    for (const t of storageRef.current.state.triggers.values()) {
+      const failures = (t.circuit as { consecutiveFailures?: number } | undefined)?.consecutiveFailures ?? 0;
+      expect(failures).toBe(0);
+    }
   });
 });
 

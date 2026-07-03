@@ -10,6 +10,7 @@ export const FIRE_OUTCOME_LABELS: Record<TriggerFireOutcome, string> = {
   suppressed_rate: "Rate limit",
   skipped_funds: "Insufficient funds",
   suppressed_circuit: "Paused (repeated failures)",
+  suppressed_concurrency: "Too many runs at once",
   awaiting_approval: "Waiting for approval",
   approval_denied: "Approval denied",
   error: "Error"
@@ -29,6 +30,7 @@ export function fireOutcomeTone(outcome: string): FireOutcomeTone {
       return "success";
     case "filtered":
     case "suppressed_rate":
+    case "suppressed_concurrency":
       return "neutral";
     case "skipped_funds":
     case "suppressed_circuit":

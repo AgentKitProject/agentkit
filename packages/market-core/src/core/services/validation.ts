@@ -26,6 +26,8 @@
  */
 
 import { createHash } from 'node:crypto';
+import { getKitAutomationsFromZip } from '@agentkitforge/core';
+import { publicKitAutomationsSchema } from '@agentkitforge/contracts';
 import type {
   AdminRepository,
   ObjectStore,
@@ -44,11 +46,24 @@ export interface ValidationSummary {
   packageSizeBytes?: number;
   sha256?: string;
   contentType?: string;
+  /**
+   * Suggested automations extracted from the package's `agentkit.yaml`
+   * (`automations:` block), re-validated through the contracts schema. Rides
+   * the summary onto the Submission → Kit/KitVersion at publish, so the
+   * public kit detail can surface them with no storage-schema change.
+   * Absent when none / extraction unavailable. Cap 10 (SPEC manifest cap).
+   */
+  automations?: unknown[];
 }
 
 export interface RunValidationDeps {
   objectStore: ObjectStore;
   admin: AdminRepository;
+  /**
+   * Automations extractor seam (tests inject a fake; production defaults to
+   * @agentkitforge/core's zip reader, which never throws).
+   */
+  extractAutomations?: (bytes: Uint8Array) => Promise<unknown[]>;
 }
 
 export async function runValidationJob(
@@ -75,7 +90,11 @@ export async function runValidationJob(
   });
 
   try {
-    const summary = await validatePackageObject(message, objectStore);
+    const summary = await validatePackageObject(
+      message,
+      objectStore,
+      deps.extractAutomations ?? getKitAutomationsFromZip,
+    );
     const completedAt = new Date().toISOString();
 
     await admin.updateValidationJob(jobId, {
@@ -133,6 +152,7 @@ export async function runValidationJob(
 async function validatePackageObject(
   message: ValidationJobMessage,
   objectStore: ObjectStore,
+  extractAutomations: (bytes: Uint8Array) => Promise<unknown[]>,
 ): Promise<ValidationSummary> {
   const checkedAt = new Date().toISOString();
   const packageKey = message.packageKey;
@@ -148,7 +168,7 @@ async function validatePackageObject(
   }
 
   const contentType = 'application/zip';
-  const { sha256, packageSizeBytes, exceededLimit } = await hashObject(objectStore, packageKey);
+  const { sha256, packageSizeBytes, exceededLimit, bytes } = await hashObject(objectStore, packageKey);
 
   if (packageSizeBytes <= 0) {
     return {
@@ -174,6 +194,19 @@ async function validatePackageObject(
     };
   }
 
+  // Suggested automations from the manifest (best-effort, never fails the
+  // job): parsed by @agentkitforge/core's zip reader and re-validated through
+  // the contracts schema, so unknown keys / smuggled fields never persist.
+  let automations: unknown[] | undefined;
+  if (bytes !== undefined) {
+    const extracted = publicKitAutomationsSchema.safeParse(
+      (await extractAutomations(bytes)).slice(0, 10),
+    );
+    if (extracted.success && extracted.data.length > 0) {
+      automations = extracted.data;
+    }
+  }
+
   return {
     status: 'passed',
     summary: '@agentkitforge/core validation integration is pending; foundational storage checks passed without executing package contents.',
@@ -187,20 +220,24 @@ async function validatePackageObject(
     packageSizeBytes,
     sha256,
     contentType,
+    ...(automations !== undefined ? { automations } : {}),
   };
 }
 
 /**
- * Streams the object, computing sha256 + byte count. Stops accumulating into the
- * hash once the size limit is exceeded (so an oversized object can't blow up the
- * worker) while still reporting the full byte count.
+ * Streams the object, computing sha256 + byte count, and (within the size
+ * limit) retains the bytes so the manifest's automations can be extracted
+ * without a second read. Stops accumulating once the size limit is exceeded
+ * (so an oversized object can't blow up the worker) while still reporting the
+ * full byte count; `bytes` is undefined for oversized objects.
  */
 async function hashObject(
   objectStore: ObjectStore,
   key: string,
-): Promise<{ sha256: string; packageSizeBytes: number; exceededLimit: boolean }> {
+): Promise<{ sha256: string; packageSizeBytes: number; exceededLimit: boolean; bytes?: Uint8Array }> {
   const stream = await objectStore.readStream(key);
   const hash = createHash('sha256');
+  const chunks: Uint8Array[] = [];
   let packageSizeBytes = 0;
   let exceededLimit = false;
 
@@ -209,8 +246,10 @@ async function hashObject(
     packageSizeBytes += bytes.byteLength;
     if (!exceededLimit) {
       hash.update(bytes);
+      chunks.push(bytes);
       if (packageSizeBytes > MAX_PACKAGE_BYTES) {
         exceededLimit = true;
+        chunks.length = 0;
       }
     }
   }
@@ -219,5 +258,16 @@ async function hashObject(
     sha256: hash.digest('hex'),
     packageSizeBytes,
     exceededLimit,
+    ...(exceededLimit || packageSizeBytes === 0 ? {} : { bytes: concatBytes(chunks, packageSizeBytes) }),
   };
+}
+
+function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }

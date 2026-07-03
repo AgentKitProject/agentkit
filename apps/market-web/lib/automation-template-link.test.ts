@@ -16,14 +16,14 @@ const scheduleTemplate: AutomationTemplate = {
   mapping: {
     promptTemplate: "Summarize the last 24 hours of transactions & highlight anomalies?"
   },
-  kitRef: "market:financial-review"
+  kitRef: { source: "market" as const, marketKitId: "kit_fin_1", slug: "financial-review" }
 };
 
 const eventTemplate: AutomationTemplate = {
   name: "New invoice triage",
   trigger: { type: "event", config: { eventName: "invoice.received" } },
   mapping: { promptTemplate: "Triage the incoming invoice." },
-  kitRef: "market:invoice-kit"
+  kitRef: { source: "market" as const, marketKitId: "kit_inv_1", slug: "invoice-kit" }
 };
 
 describe("buildAutomationTemplateLink", () => {
@@ -75,7 +75,7 @@ describe("buildAutomationTemplateLink", () => {
       name: "Minimal",
       trigger: { type: "schedule" },
       mapping: { promptTemplate: "Do the thing." },
-      kitRef: "market:minimal-kit"
+      kitRef: { source: "market" as const, marketKitId: "kit_min_1", slug: "minimal-kit" }
     };
 
     assert.deepEqual(
@@ -99,7 +99,7 @@ describe("buildAutomationTemplateLink", () => {
     assert.throws(() =>
       decodeAutomationTemplateParam(
         Buffer.from(
-          JSON.stringify({ name: "x", trigger: { type: "schedule" }, kitRef: "market:x" })
+          JSON.stringify({ name: "x", trigger: { type: "schedule" }, kitRef: { source: "market", marketKitId: "kit_x", slug: "x" } })
         ).toString("base64url")
       )
     );

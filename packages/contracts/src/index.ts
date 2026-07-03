@@ -16,6 +16,9 @@ export {
   forgeUploadBackendRequestSchema,
   forgeUploadUrlResponseSchema,
   forgeDownloadResponseSchema,
+  publicKitAutomationTriggerSchema,
+  publicKitAutomationSchema,
+  publicKitAutomationsSchema,
   publicKitVersionSchema,
   publicKitDetailSchema,
   publicKitDetailResponseSchema,
@@ -30,6 +33,8 @@ export {
   type ForgeUploadBackendRequest,
   type ForgeUploadUrlResponse,
   type ForgeDownloadResponse,
+  type PublicKitAutomationTrigger,
+  type PublicKitAutomation,
   type PublicKitVersion,
   type PublicKitDetail,
   type PublicKitDetailResponse

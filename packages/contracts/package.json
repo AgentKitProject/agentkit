@@ -1,6 +1,6 @@
 {
   "name": "@agentkitforge/contracts",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Shared cross-service contracts for the AgentKitProject ecosystem: payload schemas, route builders, status enums, and the environment service manifest.",
   "license": "MIT",
   "type": "module",

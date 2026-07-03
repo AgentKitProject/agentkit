@@ -113,10 +113,11 @@ describe("describeAutomationTrigger", () => {
 describe("buildKitAutomationsCardModel", () => {
   const automations = normalizeKitAutomations([scheduleAutomation, eventAutomation]);
 
-  it("builds Enable-in-Auto links with the template param and market: kitRef", () => {
+  it("builds Enable-in-Auto links with the template param and the contracts OBJECT kitRef", () => {
     const items = buildKitAutomationsCardModel({
       automations,
       slug: "financial-review",
+      kitId: "kit_fin_1",
       autoBaseUrl: "https://auto.agentkitproject.com"
     });
 
@@ -127,7 +128,11 @@ describe("buildKitAutomationsCardModel", () => {
     const param = new URL(items[0].enableHref ?? "").searchParams.get("template");
     const template = decodeAutomationTemplateParam(param ?? "");
     assert.equal(template.name, "Daily financial summary");
-    assert.equal(template.kitRef, "market:financial-review");
+    assert.deepEqual(template.kitRef, {
+      source: "market",
+      marketKitId: "kit_fin_1",
+      slug: "financial-review"
+    });
     assert.equal(template.trigger.type, "schedule");
     assert.deepEqual(template.trigger.config, { cron: "0 9 * * *", timezone: "America/New_York" });
     assert.equal(template.mapping.promptTemplate, scheduleAutomation.promptTemplate);
@@ -137,12 +142,24 @@ describe("buildKitAutomationsCardModel", () => {
     const items = buildKitAutomationsCardModel({
       automations,
       slug: "financial-review",
+      kitId: "kit_fin_1",
       autoBaseUrl: undefined
     });
 
     assert.equal(items.length, 2);
     assert.equal(items[0].enableHref, undefined);
     assert.equal(items[0].triggerLabel, "Daily at 9:00 (America/New_York)");
+  });
+
+  it("omits the link when kitId is unavailable (object kitRef requires it)", () => {
+    const items = buildKitAutomationsCardModel({
+      automations,
+      slug: "financial-review",
+      autoBaseUrl: "https://auto.agentkitproject.com"
+    });
+
+    assert.equal(items.length, 2);
+    assert.equal(items[0].enableHref, undefined);
   });
 });
 

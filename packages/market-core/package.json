@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@agentkitforge/contracts": "workspace:*",
+    "@agentkitforge/core": "workspace:*",
     "@aws-sdk/client-dynamodb": "^3.1068.0",
     "@aws-sdk/client-s3": "^3.1068.0",
     "@aws-sdk/client-sqs": "^3.1068.0",

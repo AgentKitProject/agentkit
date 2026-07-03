@@ -160,22 +160,27 @@ export type KitAutomationCardItem = {
 /**
  * Render model for the kit-detail Automations card. Each item carries the
  * plain-language trigger summary and the prefilled Auto-wizard deep link
- * (`?template=<base64url(JSON)>`), built with kitRef `market:<slug>`.
+ * (`?template=<base64url(JSON)>`), built with the contracts OBJECT kitRef
+ * ({source:"market", marketKitId, slug}) — the Auto wizard's decoder rejects
+ * string kitRefs and invalidates the whole template on a malformed one. The
+ * deep link requires kitId; without it entries render link-less.
  */
 export function buildKitAutomationsCardModel({
   automations,
   slug,
+  kitId,
   autoBaseUrl
 }: {
   automations: KitAutomationSummary[];
   slug: string;
+  kitId?: string;
   autoBaseUrl?: string;
 }): KitAutomationCardItem[] {
   return automations.map((automation) => ({
     name: automation.name,
     ...(automation.description ? { description: automation.description } : {}),
     triggerLabel: describeAutomationTrigger(automation.trigger),
-    ...(autoBaseUrl
+    ...(autoBaseUrl && kitId
       ? {
           enableHref: buildAutomationTemplateLink({
             autoBaseUrl,
@@ -183,7 +188,7 @@ export function buildKitAutomationsCardModel({
               name: automation.name,
               trigger: automation.trigger as AutomationTemplateTrigger,
               mapping: { promptTemplate: automation.promptTemplate },
-              kitRef: `market:${slug}`
+              kitRef: { source: "market", marketKitId: kitId, slug }
             }
           })
         }

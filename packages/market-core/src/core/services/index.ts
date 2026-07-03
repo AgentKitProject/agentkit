@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { publicKitAutomationsSchema } from '@agentkitforge/contracts';
 import type {
   CreateSubmissionInput,
   JsonRecord,
@@ -119,6 +120,8 @@ export function toPublicKitDetail(
 ): JsonRecord {
   const latestVersion = versions.find((version) => version.version === kit.currentVersion) ?? versions[0];
 
+  const automations = publicAutomations(kit.validationSummary, latestVersion?.validationSummary);
+
   return {
     ...toPublicKit(kit, publisher),
     description: kit.description ?? null,
@@ -128,7 +131,26 @@ export function toPublicKitDetail(
     validationSummary: safeValidationSummary(kit.validationSummary),
     versions: versions.map(toPublicVersion),
     importUrl: safeUrl(kit.importUrl),
+    ...(automations !== undefined ? { automations } : {}),
   };
+}
+
+/**
+ * Suggested automations for the public kit detail: read from the kit's (or
+ * the latest version's) persisted validation summary and re-validated through
+ * the contracts schema — invalid/legacy shapes and empty lists are simply
+ * omitted (old records predate the field).
+ */
+function publicAutomations(...sources: unknown[]): unknown[] | undefined {
+  for (const source of sources) {
+    const record = source as { automations?: unknown } | null | undefined;
+    if (!record || typeof record !== 'object' || record.automations === undefined) continue;
+    const parsed = publicKitAutomationsSchema.safeParse(record.automations);
+    if (parsed.success && parsed.data.length > 0) {
+      return parsed.data;
+    }
+  }
+  return undefined;
 }
 
 export function toPublicVersion(version: KitVersionRecord): JsonRecord {

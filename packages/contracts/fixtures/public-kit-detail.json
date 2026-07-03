@@ -12,8 +12,12 @@
       "avatarInitials": "EP",
       "verified": false
     },
-    "categories": ["productivity"],
-    "tags": ["example"],
+    "categories": [
+      "productivity"
+    ],
+    "tags": [
+      "example"
+    ],
     "currentVersion": "2",
     "latestVersion": {
       "version": "2",
@@ -34,6 +38,30 @@
       }
     ],
     "publishedAt": "2026-06-13T12:00:00.000Z",
-    "updatedAt": "2026-06-13T12:00:00.000Z"
+    "updatedAt": "2026-06-13T12:00:00.000Z",
+    "automations": [
+      {
+        "name": "Daily financial summary",
+        "description": "Summarize yesterday's transactions every morning.",
+        "trigger": {
+          "type": "schedule",
+          "config": {
+            "cron": "0 9 * * *",
+            "timezone": "America/New_York"
+          }
+        },
+        "promptTemplate": "Summarize the last 24 hours of transactions."
+      },
+      {
+        "name": "New invoice triage",
+        "trigger": {
+          "type": "event",
+          "config": {
+            "eventName": "invoice.received"
+          }
+        },
+        "promptTemplate": "Triage the incoming invoice and draft a review note."
+      }
+    ]
   }
 }
