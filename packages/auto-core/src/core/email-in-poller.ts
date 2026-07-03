@@ -31,8 +31,10 @@
  *     "filtered", never a run). Non-matching senders → fire-log "filtered".
  *   - PERSIST-BEFORE-DISPATCH: examined keys join the seen-set cursor BEFORE
  *     any consume (no-dupe beats no-miss, like watch/rss).
- *   - The operator inbox bucket is read with AMBIENT AWS credentials (task
- *     role / env chain) — it is operator infrastructure, NOT a per-user
+ *   - The operator inbox bucket is read with the inbox's OWN explicit
+ *     credentials when configured (EmailInboxConfig.accessKeyId/secretAccessKey,
+ *     isolated from the pod's other AWS clients), else the ambient default chain
+ *     (self-host / instance-role). It is operator infrastructure, NOT a per-user
  *     connection; nothing here touches the SecretStore.
  *   - Unconfigured (no bucket/domain) → the sweep is INERT (skips, no errors).
  */
@@ -86,6 +88,28 @@ export interface EmailInboxConfig {
   region?: string;
   /** S3-compatible endpoint override (MinIO etc.). */
   endpoint?: string;
+  /**
+   * EXPLICIT credentials for the inbox bucket. When both are set the S3 client
+   * uses them directly instead of the ambient AWS default chain — this keeps
+   * the mail-reader key fully isolated from the pod's other AWS clients (so a
+   * default-chain client elsewhere can never pick it up). Unset → default chain
+   * (self-host / instance-role deployments).
+   */
+  accessKeyId?: string;
+  secretAccessKey?: string;
+}
+
+/** S3Client config for the inbox: region + optional S3-compatible endpoint +
+ *  optional EXPLICIT credentials (see EmailInboxConfig). Shared by the list +
+ *  get builders so the credential handling can't drift between them. */
+export function inboxClientConfig(inbox: EmailInboxConfig) {
+  return {
+    region: inbox.region ?? "us-east-1",
+    ...(inbox.endpoint ? { endpoint: inbox.endpoint, forcePathStyle: true } : {}),
+    ...(inbox.accessKeyId && inbox.secretAccessKey
+      ? { credentials: { accessKeyId: inbox.accessKeyId, secretAccessKey: inbox.secretAccessKey } }
+      : {}),
+  };
 }
 
 /** One listed inbox object. */
@@ -94,7 +118,7 @@ export interface InboxObjectSummary {
   lastModified: string;
 }
 
-/** Injected inbox list seam (ambient AWS credentials; tests inject). */
+/** Injected inbox list seam (explicit or ambient creds per config; tests inject). */
 export type InboxListFn = (args: {
   inbox: EmailInboxConfig;
   maxKeys: number;
@@ -110,10 +134,7 @@ export type InboxGetFn = (args: {
 async function defaultInboxList(args: Parameters<InboxListFn>[0]): Promise<InboxObjectSummary[]> {
   const { S3Client, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
   const { inbox } = args;
-  const client = new S3Client({
-    region: inbox.region ?? "us-east-1",
-    ...(inbox.endpoint ? { endpoint: inbox.endpoint, forcePathStyle: true } : {}),
-  });
+  const client = new S3Client(inboxClientConfig(inbox));
   const objects: InboxObjectSummary[] = [];
   try {
     let continuationToken: string | undefined;
@@ -141,10 +162,7 @@ async function defaultInboxList(args: Parameters<InboxListFn>[0]): Promise<Inbox
 async function defaultInboxGet(args: Parameters<InboxGetFn>[0]): Promise<string> {
   const { S3Client, GetObjectCommand } = await import("@aws-sdk/client-s3");
   const { inbox } = args;
-  const client = new S3Client({
-    region: inbox.region ?? "us-east-1",
-    ...(inbox.endpoint ? { endpoint: inbox.endpoint, forcePathStyle: true } : {}),
-  });
+  const client = new S3Client(inboxClientConfig(inbox));
   try {
     const res = await client.send(
       new GetObjectCommand({

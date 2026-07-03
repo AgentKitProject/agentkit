@@ -149,12 +149,18 @@ export function emailInboxConfigFromEnv(): EmailInboxConfig | undefined {
   if (!bucket || bucket.length === 0 || domain === undefined) return undefined;
   const region = process.env.AUTO_EMAIL_INBOX_REGION?.trim();
   const endpoint = process.env.AUTO_EMAIL_INBOX_S3_ENDPOINT?.trim();
+  // EXPLICIT inbox creds (isolated from the pod's other AWS clients — never the
+  // ambient AWS_* default chain). Both required to take effect; else the poller
+  // falls back to the default chain (self-host / instance-role).
+  const accessKeyId = process.env.AUTO_EMAIL_INBOX_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.AUTO_EMAIL_INBOX_SECRET_ACCESS_KEY?.trim();
   return {
     bucket,
     prefix: process.env.AUTO_EMAIL_INBOX_PREFIX?.trim() ?? "",
     domain,
     ...(region ? { region } : {}),
     ...(endpoint ? { endpoint } : {}),
+    ...(accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : {}),
   };
 }
 

@@ -9,12 +9,42 @@
 import { describe, expect, it } from "vitest";
 import {
   EMAIL_IN_MAX_EVENTS_PER_SWEEP,
+  inboxClientConfig,
   parseInboundEmail,
   runEmailInPollSweep,
   type EmailInPollDeps,
   type EmailInboxConfig,
   type InboxObjectSummary,
 } from "../src/core/email-in-poller.js";
+
+describe("inboxClientConfig — credential isolation", () => {
+  const base: EmailInboxConfig = { bucket: "b", prefix: "inbound/", domain: "in.example.com" };
+
+  it("uses EXPLICIT creds when both are set (never the ambient chain)", () => {
+    const cfg = inboxClientConfig({ ...base, region: "us-east-1", accessKeyId: "AK", secretAccessKey: "SK" });
+    expect(cfg.region).toBe("us-east-1");
+    expect((cfg as { credentials?: unknown }).credentials).toEqual({ accessKeyId: "AK", secretAccessKey: "SK" });
+  });
+
+  it("omits credentials (→ default chain) when either is missing", () => {
+    expect((inboxClientConfig(base) as { credentials?: unknown }).credentials).toBeUndefined();
+    expect(
+      (inboxClientConfig({ ...base, accessKeyId: "AK" }) as { credentials?: unknown }).credentials,
+    ).toBeUndefined();
+    expect(
+      (inboxClientConfig({ ...base, secretAccessKey: "SK" }) as { credentials?: unknown }).credentials,
+    ).toBeUndefined();
+  });
+
+  it("an S3-compatible endpoint enables path-style (MinIO/Spaces)", () => {
+    const cfg = inboxClientConfig({ ...base, endpoint: "https://minio.local" }) as {
+      endpoint?: string;
+      forcePathStyle?: boolean;
+    };
+    expect(cfg.endpoint).toBe("https://minio.local");
+    expect(cfg.forcePathStyle).toBe(true);
+  });
+});
 import { EMAIL_IN_BODY_MAX_CHARS } from "../src/core/types.js";
 import type { KitRef, Trigger } from "../src/core/types.js";
 import type { CreateAndDispatchTriggerRun } from "../src/core/trigger-runner.js";
