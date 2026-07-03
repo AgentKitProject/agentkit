@@ -259,6 +259,7 @@ export type {
 
 // ---- Result delivery (Phase D) -------------------------------------------
 export {
+  assertWebhookDestinationSafe,
   buildWebhookPayload,
   deliverResult,
   signWebhookBody,

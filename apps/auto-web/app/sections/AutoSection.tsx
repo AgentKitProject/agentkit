@@ -93,6 +93,9 @@ type CreatedWebhook = Webhook & { secret: string };
 
 type AuditEntry = { tool: string; argsSummary: string; outcome: string; ts: string; detail?: string };
 type RunFile = { path: string; sizeBytes: number };
+// Persisted-output manifest entry (durable OutputStore copy; downloadable via
+// /api/auto/runs/[id]/outputs/[...path] while unexpired).
+type RunOutputFile = { path: string; sizeBytes: number; storeKey?: string; expiresAt?: string };
 type Run = {
   id: string;
   kitRef: { source: string; localKitId?: string; marketKitId?: string; slug?: string };
@@ -105,8 +108,15 @@ type Run = {
   finishedAt?: string;
   error?: string;
   result?: { output: string; files: RunFile[] };
+  outputFiles?: RunOutputFile[];
   auditLog?: AuditEntry[];
 };
+
+/** Download URL for one persisted run output (path segments URL-encoded). */
+function runOutputHref(runId: string, path: string): string {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return `/api/auto/runs/${encodeURIComponent(runId)}/outputs/${encoded}`;
+}
 
 type Schedule = {
   id: string;
@@ -1636,6 +1646,22 @@ export function AutoSection({
                   {openRun.result.files.map((f) => (
                     <li key={f.path}>
                       <code>{f.path}</code> ({f.sizeBytes} bytes)
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {openRun.outputFiles && openRun.outputFiles.length > 0 && (
+              <>
+                <h5 style={{ margin: "8px 0 4px" }}>Output downloads</h5>
+                <ul style={{ fontSize: "0.8em", margin: 0, paddingLeft: 18 }}>
+                  {openRun.outputFiles.map((f) => (
+                    <li key={f.path}>
+                      <a href={runOutputHref(openRun.id, f.path)} target="_blank" rel="noreferrer">
+                        <code>{f.path}</code>
+                      </a>{" "}
+                      ({f.sizeBytes} bytes)
                     </li>
                   ))}
                 </ul>

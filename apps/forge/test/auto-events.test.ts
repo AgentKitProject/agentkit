@@ -398,6 +398,26 @@ describe("auth-path separation — bearer trigger/event-source CRUD", () => {
     expect(res.status).toBe(401);
     expect(storageRef.current.state.sources.size).toBe(0);
   });
+
+  it("POST /api/forge/auto/connections without a bearer → 401, nothing created", async () => {
+    const { POST } = await import("@/app/api/forge/auto/connections/route");
+    const res = await POST(
+      new Request("https://forge.example/api/forge/auto/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "c", type: "s3", config: {} })
+      })
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /api/forge/auto/runs/[id]/outputs/[...path] without a bearer → 401", async () => {
+    const { GET } = await import("@/app/api/forge/auto/runs/[id]/outputs/[...path]/route");
+    const res = await GET(new Request("https://forge.example/api/forge/auto/runs/r1/outputs/out.txt"), {
+      params: Promise.resolve({ id: "r1", path: ["out.txt"] })
+    });
+    expect(res.status).toBe(401);
+  });
 });
 
 // ---------------------------------------------------------------------------
