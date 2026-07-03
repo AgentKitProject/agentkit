@@ -60,7 +60,7 @@ function fieldByLabel(page: Page, label: string | RegExp) {
 
 async function openAutomations(page: Page): Promise<void> {
   await page.goto(`${AUTO}/?section=automations`);
-  await expect(page.getByRole("heading", { name: "Automations", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Automations", exact: true }).first()).toBeVisible();
 }
 
 // ---------------------------------------------------------------------------
@@ -256,8 +256,8 @@ test("@reversible automations events: emit hits the inspector, the gate chain fi
     .poll(
       async () =>
         (
-          await getJson<{ logs: FireLog[] }>(page.request, `${AUTO}/api/auto/triggers/${trigger.id}/fire-logs`)
-        ).logs.map((l) => l.outcome),
+          await getJson<{ fireLogs: FireLog[] }>(page.request, `${AUTO}/api/auto/triggers/${trigger.id}/fire-logs`)
+        ).fireLogs.map((l) => l.outcome),
       { timeout: 15_000 },
     )
     .toEqual(["filtered"]);
