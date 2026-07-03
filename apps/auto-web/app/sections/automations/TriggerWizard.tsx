@@ -27,6 +27,7 @@ import type {
   CreateTriggerRequest,
   Destination,
   KitRef,
+  MessagePlatform,
   PublicEventSource,
   ReceivedEvent,
   RunTerminalStatus,
@@ -90,6 +91,20 @@ import {
   parseAllowlistInput,
   RUN_TERMINAL_STATUSES
 } from "@/lib/automations/trigger-config";
+import {
+  buildBotConnectionRequest,
+  buildMessageConfig,
+  buildMessageSourceRequest,
+  MESSAGE_PLATFORMS,
+  messagePlatformInfo,
+  messageSourceInstructions,
+  messageWhenReady,
+  parseEventsInput,
+  platformOfBotConnectionType,
+  validateBotConnectionFields,
+  withReplyDestination,
+  type MessageScope
+} from "@/lib/automations/messaging";
 import { insertPlaceholderAt } from "@/lib/automations/field-tree";
 import type { AutomationTemplate } from "@/lib/automations/template-link";
 import { FieldTree } from "./FieldTree";
@@ -211,12 +226,20 @@ export function TriggerWizard({
 
   // ---- WHEN ----
   const [step, setStep] = useState<Step>("when");
-  // "schedule" | "event" | "watch" | "rss" | "run_completed" | "email_in" are
-  // wizard-built; "other" = editing a trigger type the wizard doesn't
-  // reconfigure (message/watch-in-edit/…): config is shown read-only +
-  // untouched. Editing an existing rss/run_completed/email_in trigger also uses
-  // the read-only "other" path (no inline editing of their config yet).
-  type WizardKind = "schedule" | "event" | "watch" | "rss" | "run_completed" | "email_in" | "other";
+  // "schedule" | "event" | "watch" | "rss" | "run_completed" | "email_in" |
+  // "message" are wizard-built; "other" = editing a trigger type the wizard
+  // doesn't reconfigure (watch-in-edit/…): config is shown read-only +
+  // untouched. Editing an existing rss/run_completed/email_in/message trigger
+  // also uses the read-only "other" path (no inline editing of their config yet).
+  type WizardKind =
+    | "schedule"
+    | "event"
+    | "watch"
+    | "rss"
+    | "run_completed"
+    | "email_in"
+    | "message"
+    | "other";
   const [kind, setKind] = useState<WizardKind | null>(() => {
     if (restoredDraft) return "watch";
     if (editTrigger) {
@@ -534,6 +557,112 @@ export function TriggerWizard({
     setAllowFromInput("");
   };
 
+  // ---- WHEN: messaging (kind === "message" — Slack / Telegram / Discord) ----
+  // The most complex flow: an INBOUND provider event source + an OUTBOUND bot
+  // connection + scope/channel/events + a reply-to-thread destination + a
+  // pre-run Approve/Deny gate. It combines the EVENT flow (provider source +
+  // signing secret + setup instructions) with the WATCH flow (inline connection
+  // connect). Bot connections reuse the shared `connections` state (loaded once
+  // the messaging step is active); the inbound source uses the shared `sources`.
+  const [platform, setPlatform] = useState<MessagePlatform | null>(null);
+  const platformInfo = platform ? messagePlatformInfo(platform) : undefined;
+  // Inbound source: "" = create a new provider source for this platform.
+  const [msgSourceId, setMsgSourceId] = useState("");
+  const [msgSourceName, setMsgSourceName] = useState("");
+  const [msgSigningSecret, setMsgSigningSecret] = useState("");
+  const [msgSourceBusy, setMsgSourceBusy] = useState(false);
+  // Outbound bot connection: "" = create a new bot connection for this platform.
+  const [botConnectionId, setBotConnectionId] = useState("");
+  const [botCreateOpen, setBotCreateOpen] = useState(false);
+  const [botName, setBotName] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [botChannelId, setBotChannelId] = useState("");
+  const [botBusy, setBotBusy] = useState(false);
+  // Message match config.
+  const [msgScope, setMsgScope] = useState<MessageScope>("channel");
+  const [msgChannelId, setMsgChannelId] = useState("");
+  const [msgEventsAdvanced, setMsgEventsAdvanced] = useState(false);
+  const [msgEventsInput, setMsgEventsInput] = useState("");
+  // Reply-to-thread (DELIVER) + pre-run Approve/Deny (both need the bot).
+  const [replyInThread, setReplyInThread] = useState(true);
+  const [requireApproval, setRequireApproval] = useState(editTrigger?.requireApproval ?? false);
+
+  // The inbound sources that match the chosen platform (provider === platform).
+  const platformSources = platform ? sources.filter((s) => s.provider === platform) : [];
+  // The bot connections that match the chosen platform.
+  const platformBotConnections = platform
+    ? (connections ?? []).filter((c) => platformOfBotConnectionType(c.type) === platform)
+    : [];
+  const selectedMsgSource = platformSources.find((s) => s.id === msgSourceId) ?? createdSource ?? null;
+  // Reply/approval need the bot; the bot connection is otherwise optional.
+  const botNeeded = replyInThread || requireApproval;
+
+  // Load connections once the messaging step is active (shared loader with watch).
+  useEffect(() => {
+    if (kind !== "message" || connections !== null) return;
+    void loadConnections();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
+  // The inbound ingest URL for the selected source (event name "message" —
+  // provider payloads carry their own type; the path name is a fixed bucket).
+  const msgIngestUrl = selectedMsgSource
+    ? buildEmitUrl(
+        origin,
+        selectedMsgSource.id,
+        "message",
+        createdSource && createdSource.id === selectedMsgSource.id ? createdSource.token : undefined
+      )
+    : null;
+
+  // Create the inbound provider source inline (name + platform signing secret).
+  const createMessageSource = async () => {
+    if (!platform) return;
+    if (!msgSigningSecret.trim()) {
+      return notify(`Paste the ${platformInfo?.signingSecretLabel ?? "signing secret"}.`, true);
+    }
+    setMsgSourceBusy(true);
+    try {
+      const created = await createEventSource(
+        buildMessageSourceRequest({ name: msgSourceName, platform, signingSecret: msgSigningSecret })
+      );
+      setCreatedSource(created);
+      setMsgSourceId(created.id);
+      setMsgSigningSecret("");
+      setMsgSourceName("");
+      notify("Inbound source created. Copy the token now — it is shown only once.");
+      await onSourcesChanged();
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setMsgSourceBusy(false);
+    }
+  };
+
+  // Create the outbound bot connection inline (name + bot token).
+  const createBotConnection = async () => {
+    if (!platform) return;
+    const fields = { name: botName, platform, botToken, defaultChannelId: botChannelId };
+    const invalid = validateBotConnectionFields(fields);
+    if (invalid) return notify(invalid, true);
+    setBotBusy(true);
+    try {
+      const created = await createConnection(buildBotConnectionRequest(fields));
+      await loadConnections();
+      setBotConnectionId(created.id);
+      setBotCreateOpen(false);
+      // Never keep the token in state longer than the create call needs it.
+      setBotName("");
+      setBotToken("");
+      setBotChannelId("");
+      notify(`Bot connection "${created.name}" created.`);
+    } catch (e) {
+      notify(errMsg(e), true);
+    } finally {
+      setBotBusy(false);
+    }
+  };
+
   // ---- RUN ----
   const [kitSel, setKitSel] = useState<string>(() =>
     editTrigger ? kitRefToSelection(editTrigger.kitRef) : template?.kitRef ? kitRefToSelection(template.kitRef) : ""
@@ -619,7 +748,8 @@ export function TriggerWizard({
     selectedApproval.networkPolicy !== null &&
     (selectedApproval.networkPolicy as { mode?: string }).mode !== "deny_all";
   const showUntrustedWarning =
-    (kind === "event" || kind === "rss" || kind === "email_in") && approvalNetworkOpen;
+    (kind === "event" || kind === "rss" || kind === "email_in" || kind === "message") &&
+    approvalNetworkOpen;
 
   // ---- DELIVER ----
   const [destinations, setDestinations] = useState<Destination[]>(editTrigger?.destinations ?? []);
@@ -680,7 +810,17 @@ export function TriggerWizard({
     // any-kit-or-specific + at least one terminal status.
     (kind === "run_completed" && chainStatuses.length > 0) ||
     // available on this instance (hosted inbox domain configured).
-    (kind === "email_in" && emailInReady === true);
+    (kind === "email_in" && emailInReady === true) ||
+    // messaging: platform + inbound source + (a bot connection when reply or
+    // approval is on).
+    (kind === "message" &&
+      messageWhenReady({
+        platform,
+        sourceId: msgSourceId,
+        connectionId: botConnectionId,
+        replyEnabled: replyInThread,
+        requireApproval
+      }));
   const runReady = kitSel.length > 0 && selectedApproval !== undefined && promptTemplate.trim().length > 0;
 
   const stepIndex = STEPS.indexOf(step);
@@ -700,7 +840,13 @@ export function TriggerWizard({
                   ? "Pick at least one outcome that fires the chain."
                   : kind === "email_in"
                     ? "Inbound email isn't configured on this instance."
-                    : "Finish the trigger setup first.",
+                    : kind === "message"
+                      ? !platform
+                        ? "Pick a messaging platform first."
+                        : !msgSourceId
+                          ? "Pick or create the inbound source first."
+                          : "Reply and approval need a bot connection — pick or create one (or turn both off)."
+                      : "Finish the trigger setup first.",
           true
         );
       setStep("run");
@@ -755,14 +901,21 @@ export function TriggerWizard({
         await updateTrigger(editTrigger.id, patch);
         notify("Automation updated.");
       } else {
+        // Messaging: inject the reply-to-thread destination (when reply is on +
+        // a bot connection is set) and plumb the pre-run approval gate through.
+        const effectiveDestinations =
+          kind === "message"
+            ? withReplyDestination(destinations, replyInThread, botConnectionId)
+            : destinations;
         const base = {
           name: trimmedName,
           kitRef,
           approvalId: selectedApproval.id,
           mapping,
           ...(cleanFilters.length > 0 ? { filters: cleanFilters } : {}),
-          ...(destinations.length > 0 ? { destinations } : {}),
+          ...(effectiveDestinations.length > 0 ? { destinations: effectiveDestinations } : {}),
           rateLimit,
+          ...(kind === "message" && requireApproval ? { requireApproval: true } : {}),
           enabled: true
         };
         const req: CreateTriggerRequest =
@@ -795,11 +948,24 @@ export function TriggerWizard({
                     }
                   : kind === "email_in"
                     ? { ...base, type: "email_in", config: buildEmailInConfig({ allowedFrom }) }
-                    : {
-                        ...base,
-                        type: "event",
-                        config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
-                      };
+                    : kind === "message" && platform
+                      ? {
+                          ...base,
+                          type: "message",
+                          config: buildMessageConfig({
+                            platform,
+                            sourceId: msgSourceId,
+                            connectionId: botNeeded ? botConnectionId : null,
+                            scope: msgScope,
+                            channelId: msgChannelId,
+                            events: msgEventsAdvanced ? parseEventsInput(msgEventsInput) : []
+                          })
+                        }
+                      : {
+                          ...base,
+                          type: "event",
+                          config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
+                        };
         const created = await createTrigger(req);
         // email_in: the server minted `<slug>@<domain>` on create — surface it
         // prominently so the user can copy it / forward mail to it. We stay on
@@ -877,7 +1043,19 @@ export function TriggerWizard({
               ? `When ${chainKitLabel} finishes (${chainStatuses.join(", ") || "succeeded"})`
               : kind === "email_in"
                 ? "When an email arrives at your minted inbound address"
-                : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
+                : kind === "message"
+                  ? `When ${
+                      msgScope === "mention"
+                        ? "someone mentions the bot"
+                        : msgScope === "dm"
+                          ? "someone DMs the bot"
+                          : "a message arrives"
+                    } on ${platformInfo?.label ?? "a platform"}${
+                      msgChannelId.trim() ? ` in ${msgChannelId.trim()}` : ""
+                    }${replyInThread && botNeeded ? " — replies in the thread" : ""}${
+                      requireApproval ? " (approval required)" : ""
+                    }`
+                  : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
 
   // email_in success: the server minted the inbound address — show it big,
   // copyable, and let the user finish (which refreshes the parent list).
@@ -979,6 +1157,12 @@ export function TriggerWizard({
                             : emailInReady === false
                               ? "Not configured on this instance."
                               : undefined
+                      },
+                      {
+                        k: "message" as const,
+                        icon: "💬",
+                        title: "When someone messages",
+                        copy: "Run from a Slack, Telegram, or Discord message — reply in the thread and approve each run right from chat."
                       }
                     ] as const
                   ).map((card) => {
@@ -1691,6 +1875,285 @@ export function TriggerWizard({
                 </Field>
               </>
             )}
+
+            {/* ---- When someone messages (Slack / Telegram / Discord) ---- */}
+            {kind === "message" && (
+              <>
+                {/* 1. Platform picker */}
+                <Field label="Which chat platform?">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {MESSAGE_PLATFORMS.map((p) => (
+                      <Card
+                        key={p.platform}
+                        onClick={() => {
+                          setPlatform(p.platform);
+                          // Switching platform resets the platform-scoped picks
+                          // (a source/bot for one platform can't serve another).
+                          setMsgSourceId("");
+                          setBotConnectionId("");
+                          setBotCreateOpen(false);
+                          setCreatedSource(null);
+                        }}
+                        style={{
+                          padding: "10px 14px",
+                          cursor: "pointer",
+                          outline: platform === p.platform ? "2px solid var(--color-accent)" : "none"
+                        }}
+                      >
+                        <strong>
+                          <span aria-hidden style={{ marginRight: 6 }}>
+                            {p.icon}
+                          </span>
+                          {p.label}
+                        </strong>
+                      </Card>
+                    ))}
+                  </div>
+                </Field>
+
+                {platform && platformInfo && (
+                  <>
+                    {/* 2. Inbound — the provider event source */}
+                    <Field label={`Inbound ${platformInfo.label} source`}>
+                      <Select
+                        value={msgSourceId}
+                        onChange={(e) => {
+                          setMsgSourceId(e.target.value);
+                          if (e.target.value) setCreatedSource(null);
+                        }}
+                      >
+                        <option value="">Create a new inbound source…</option>
+                        {platformSources.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <p className="form-copy" style={{ marginTop: 4 }}>
+                        The inbound source receives {platformInfo.label}&apos;s signature-verified webhook and
+                        turns each message into a run.
+                      </p>
+                    </Field>
+
+                    {!msgSourceId && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+                        <h4 style={{ marginTop: 0 }}>New inbound source</h4>
+                        <Field label="Name">
+                          <Input
+                            value={msgSourceName}
+                            onChange={(e) => setMsgSourceName(e.target.value)}
+                            placeholder={`${platformInfo.label} messages`}
+                            maxLength={80}
+                          />
+                        </Field>
+                        <Field label={platformInfo.signingSecretLabel}>
+                          <Input
+                            type="password"
+                            autoComplete="off"
+                            value={msgSigningSecret}
+                            onChange={(e) => setMsgSigningSecret(e.target.value)}
+                            placeholder={platformInfo.signingSecretPlaceholder}
+                          />
+                          <p className="form-copy" style={{ marginTop: 4 }}>
+                            {platformInfo.signingSecretHint} Stored encrypted server-side; never shown again.
+                          </p>
+                        </Field>
+                        <Button
+                          disabled={msgSourceBusy}
+                          loading={msgSourceBusy}
+                          onClick={() => void createMessageSource()}
+                        >
+                          {msgSourceBusy ? "Creating…" : "Create inbound source"}
+                        </Button>
+                      </Card>
+                    )}
+
+                    {createdSource && msgSourceId === createdSource.id && (
+                      <Card style={{ marginBottom: 12, padding: "12px 14px" }}>
+                        <h4 style={{ marginTop: 0 }}>Copy your source token now</h4>
+                        <p className="form-copy">
+                          This token authenticates the ingest URL. It is shown <strong>only once</strong>.
+                        </p>
+                        <Field label="Token (shown once)">
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <Input
+                              type="text"
+                              readOnly
+                              value={createdSource.token}
+                              onFocus={(e) => e.currentTarget.select()}
+                            />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(createdSource.token);
+                                notify("Token copied.");
+                              }}
+                            >
+                              Copy
+                            </Button>
+                          </div>
+                        </Field>
+                      </Card>
+                    )}
+
+                    {selectedMsgSource && msgIngestUrl && (
+                      <Card style={{ marginBottom: 12, padding: "12px 14px" }}>
+                        <h4 style={{ marginTop: 0 }}>Point {platformInfo.label} at this URL</h4>
+                        <Field label="Ingest URL">
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <Input
+                              type="text"
+                              readOnly
+                              value={msgIngestUrl}
+                              onFocus={(e) => e.currentTarget.select()}
+                            />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(msgIngestUrl);
+                                notify("Ingest URL copied.");
+                              }}
+                            >
+                              Copy
+                            </Button>
+                          </div>
+                        </Field>
+                        {messageSourceInstructions(platform, msgIngestUrl).map((line, i) => (
+                          <p
+                            key={i}
+                            className="form-copy"
+                            style={{ margin: "4px 0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                          >
+                            {i + 1}. {line}
+                          </p>
+                        ))}
+                      </Card>
+                    )}
+
+                    {/* 3. Outbound — the bot connection (reply + Approve/Deny) */}
+                    <Field label={`${platformInfo.label} bot connection${botNeeded ? "" : " (optional)"}`}>
+                      <Select
+                        value={botConnectionId}
+                        onChange={(e) => {
+                          setBotConnectionId(e.target.value);
+                          if (e.target.value) setBotCreateOpen(false);
+                        }}
+                      >
+                        <option value="">
+                          {botNeeded ? "Connect a bot…" : "No bot (no reply, no approval)"}
+                        </option>
+                        {platformBotConnections.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <p className="form-copy" style={{ marginTop: 4 }}>
+                        The bot posts replies back into the thread and sends the Approve/Deny prompt. Its token
+                        is stored encrypted server-side.{" "}
+                        {botNeeded
+                          ? "Required because reply and/or approval is on below."
+                          : "Optional — turn off both reply and approval to skip it."}
+                      </p>
+                    </Field>
+
+                    {!botConnectionId && (
+                      <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+                        {!botCreateOpen ? (
+                          <Button variant="secondary" size="sm" onClick={() => setBotCreateOpen(true)}>
+                            + Connect a {platformInfo.label} bot
+                          </Button>
+                        ) : (
+                          <>
+                            <h4 style={{ marginTop: 0 }}>New {platformInfo.label} bot</h4>
+                            <Field label="Name">
+                              <Input
+                                value={botName}
+                                onChange={(e) => setBotName(e.target.value)}
+                                placeholder={`${platformInfo.label} bot`}
+                                maxLength={80}
+                              />
+                            </Field>
+                            <Field label={platformInfo.botTokenLabel}>
+                              <Input
+                                type="password"
+                                autoComplete="off"
+                                value={botToken}
+                                onChange={(e) => setBotToken(e.target.value)}
+                                placeholder={platformInfo.botTokenPlaceholder}
+                              />
+                            </Field>
+                            <Field label="Default channel / chat id (optional)">
+                              <Input
+                                value={botChannelId}
+                                onChange={(e) => setBotChannelId(e.target.value)}
+                                placeholder="fallback target for approval prompts on non-message triggers"
+                              />
+                            </Field>
+                            <p className="form-copy" style={{ marginTop: 0 }}>
+                              The bot token is sent once and stored encrypted; it is never echoed back.
+                            </p>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <Button disabled={botBusy} loading={botBusy} onClick={() => void createBotConnection()}>
+                                {botBusy ? "Connecting…" : "Create bot connection"}
+                              </Button>
+                              <Button variant="secondary" onClick={() => setBotCreateOpen(false)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </Card>
+                    )}
+
+                    {/* 4. Message match config */}
+                    <Field label="Which messages fire it?">
+                      <Select value={msgScope} onChange={(e) => setMsgScope(e.target.value as MessageScope)}>
+                        <option value="channel">Any message in the channel</option>
+                        <option value="mention">Only when the bot is mentioned</option>
+                        <option value="dm">Only direct messages</option>
+                      </Select>
+                      {platform === "discord" && (
+                        <p className="form-copy" style={{ marginTop: 4 }}>
+                          On Discord a message is a slash command (a webhook endpoint can&apos;t read regular
+                          channel chatter).
+                        </p>
+                      )}
+                    </Field>
+                    <Field label="Restrict to one channel / chat id (optional)">
+                      <Input
+                        value={msgChannelId}
+                        onChange={(e) => setMsgChannelId(e.target.value)}
+                        placeholder="blank = any channel/chat on this source"
+                      />
+                    </Field>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}>
+                      <input
+                        type="checkbox"
+                        style={{ width: "auto", minHeight: 0 }}
+                        checked={msgEventsAdvanced}
+                        onChange={(e) => setMsgEventsAdvanced(e.target.checked)}
+                      />
+                      Advanced: filter by provider event type
+                    </label>
+                    {msgEventsAdvanced && (
+                      <Field label="Event types (comma-separated, max 10)">
+                        <Input
+                          value={msgEventsInput}
+                          onChange={(e) => setMsgEventsInput(e.target.value)}
+                          placeholder="e.g. message, app_mention"
+                        />
+                        <p className="form-copy" style={{ marginTop: 4 }}>
+                          Overrides the scope&apos;s default set — only these normalized event names fire.
+                        </p>
+                      </Field>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -1897,6 +2360,52 @@ export function TriggerWizard({
               )}
             </Field>
 
+            {/* ---- Messaging: reply-in-thread + pre-run Approve/Deny ---- */}
+            {kind === "message" && platformInfo && (
+              <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto", minHeight: 0 }}
+                    checked={replyInThread}
+                    onChange={(e) => setReplyInThread(e.target.checked)}
+                  />
+                  Reply in the {platformInfo.label} thread with the run summary
+                </label>
+                <p className="form-copy" style={{ margin: "4px 0 10px 22px" }}>
+                  Posts the result back to the channel/thread/chat the message came from, through the bot
+                  connection.{" "}
+                  {replyInThread && !botConnectionId && (
+                    <strong style={{ color: "var(--color-error)" }}>Pick or connect a bot above first.</strong>
+                  )}
+                </p>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontWeight: 400,
+                    fontSize: "0.85em",
+                    opacity: botConnectionId ? 1 : 0.55
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto", minHeight: 0 }}
+                    checked={requireApproval}
+                    disabled={!botConnectionId}
+                    onChange={(e) => setRequireApproval(e.target.checked)}
+                  />
+                  Ask me to approve each run in {platformInfo.label} before it runs
+                </label>
+                <p className="form-copy" style={{ margin: "4px 0 0 22px" }}>
+                  The bot sends an Approve/Deny prompt and holds the run until you tap a button. This is a{" "}
+                  <strong>pre-run</strong> gate only — it never interrupts a run that has already started.
+                  {!botConnectionId && " Needs a bot connection (above)."}
+                </p>
+              </Card>
+            )}
+
             <Field label="Safety limit: at most this many runs per hour">
               <Input
                 type="number"
@@ -1929,7 +2438,23 @@ export function TriggerWizard({
                   Prompt: <span style={{ color: "var(--color-text-secondary)" }}>{promptTemplate.trim().slice(0, 120)}{promptTemplate.trim().length > 120 ? "…" : ""}</span>
                 </div>
                 {filters.filter((f) => f.path.trim()).length > 0 && <div>Filters: {filters.filter((f) => f.path.trim()).length} (all must match)</div>}
-                <div>Deliver: {destinations.length === 0 ? "no destinations (results stay in run history)" : destinations.map(destinationLabel).join(" · ")}</div>
+                {(() => {
+                  // Preview the SAME destination list the submit builder sends
+                  // (messaging injects the reply-to-thread destination).
+                  const shown =
+                    kind === "message"
+                      ? withReplyDestination(destinations, replyInThread, botConnectionId)
+                      : destinations;
+                  return (
+                    <div>
+                      Deliver:{" "}
+                      {shown.length === 0
+                        ? "no destinations (results stay in run history)"
+                        : shown.map(destinationLabel).join(" · ")}
+                    </div>
+                  );
+                })()}
+                {kind === "message" && requireApproval && <div>Approval: Approve/Deny in {platformInfo?.label ?? "chat"} before each run</div>}
                 <div>Rate limit: at most {maxPerHour}/hour</div>
               </div>
             </Card>
