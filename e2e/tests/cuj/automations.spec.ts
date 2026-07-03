@@ -262,17 +262,21 @@ test("@reversible automations events: emit hits the inspector, the gate chain fi
     )
     .toEqual(["filtered"]);
 
-  // Inspector UI shows the received event on the source.
+  // Inspector UI shows the received event on the source. The inspector REPLACES
+  // the sources list in the right panel, so close it before touching the row.
   await openAutomations(page);
   const srcRow = page.locator(".provider-card", { hasText: srcName }).first();
   await expect(srcRow).toBeVisible();
   await srcRow.getByRole("button", { name: "Events", exact: true }).click();
+  await expect(page.getByRole("heading", { name: `Events — ${srcName}` })).toBeVisible();
   await expect(page.getByText("deploy_finished").first()).toBeVisible();
   await expect(page.getByText(RUN_ID, { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
 
   // Rotate through the UI → the shown-once dialog appears and the old token
-  // is dead (uniform terse 401).
-  await srcRow.getByRole("button", { name: "Rotate token", exact: true }).click();
+  // is dead (uniform terse 401). Re-locate the row (the panel re-rendered).
+  const srcRowAgain = page.locator(".provider-card", { hasText: srcName }).first();
+  await srcRowAgain.getByRole("button", { name: "Rotate token", exact: true }).click();
   await expect(page.getByRole("heading", { name: `New token for "${srcName}"` })).toBeVisible();
   const oldTokenEmit = await page.request.post(`${AUTO}/api/hooks/auto/events/${source.id}/deploy_finished`, {
     headers: { "x-auto-event-token": source.token, "content-type": "application/json" },
