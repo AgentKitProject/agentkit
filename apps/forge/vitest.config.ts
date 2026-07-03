@@ -7,6 +7,9 @@ export default defineConfig({
       "@": fileURLToPath(new URL(".", import.meta.url))
     }
   },
+  // Next's tsconfig uses `jsx: preserve`; tell esbuild to compile any .tsx a
+  // test imports (e.g. AutomationsCard) with the automatic React runtime.
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"]

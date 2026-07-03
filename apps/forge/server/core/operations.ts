@@ -127,6 +127,24 @@ export async function getKitSummary(userId: string, kitId: string) {
   return withMaterializedKit(userId, kitId, async ({ core, kitRoot }) => core.getAgentKitSummary(kitRoot));
 }
 
+/**
+ * The kit's suggested `automations:` manifest entries (core-validated; [] when
+ * the block is absent). Best-effort: a kit whose manifest can't be read (e.g.
+ * a WIP draft with broken YAML) yields [] rather than failing the caller —
+ * automations are optional decoration on the editor view.
+ */
+export async function getKitAutomations(userId: string, kitId: string) {
+  return withMaterializedKit(userId, kitId, async ({ core, kitRoot }) => {
+    try {
+      const loaded = await core.readAgentKit(kitRoot);
+      const manifest = (loaded as { manifest?: Record<string, unknown> }).manifest;
+      return core.getKitAutomations(manifest ?? {});
+    } catch {
+      return [];
+    }
+  });
+}
+
 export async function nextKitVersion(userId: string, kitId: string) {
   return withMaterializedKit(userId, kitId, async ({ core, kitRoot }) => core.nextAgentKitVersion(kitRoot));
 }

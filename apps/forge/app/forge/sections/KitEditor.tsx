@@ -6,6 +6,8 @@ import { FileIcon, PackageIcon, PlugIcon } from "../icons";
 import type { Forge, Notify, ValidationReport } from "./shared";
 import { errMsg } from "./shared";
 import { useConfig } from "../config-context";
+import { AutomationsCard } from "./AutomationsCard";
+import type { ForgeKitAutomation } from "./kit-automations";
 
 type ValidationProfile = "local-valid" | "publishable" | "trusted" | "verified";
 
@@ -36,6 +38,7 @@ export function KitEditor({
   const [profile, setProfile] = useState<ValidationProfile>("local-valid");
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [summary, setSummary] = useState<{ id?: string; name?: string; version?: string; description?: string } | null>(null);
+  const [automations, setAutomations] = useState<ForgeKitAutomation[]>([]);
   const [versionInfo, setVersionInfo] = useState<{ previous?: string; next?: string } | null>(null);
   const [bumpBusy, setBumpBusy] = useState(false);
   const [metaOpen, setMetaOpen] = useState(false);
@@ -59,6 +62,8 @@ export function KitEditor({
       ]);
       const s = (sumRes as { summary?: { id?: string; name?: string; version?: string; description?: string } }).summary;
       setSummary(s ?? null);
+      const a = (sumRes as { automations?: ForgeKitAutomation[] }).automations;
+      setAutomations(Array.isArray(a) ? a : []);
       const v = (verRes as { previous?: string; next?: string });
       setVersionInfo(v);
     } catch {
@@ -188,6 +193,9 @@ export function KitEditor({
           </div>
         </div>
       )}
+
+      {/* Suggested automations — deep-links OUT to the AgentKitAuto wizard */}
+      <AutomationsCard automations={automations} kitId={kitId} autoBaseUrl={links.autoUrl} />
 
       <div className="editor-layout">
         <div className="file-tree">
