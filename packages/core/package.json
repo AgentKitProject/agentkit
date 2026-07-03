@@ -36,6 +36,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "prepack": "npm run build",
     "prepublishOnly": "npm run build && npm test",
     "smoke": "node scripts/smoke.mjs",
