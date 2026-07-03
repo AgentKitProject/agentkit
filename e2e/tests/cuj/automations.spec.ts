@@ -161,7 +161,10 @@ test("@reversible automations wizard: schedule automation — create, listed, di
   // WHEN step — always driven through the real UI.
   await page.getByRole("button", { name: "New automation" }).click();
   await fieldByLabel(page, /^Name$/).locator("input").fill(name);
-  await page.getByText("On a schedule", { exact: true }).click();
+  // The card title renders as `<strong><span>icon</span>On a schedule</strong>`,
+  // so match on substring (exact would miss the icon); the click bubbles to the
+  // card's onClick.
+  await page.getByText("On a schedule", { exact: false }).first().click();
   // The phrase builder must render a concrete cron preview before Next unlocks.
   await expect(page.getByText("Next runs:", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
