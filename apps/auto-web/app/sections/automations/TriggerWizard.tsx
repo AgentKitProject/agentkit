@@ -29,6 +29,7 @@ import type {
   KitRef,
   PublicEventSource,
   ReceivedEvent,
+  RunTerminalStatus,
   Trigger,
   TriggerFilter,
   TriggerFilterOp,
@@ -57,6 +58,7 @@ import {
   createConnection,
   createEventSource,
   createTrigger,
+  emailInAvailability,
   listConnections,
   listSourceEvents,
   updateTrigger,
@@ -79,6 +81,15 @@ import {
   validateS3ConnectFields,
   type S3ConnectFields
 } from "@/lib/automations/watch-connect";
+import {
+  buildEmailInConfig,
+  buildRssConfig,
+  buildRunCompletedConfig,
+  isValidFeedUrl,
+  looksLikeEmail,
+  parseAllowlistInput,
+  RUN_TERMINAL_STATUSES
+} from "@/lib/automations/trigger-config";
 import { insertPlaceholderAt } from "@/lib/automations/field-tree";
 import type { AutomationTemplate } from "@/lib/automations/template-link";
 import { FieldTree } from "./FieldTree";
@@ -97,6 +108,17 @@ const FILTER_OPS: { op: TriggerFilterOp; label: string }[] = [
 
 const STEPS = ["when", "run", "deliver"] as const;
 type Step = (typeof STEPS)[number];
+
+/** Short type labels for the run_completed source-automation picker. */
+const TRIGGER_TYPE_LABELS: Record<Trigger["type"], string> = {
+  schedule: "Schedule",
+  event: "Event",
+  watch: "File watch",
+  rss: "RSS",
+  run_completed: "Run chain",
+  email_in: "Email",
+  message: "Message"
+};
 
 /** The browser's IANA timezone (the phrase builder default). */
 function localTimezone(): string {
@@ -159,6 +181,7 @@ export function TriggerWizard({
   entitled,
   approvals,
   sources,
+  triggers = [],
   notify,
   onSourcesChanged,
   onDone
@@ -168,6 +191,8 @@ export function TriggerWizard({
   entitled: EntitledKit[];
   approvals: AutoApproval[];
   sources: PublicEventSource[];
+  /** The user's existing triggers (for the run_completed source-trigger picker). */
+  triggers?: Trigger[];
   notify: Notify;
   /** Reload the parent's event-source list (after inline create). */
   onSourcesChanged: () => Promise<void> | void;
@@ -186,10 +211,13 @@ export function TriggerWizard({
 
   // ---- WHEN ----
   const [step, setStep] = useState<Step>("when");
-  // "schedule" | "event" | "watch" are wizard-built; "other" = editing a trigger
-  // type the wizard doesn't reconfigure (rss/run_completed/watch-in-edit/…):
-  // config is shown read-only + untouched.
-  const [kind, setKind] = useState<"schedule" | "event" | "watch" | "other" | null>(() => {
+  // "schedule" | "event" | "watch" | "rss" | "run_completed" | "email_in" are
+  // wizard-built; "other" = editing a trigger type the wizard doesn't
+  // reconfigure (message/watch-in-edit/…): config is shown read-only +
+  // untouched. Editing an existing rss/run_completed/email_in trigger also uses
+  // the read-only "other" path (no inline editing of their config yet).
+  type WizardKind = "schedule" | "event" | "watch" | "rss" | "run_completed" | "email_in" | "other";
+  const [kind, setKind] = useState<WizardKind | null>(() => {
     if (restoredDraft) return "watch";
     if (editTrigger) {
       return editTrigger.type === "schedule" ? "schedule" : editTrigger.type === "event" ? "event" : "other";
@@ -445,6 +473,67 @@ export function TriggerWizard({
 
   const selectedConnection = watchConnections.find((c) => c.id === connectionId) ?? null;
 
+  // ---- WHEN: RSS feed (kind === "rss") ----
+  const [feedUrl, setFeedUrl] = useState("");
+  const [rssInterval, setRssInterval] = useState(15);
+  const feedUrlValid = isValidFeedUrl(feedUrl);
+
+  // ---- WHEN: kit chaining (kind === "run_completed") ----
+  // "" = any kit; otherwise a kit selector value (local id or `market:<slug>`).
+  const [chainKitSel, setChainKitSel] = useState("");
+  const [chainStatuses, setChainStatuses] = useState<RunTerminalStatus[]>(["succeeded"]);
+  const [chainSourceTriggerId, setChainSourceTriggerId] = useState("");
+  const [chainAdvanced, setChainAdvanced] = useState(false);
+  const toggleChainStatus = (status: RunTerminalStatus) =>
+    setChainStatuses((prev) => (prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]));
+
+  // ---- WHEN: inbound email (kind === "email_in") ----
+  // HOSTED-only: feature-detected (the inbox domain is configured) — until we
+  // know, the card is disabled with a spinner-less "checking" note.
+  const [emailInReady, setEmailInReady] = useState<boolean | null>(null);
+  const [allowedFrom, setAllowedFrom] = useState<string[]>([]);
+  const [allowFromInput, setAllowFromInput] = useState("");
+  // The minted `<slug>@<domain>` address, shown after a successful create.
+  const [mintedAddress, setMintedAddress] = useState<string | null>(null);
+
+  // Feature-detect email-in availability once (unless editing/other). Fails
+  // closed to unavailable so the card hides on a self-host with no inbox domain.
+  useEffect(() => {
+    if (editTrigger) return;
+    let cancelled = false;
+    emailInAvailability()
+      .then((ok) => {
+        if (!cancelled) setEmailInReady(ok);
+      })
+      .catch(() => {
+        if (!cancelled) setEmailInReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addAllowedFrom = () => {
+    const candidates = parseAllowlistInput(allowFromInput);
+    if (candidates.length === 0) return;
+    const invalid = candidates.find((c) => !looksLikeEmail(c));
+    if (invalid) return notify(`"${invalid}" is not a valid email address.`, true);
+    setAllowedFrom((prev) => {
+      const next = [...prev];
+      for (const c of candidates) {
+        const addr = c.toLowerCase();
+        if (next.length >= 20) {
+          notify("At most 20 allowed senders.", true);
+          break;
+        }
+        if (!next.includes(addr)) next.push(addr);
+      }
+      return next;
+    });
+    setAllowFromInput("");
+  };
+
   // ---- RUN ----
   const [kitSel, setKitSel] = useState<string>(() =>
     editTrigger ? kitRefToSelection(editTrigger.kitRef) : template?.kitRef ? kitRefToSelection(template.kitRef) : ""
@@ -529,7 +618,8 @@ export function TriggerWizard({
     typeof selectedApproval.networkPolicy === "object" &&
     selectedApproval.networkPolicy !== null &&
     (selectedApproval.networkPolicy as { mode?: string }).mode !== "deny_all";
-  const showUntrustedWarning = kind === "event" && approvalNetworkOpen;
+  const showUntrustedWarning =
+    (kind === "event" || kind === "rss" || kind === "email_in") && approvalNetworkOpen;
 
   // ---- DELIVER ----
   const [destinations, setDestinations] = useState<Destination[]>(editTrigger?.destinations ?? []);
@@ -585,7 +675,12 @@ export function TriggerWizard({
     kind === "other" ||
     (kind === "schedule" && cronError === null && effectiveCron.length > 0) ||
     (kind === "event" && sourceId.length > 0) ||
-    (kind === "watch" && connectionId.length > 0);
+    (kind === "watch" && connectionId.length > 0) ||
+    (kind === "rss" && feedUrlValid) ||
+    // any-kit-or-specific + at least one terminal status.
+    (kind === "run_completed" && chainStatuses.length > 0) ||
+    // available on this instance (hosted inbox domain configured).
+    (kind === "email_in" && emailInReady === true);
   const runReady = kitSel.length > 0 && selectedApproval !== undefined && promptTemplate.trim().length > 0;
 
   const stepIndex = STEPS.indexOf(step);
@@ -599,7 +694,13 @@ export function TriggerWizard({
             ? "Pick a trigger type."
             : kind === "watch"
               ? "Pick or connect a folder to watch first."
-              : "Finish the trigger setup first.",
+              : kind === "rss"
+                ? "Enter a valid https feed URL first."
+                : kind === "run_completed"
+                  ? "Pick at least one outcome that fires the chain."
+                  : kind === "email_in"
+                    ? "Inbound email isn't configured on this instance."
+                    : "Finish the trigger setup first.",
           true
         );
       setStep("run");
@@ -680,12 +781,36 @@ export function TriggerWizard({
                     includeExisting: watchIncludeExisting
                   })
                 }
-              : {
-                  ...base,
-                  type: "event",
-                  config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
-                };
-        await createTrigger(req);
+              : kind === "rss"
+                ? { ...base, type: "rss", config: buildRssConfig({ feedUrl, intervalMinutes: rssInterval }) }
+                : kind === "run_completed"
+                  ? {
+                      ...base,
+                      type: "run_completed",
+                      config: buildRunCompletedConfig({
+                        kitRef: chainKitSel ? parseKitSelection(chainKitSel, entitled) : null,
+                        statuses: chainStatuses,
+                        sourceTriggerId: chainAdvanced && chainSourceTriggerId ? chainSourceTriggerId : null
+                      })
+                    }
+                  : kind === "email_in"
+                    ? { ...base, type: "email_in", config: buildEmailInConfig({ allowedFrom }) }
+                    : {
+                        ...base,
+                        type: "event",
+                        config: { sourceId, ...(eventName.trim() ? { eventName: eventName.trim() } : {}) }
+                      };
+        const created = await createTrigger(req);
+        // email_in: the server minted `<slug>@<domain>` on create — surface it
+        // prominently so the user can copy it / forward mail to it. We stay on
+        // the wizard (don't close) so the address card is visible.
+        if (kind === "email_in" && created.type === "email_in" && created.config.address) {
+          setMintedAddress(created.config.address);
+          notify("Automation created. Copy the inbound address below.");
+          // Refresh the parent list without dismissing the wizard.
+          setBusy(false);
+          return;
+        }
         notify("Automation created.");
       }
       onDone(true);
@@ -728,6 +853,13 @@ export function TriggerWizard({
     </Pill>
   );
 
+  const chainKitLabel =
+    chainKitSel === ""
+      ? "any kit"
+      : kits.find((k) => k.kitId === chainKitSel)?.name ??
+        entitled.find((k) => marketSelectionValue(k.slug) === chainKitSel)?.name ??
+        chainKitSel;
+
   const triggerSummary =
     kind === "schedule"
       ? advancedCron
@@ -739,7 +871,51 @@ export function TriggerWizard({
           ? `When a file appears in ${selectedConnection?.name ?? "a folder"}${
               watchPrefix.trim() ? ` (${watchPrefix.trim()})` : ""
             } — polled every ${watchInterval}m`
-          : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
+          : kind === "rss"
+            ? `When a new item appears in ${feedUrl.trim() || "a feed"} — checked every ${rssInterval}m`
+            : kind === "run_completed"
+              ? `When ${chainKitLabel} finishes (${chainStatuses.join(", ") || "succeeded"})`
+              : kind === "email_in"
+                ? "When an email arrives at your minted inbound address"
+                : `Existing ${editTrigger?.type ?? ""} trigger (unchanged)`;
+
+  // email_in success: the server minted the inbound address — show it big,
+  // copyable, and let the user finish (which refreshes the parent list).
+  if (mintedAddress) {
+    return (
+      <div className="form-layout form-layout--single">
+        <div className="form-panel">
+          <h3 style={{ marginTop: 0 }}>Automation created</h3>
+          <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+            <h4 style={{ marginTop: 0 }}>Your inbound email address</h4>
+            <p className="form-copy">
+              Forward or send mail to this address to fire <strong>{name.trim() || "this automation"}</strong>.
+              It was generated for this automation and won&apos;t change.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input type="text" readOnly value={mintedAddress} onFocus={(e) => e.currentTarget.select()} />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(mintedAddress);
+                  notify("Address copied.");
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+            <p className="form-copy" style={{ marginTop: 8 }}>
+              {allowedFrom.length === 0
+                ? "Only mail from your verified email will fire it (you can add allowed senders by editing later)."
+                : `Only mail from ${allowedFrom.length} allowed sender${allowedFrom.length === 1 ? "" : "s"} will fire it.`}
+            </p>
+          </Card>
+          <Button onClick={() => onDone(true)}>Done</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="form-layout form-layout--single">
@@ -785,29 +961,57 @@ export function TriggerWizard({
                     [
                       { k: "schedule" as const, icon: "⏰", title: "On a schedule", copy: "Run at a time you choose — hourly, daily, weekly…" },
                       { k: "watch" as const, icon: "📁", title: "When a file appears", copy: "Watch a folder in S3, Google Drive, or Dropbox and run on each new file." },
-                      { k: "event" as const, icon: "📥", title: "When an event arrives", copy: "Run from your own app or device, a verified integration, or any webhook." }
+                      { k: "event" as const, icon: "📥", title: "When an event arrives", copy: "Run from your own app or device, a verified integration, or any webhook." },
+                      { k: "rss" as const, icon: "📰", title: "New item in a feed", copy: "Poll an RSS or Atom feed and run on each new entry." },
+                      { k: "run_completed" as const, icon: "🔗", title: "When another kit finishes", copy: "Chain off another automation — run when a kit's run reaches an outcome you choose." },
+                      // email_in is HOSTED-only: shown disabled until availability
+                      // resolves, and with a "not configured" note when this
+                      // instance has no inbox domain (emailInReady === false).
+                      {
+                        k: "email_in" as const,
+                        icon: "✉️",
+                        title: "When an email arrives",
+                        copy: "Get a unique inbound address; run on each email sent to it.",
+                        disabled: emailInReady !== true,
+                        note:
+                          emailInReady === null
+                            ? "Checking availability…"
+                            : emailInReady === false
+                              ? "Not configured on this instance."
+                              : undefined
+                      }
                     ] as const
-                  ).map((card) => (
-                    <Card
-                      key={card.k}
-                      onClick={() => setKind(card.k)}
-                      style={{
-                        padding: "12px 14px",
-                        cursor: "pointer",
-                        outline: kind === card.k ? "2px solid var(--color-accent)" : "none"
-                      }}
-                    >
-                      <strong>
-                        <span aria-hidden style={{ marginRight: 6 }}>
-                          {card.icon}
-                        </span>
-                        {card.title}
-                      </strong>
-                      <p className="form-copy" style={{ margin: "4px 0 0" }}>
-                        {card.copy}
-                      </p>
-                    </Card>
-                  ))}
+                  ).map((card) => {
+                    const disabled = "disabled" in card && card.disabled;
+                    const note = "note" in card ? card.note : undefined;
+                    return (
+                      <Card
+                        key={card.k}
+                        onClick={disabled ? undefined : () => setKind(card.k)}
+                        style={{
+                          padding: "12px 14px",
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          opacity: disabled ? 0.55 : 1,
+                          outline: kind === card.k ? "2px solid var(--color-accent)" : "none"
+                        }}
+                      >
+                        <strong>
+                          <span aria-hidden style={{ marginRight: 6 }}>
+                            {card.icon}
+                          </span>
+                          {card.title}
+                        </strong>
+                        <p className="form-copy" style={{ margin: "4px 0 0" }}>
+                          {card.copy}
+                        </p>
+                        {note && (
+                          <p className="form-copy" style={{ margin: "4px 0 0", color: "var(--color-text-secondary)" }}>
+                            {note}
+                          </p>
+                        )}
+                      </Card>
+                    );
+                  })}
                 </div>
                 <p className="form-copy" style={{ marginTop: 8 }}>
                   Advanced: for a raw webhook with a shared secret (legacy), use the{" "}
@@ -1333,6 +1537,158 @@ export function TriggerWizard({
                     )}
                   </Card>
                 )}
+              </>
+            )}
+
+            {/* ---- New item in a feed (RSS) ---- */}
+            {kind === "rss" && (
+              <>
+                <Field label="Feed URL (https)">
+                  <Input
+                    type="url"
+                    value={feedUrl}
+                    onChange={(e) => setFeedUrl(e.target.value)}
+                    placeholder="https://example.com/feed.xml"
+                  />
+                  {feedUrl.trim().length > 0 && !feedUrlValid && (
+                    <p style={{ color: "var(--color-error)", fontSize: "0.8em", margin: "4px 0 0" }}>
+                      Enter a valid https:// feed URL.
+                    </p>
+                  )}
+                  <p className="form-copy" style={{ marginTop: 4 }}>
+                    RSS or Atom. The poller runs your kit once per new entry that appears after this automation
+                    is created.
+                  </p>
+                </Field>
+                <Field label="Check for new items every (minutes)">
+                  <Input
+                    type="number"
+                    min="5"
+                    max="1440"
+                    step="1"
+                    value={rssInterval}
+                    onChange={(e) => setRssInterval(Number(e.target.value))}
+                  />
+                  <p className="form-copy" style={{ marginTop: 4 }}>
+                    Feeds are polled gently — minimum every 5 minutes.
+                  </p>
+                </Field>
+              </>
+            )}
+
+            {/* ---- When another kit finishes (kit chaining) ---- */}
+            {kind === "run_completed" && (
+              <>
+                <Field label="Chain off which kit?">
+                  <Select value={chainKitSel} onChange={(e) => setChainKitSel(e.target.value)}>
+                    <option value="">Any kit</option>
+                    {kitOptions}
+                  </Select>
+                  <p className="form-copy" style={{ marginTop: 4 }}>
+                    Fires when a run of this kit finishes. Leave on &quot;Any kit&quot; to chain off every kit
+                    you run.
+                  </p>
+                </Field>
+                <Field label="Which outcomes fire it?">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {RUN_TERMINAL_STATUSES.map((s) => (
+                      <label
+                        key={s.status}
+                        style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}
+                      >
+                        <input
+                          type="checkbox"
+                          style={{ width: "auto", minHeight: 0 }}
+                          checked={chainStatuses.includes(s.status)}
+                          onChange={() => toggleChainStatus(s.status)}
+                        />
+                        {s.label}
+                      </label>
+                    ))}
+                  </div>
+                  {chainStatuses.length === 0 && (
+                    <p style={{ color: "var(--color-error)", fontSize: "0.8em", margin: "4px 0 0" }}>
+                      Pick at least one outcome.
+                    </p>
+                  )}
+                </Field>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400, fontSize: "0.85em" }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: "auto", minHeight: 0 }}
+                    checked={chainAdvanced}
+                    onChange={(e) => setChainAdvanced(e.target.checked)}
+                  />
+                  Advanced: only chain off one specific automation
+                </label>
+                {chainAdvanced && (
+                  <Field label="Source automation">
+                    <Select value={chainSourceTriggerId} onChange={(e) => setChainSourceTriggerId(e.target.value)}>
+                      <option value="">Any automation</option>
+                      {triggers.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({TRIGGER_TYPE_LABELS[t.type]})
+                        </option>
+                      ))}
+                    </Select>
+                    <p className="form-copy" style={{ marginTop: 4 }}>
+                      Restrict the chain to runs started by this one automation. Leave on &quot;Any
+                      automation&quot; to chain off manual runs too.
+                    </p>
+                  </Field>
+                )}
+              </>
+            )}
+
+            {/* ---- When an email arrives (email_in — HOSTED only) ---- */}
+            {kind === "email_in" && (
+              <>
+                <Card style={{ padding: "12px 14px", marginBottom: 12 }}>
+                  <p className="form-copy" style={{ margin: 0 }}>
+                    When you save, the server mints a unique inbound address like{" "}
+                    <code>kit-abc123@your-inbox-domain</code>. Any email sent to it fires this automation — the
+                    address is shown once you create it so you can copy it or set up forwarding.
+                  </p>
+                </Card>
+                <Field label="Allowed senders (optional)">
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Input
+                      value={allowFromInput}
+                      onChange={(e) => setAllowFromInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addAllowedFrom();
+                        }
+                      }}
+                      placeholder="sender@example.com"
+                    />
+                    <Button variant="secondary" size="sm" onClick={addAllowedFrom}>
+                      Add
+                    </Button>
+                  </div>
+                  <p className="form-copy" style={{ marginTop: 4 }}>
+                    Empty = only you (mail from your verified email). Add up to 20 addresses to also accept mail
+                    from them; anything else is ignored.
+                  </p>
+                  {allowedFrom.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {allowedFrom.map((addr) => (
+                        <Pill key={addr} tone="neutral">
+                          {addr}{" "}
+                          <span
+                            role="button"
+                            aria-label={`Remove ${addr}`}
+                            style={{ cursor: "pointer", marginLeft: 2 }}
+                            onClick={() => setAllowedFrom((prev) => prev.filter((a) => a !== addr))}
+                          >
+                            ✕
+                          </span>
+                        </Pill>
+                      ))}
+                    </div>
+                  )}
+                </Field>
               </>
             )}
           </>

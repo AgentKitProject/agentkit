@@ -347,6 +347,7 @@ export function AutomationsSection({
           entitled={entitled}
           approvals={approvals}
           sources={sources}
+          triggers={triggers}
           notify={notify}
           onSourcesChanged={loadSources}
           onDone={(changed) => {

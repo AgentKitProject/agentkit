@@ -181,3 +181,18 @@ export type VerifyConnectionResult = Connection & { verifyError?: string };
 export function verifyConnection(id: string): Promise<VerifyConnectionResult> {
   return post<VerifyConnectionResult>(`${autoTriggerRoutes.connection(id)}/verify`);
 }
+
+// ---------------------------------------------------------------------------
+// Email-in availability (HOSTED-only feature detection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether inbound-email ("email_in") triggers can be created on this instance
+ * (the operator inbox domain is configured). The wizard hides/disables the
+ * "When an email arrives" card when unavailable. Read-only, cookie auth; on any
+ * failure the caller treats email-in as unavailable (fail closed).
+ */
+export async function emailInAvailability(): Promise<boolean> {
+  const { available } = await jsonFetch<{ available: boolean }>("/api/auto/email-in/availability");
+  return available === true;
+}
