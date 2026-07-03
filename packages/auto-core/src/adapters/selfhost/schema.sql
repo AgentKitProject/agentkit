@@ -217,3 +217,21 @@ CREATE TABLE IF NOT EXISTS auto_secrets (
 
 ALTER TABLE auto_event_sources ADD COLUMN IF NOT EXISTS signing_secret_ref TEXT;
 
+
+-- Idempotent migration: persisted-output manifest (contracts autoRunSchema.outputFiles).
+ALTER TABLE auto_runs ADD COLUMN IF NOT EXISTS output_files JSONB;
+
+CREATE TABLE IF NOT EXISTS auto_connections (
+  id           TEXT        NOT NULL PRIMARY KEY,
+  owner_type   TEXT        NOT NULL,
+  owner_id     TEXT        NOT NULL,
+  name         TEXT        NOT NULL,
+  type         TEXT        NOT NULL,
+  config       JSONB       NOT NULL,
+  secret_ref   TEXT,
+  status       TEXT        NOT NULL DEFAULT 'unverified',
+  last_used_at TEXT,
+  created_at   TEXT        NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS auto_connections_owner_idx ON auto_connections (owner_type, owner_id);

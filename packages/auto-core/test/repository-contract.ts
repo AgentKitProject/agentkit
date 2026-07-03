@@ -13,6 +13,7 @@ import type {
   EventStorageDeps,
 } from "../src/core/ports.js";
 import type {
+  CreateConnectionInput,
   CreateEventSourceInput,
   CreateRunInput,
   CreateApprovalInput,
@@ -98,6 +99,19 @@ function triggerInput(over: Partial<CreateTriggerInput> = {}): CreateTriggerInpu
     createdAt: NOW,
     ...over,
   } as CreateTriggerInput;
+}
+
+function connectionInput(over: Partial<CreateConnectionInput> = {}): CreateConnectionInput {
+  return {
+    ownerType: "user",
+    ownerId: "u1",
+    name: "results bucket",
+    type: "s3",
+    config: { bucket: "my-bucket", region: "us-east-1", prefix: "runs/" },
+    secretRef: "sref-1",
+    createdAt: NOW,
+    ...over,
+  };
 }
 
 function eventSourceInput(over: Partial<CreateEventSourceInput> = {}): CreateEventSourceInput {
@@ -732,6 +746,92 @@ export function runRepositoryContract(label: string, makeRepos: () => Promise<Co
       expect(
         (await repos.events.eventSources.getEventSource(created.id))?.hasSigningSecret,
       ).toBe(false);
+    });
+
+    // ---- Persisted-output manifest (run.outputFiles) ----------------------
+
+    it("setOutputFiles round-trips the persisted-output manifest", async () => {
+      const run = await repos.runs.createRun(runInput());
+      expect(typeof repos.runs.setOutputFiles).toBe("function");
+      const manifest = [
+        {
+          path: "report.md",
+          sizeBytes: 12,
+          storeKey: `auto-outputs/${run.id}/report.md`,
+          expiresAt: "2026-07-18T00:00:00.000Z",
+        },
+        { path: "data/rows.csv", sizeBytes: 34, storeKey: `auto-outputs/${run.id}/data/rows.csv` },
+      ];
+      await repos.runs.setOutputFiles!(run.id, manifest);
+      const fetched = await repos.runs.getRun(run.id);
+      expect(fetched?.outputFiles).toEqual(manifest);
+    });
+
+    // ---- Connections (non-secret records; secretRef handle only — S2) -----
+
+    it("creates and reads a connection (defaults unverified; round-trips config)", async () => {
+      const created = await repos.events.connections.createConnection(connectionInput());
+      expect(created.status).toBe("unverified");
+      expect(created.secretRef).toBe("sref-1");
+      const fetched = await repos.events.connections.getConnection(created.id);
+      expect(fetched?.name).toBe("results bucket");
+      expect(fetched?.type).toBe("s3");
+      expect(fetched?.config).toEqual({ bucket: "my-bucket", region: "us-east-1", prefix: "runs/" });
+      expect(fetched?.ownerType).toBe("user");
+      expect(fetched?.ownerId).toBe("u1");
+    });
+
+    it("lists connections by owner (owner-scoped; cross-owner rows excluded)", async () => {
+      await repos.events.connections.createConnection(connectionInput());
+      await repos.events.connections.createConnection(
+        connectionInput({ name: "hooks", type: "webhook_out", config: { url: "https://example.com/x" }, secretRef: null }),
+      );
+      await repos.events.connections.createConnection(connectionInput({ ownerId: "other" }));
+      await repos.events.connections.createConnection(
+        connectionInput({ ownerType: "org", ownerId: "u1" }),
+      );
+      const mine = await repos.events.connections.listConnectionsByOwner("user", "u1");
+      expect(mine.length).toBe(2);
+      expect(mine.every((c) => c.ownerType === "user" && c.ownerId === "u1")).toBe(true);
+    });
+
+    it("updateConnection edits name/config and rotates/clears secretRef", async () => {
+      const created = await repos.events.connections.createConnection(connectionInput());
+      const renamed = await repos.events.connections.updateConnection(created.id, {
+        name: "renamed",
+        config: { bucket: "other-bucket" },
+      });
+      expect(renamed?.name).toBe("renamed");
+      expect(renamed?.config).toEqual({ bucket: "other-bucket" });
+      expect(renamed?.secretRef).toBe("sref-1"); // untouched by an omitted field
+      const rotated = await repos.events.connections.updateConnection(created.id, {
+        secretRef: "sref-2",
+      });
+      expect(rotated?.secretRef).toBe("sref-2");
+      const cleared = await repos.events.connections.updateConnection(created.id, {
+        secretRef: null,
+      });
+      expect(cleared?.secretRef).toBeNull();
+      expect(await repos.events.connections.updateConnection("missing", { name: "x" })).toBeUndefined();
+    });
+
+    it("setConnectionStatus stamps status (+ optional lastUsedAt)", async () => {
+      const created = await repos.events.connections.createConnection(connectionInput());
+      await repos.events.connections.setConnectionStatus(created.id, "ok", NOW);
+      let fetched = await repos.events.connections.getConnection(created.id);
+      expect(fetched?.status).toBe("ok");
+      expect(fetched?.lastUsedAt).toBe(NOW);
+      await repos.events.connections.setConnectionStatus(created.id, "error");
+      fetched = await repos.events.connections.getConnection(created.id);
+      expect(fetched?.status).toBe("error");
+      expect(fetched?.lastUsedAt).toBe(NOW); // preserved when omitted
+    });
+
+    it("deletes a connection", async () => {
+      const created = await repos.events.connections.createConnection(connectionInput());
+      await repos.events.connections.deleteConnection(created.id);
+      expect(await repos.events.connections.getConnection(created.id)).toBeUndefined();
+      expect((await repos.events.connections.listConnectionsByOwner("user", "u1")).length).toBe(0);
     });
   });
 }

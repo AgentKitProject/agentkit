@@ -127,8 +127,10 @@ export function signWebhookBody(body: string, secret: string): string {
  * SSRF guard for a webhook destination — the SAME policy as the http_fetch tool,
  * minus the allowlist (the url is the user's own endpoint). Throws on a guard
  * failure (non-https / unresolvable / private-IP). Reuses isBlockedIp + resolver.
+ * EXPORTED: the destination executor guards webhook_out/slack_incoming targets
+ * with the identical policy.
  */
-async function assertWebhookDestinationSafe(url: string, resolver: DnsResolver): Promise<void> {
+export async function assertWebhookDestinationSafe(url: string, resolver: DnsResolver): Promise<void> {
   let parsed: URL;
   try {
     parsed = new URL(url);

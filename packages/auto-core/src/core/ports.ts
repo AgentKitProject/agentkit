@@ -22,6 +22,7 @@ import type {
   AutoApproval,
   AutoRun,
   AutoRunInputFileRef,
+  AutoRunOutputFile,
   AutoRunResult,
   AutoRunStatus,
   AutoSchedule,
@@ -105,6 +106,14 @@ export interface AutoRunRepository {
    * newest-first `listRunsByUser` scan when a repository lacks it.
    */
   countActiveRuns?(userId: string): Promise<number>;
+  /**
+   * OPTIONAL: sets the run's PERSISTED-OUTPUT manifest (`run.outputFiles`) —
+   * the durable OutputStore-backed manifest written by the worker harness
+   * after a run reaches a terminal status. Optional so existing fakes keep
+   * compiling; the pg + dynamo adapters implement it, and the output-persist
+   * step silently skips manifest writes when a repository lacks it.
+   */
+  setOutputFiles?(runId: string, files: AutoRunOutputFile[]): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +477,12 @@ export interface OutputStore {
   presignGet(storeKey: string): Promise<string>;
   /** Deletes a stored output (retention/expiry sweep). */
   delete(storeKey: string): Promise<void>;
+  /**
+   * OPTIONAL: reads a stored output's bytes server-side (the destination
+   * executor's S3-copy path). When absent, the executor falls back to fetching
+   * the presigned GET URL through its injected fetch.
+   */
+  getRunOutput?(storeKey: string): Promise<Uint8Array>;
 }
 
 // ---------------------------------------------------------------------------
@@ -503,9 +518,13 @@ export interface EventStorageDeps {
   eventSources: EventSourceRepository;
   receivedEvents: ReceivedEventRepository;
   fireLogs: FireLogRepository;
-  /** Encrypted-at-rest provider signing secrets (S2). Throws the typed
-   *  SecretStoreUnconfiguredError until AUTO_SECRET_ENCRYPTION_KEY is set. */
+  /** Encrypted-at-rest provider signing secrets + connection credentials (S2).
+   *  Throws the typed SecretStoreUnconfiguredError until
+   *  AUTO_SECRET_ENCRYPTION_KEY is set. */
   secrets: SecretStore;
+  /** Non-secret Connection records (credentials live in `secrets` behind the
+   *  opaque secretRef — S2). Both persistent adapters populate it. */
+  connections: ConnectionRepository;
 }
 
 /** The storage-layer dependencies, produced by makeAutoDeps({ backend }). */
@@ -525,4 +544,11 @@ export interface AutoStorageDeps {
    * stubs; the pg + dynamo adapters ALWAYS populate it.
    */
   events?: EventStorageDeps;
+  /**
+   * Persisted run outputs (durable, presigned-download-backed). OPTIONAL:
+   * absent when no outputs bucket is configured (env/config) — the worker
+   * then skips output persistence silently and the run manifest stays
+   * `result.files`-only (deploy-safe).
+   */
+  outputs?: OutputStore;
 }

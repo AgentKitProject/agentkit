@@ -357,6 +357,56 @@ export type {
   ResolveContextResponse,
 } from "./core/http-resolve-context.js";
 
+// ---- Persisted run outputs (worker harness, post-terminal) ---------------
+export {
+  RUN_OUTPUT_FILE_MAX_BYTES,
+  RUN_OUTPUT_MAX_FILES,
+  RUN_OUTPUT_TOTAL_MAX_BYTES,
+  RUN_OUTPUT_TTL_MS,
+  persistRunOutputs,
+} from "./core/run-output-persist.js";
+export type { PersistRunOutputsArgs } from "./core/run-output-persist.js";
+
+// ---- Destination executor (worker harness — S2: secrets revealed only here)
+export {
+  DESTINATION_EMAIL_MAX_LINKS,
+  DESTINATION_MAX_BODY_BYTES,
+  DESTINATION_MAX_OUTPUT_CHARS,
+  DESTINATION_WEBHOOK_TIMEOUT_MS,
+  executeDestinations,
+  parseS3ConnectionSecret,
+} from "./core/destination-executor.js";
+export type {
+  DestinationExecutorDeps,
+  DestinationOutcome,
+  ExecuteDestinationsArgs,
+  S3PutObjectFn,
+} from "./core/destination-executor.js";
+
+// ---- OAuth connection mechanism (gdrive/dropbox — BYO provider config) ----
+export {
+  OAUTH_ENV_VARS,
+  OAUTH_PROVIDERS,
+  OAUTH_PROVIDER_SETTINGS,
+  OAuthExchangeError,
+  buildOAuthAuthorizationUrl,
+  ensureFreshOAuthToken,
+  exchangeOAuthCode,
+  isOAuthProvider,
+  isOAuthTokenExpired,
+  loadOAuthClientConfig,
+  loadOAuthProvidersConfig,
+  parseOAuthTokenSet,
+  refreshOAuthToken,
+  serializeOAuthTokenSet,
+} from "./core/oauth-connections.js";
+export type {
+  OAuthClientConfig,
+  OAuthProvider,
+  OAuthProvidersConfig,
+  OAuthTokenSet,
+} from "./core/oauth-connections.js";
+
 // ---- AWS adapter ---------------------------------------------------------
 export {
   AUTO_EVENT_TABLE_DEFAULTS,
@@ -367,6 +417,7 @@ export {
   DynamoAutoRunRepository,
   DynamoAutoScheduleRepository,
   DynamoAutoWebhookRepository,
+  DynamoConnectionRepository,
   DynamoEventSourceRepository,
   DynamoFireLogRepository,
   DynamoReceivedEventRepository,
@@ -382,6 +433,15 @@ export type {
 } from "./adapters/aws/index.js";
 export { inputObjectKey, S3InputStore } from "./adapters/aws/s3-input-store.js";
 export type { S3InputStoreOptions } from "./adapters/aws/s3-input-store.js";
+export {
+  OUTPUTS_KEY_PREFIX,
+  OUTPUT_PRESIGN_TTL_SECONDS,
+  OutputPathError,
+  S3OutputStore,
+  confineOutputPath,
+  outputObjectKey,
+} from "./adapters/aws/s3-output-store.js";
+export type { PresignGetFn, S3OutputStoreOptions } from "./adapters/aws/s3-output-store.js";
 export { makeSesEmailSender } from "./adapters/aws/ses-email-sender.js";
 export type { SesEmailSenderOptions } from "./adapters/aws/ses-email-sender.js";
 
@@ -394,11 +454,13 @@ export {
   PostgresAutoRunRepository,
   PostgresAutoScheduleRepository,
   PostgresAutoWebhookRepository,
+  PostgresConnectionRepository,
   PostgresEventSourceRepository,
   PostgresFireLogRepository,
   PostgresReceivedEventRepository,
   PostgresSecretStore,
   PostgresTriggerRepository,
+  makeSelfHostOutputStoreFromEnv,
 } from "./adapters/selfhost/postgres.js";
 export type {
   MakeSelfHostAutoDepsOptions,

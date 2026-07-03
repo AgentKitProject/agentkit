@@ -20,9 +20,11 @@ import type {
   AutoScheduleRepository,
   AutoStorageDeps,
   AutoWebhookRepository,
+  ConnectionRepository,
   EventSourceRepository,
   FireLogRepository,
   InputStore,
+  OutputStore,
   ReceivedEventRepository,
   ScheduleRunResult,
   SecretStore,
@@ -36,11 +38,16 @@ import type {
   AutoRun,
   AutoRunInput,
   AutoRunInputFileRef,
+  AutoRunOutputFile,
   AutoRunResult,
   AutoRunStatus,
   AutoSchedule,
   AutoWebhook,
+  Connection,
+  ConnectionOwnerType,
+  ConnectionStatus,
   CreateApprovalInput,
+  CreateConnectionInput,
   CreateRunInput,
   CreateScheduleInput,
   CreateTriggerInput,
@@ -53,6 +60,7 @@ import type {
   TriggerFireLog,
   TriggerFireRecord,
   TriggerType,
+  UpdateConnectionInput,
   UpdateEventSourceInput,
   UpdateScheduleInput,
   UpdateTriggerInput,
@@ -69,8 +77,10 @@ import {
   encryptSecret,
   loadSecretEncryptionKey,
 } from "../../core/secret-crypto.js";
+import { S3Client } from "@aws-sdk/client-s3";
 import { FsWorkspaceStore } from "../../core/fs-workspace.js";
 import { LocalInputStore } from "../../core/input-store.js";
+import { S3OutputStore } from "../aws/s3-output-store.js";
 
 export interface PgPool {
   query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
@@ -110,6 +120,7 @@ function rowToRun(row: Record<string, unknown>): AutoRun {
   if (row["webhook_id"]) run.webhookId = row["webhook_id"] as string;
   if (row["trigger_id"]) run.triggerId = row["trigger_id"] as string;
   if (row["input_files"]) run.inputFiles = asJson<AutoRunInputFileRef[]>(row["input_files"]);
+  if (row["output_files"]) run.outputFiles = asJson<AutoRunOutputFile[]>(row["output_files"]);
   if (row["started_at"]) run.startedAt = row["started_at"] as string;
   if (row["finished_at"]) run.finishedAt = row["finished_at"] as string;
   if (row["error"]) run.error = row["error"] as string;
@@ -248,6 +259,14 @@ export class PostgresAutoRunRepository implements AutoRunRepository {
     await this.pool.query("UPDATE auto_runs SET result = $2 WHERE id = $1", [
       runId,
       JSON.stringify(result),
+    ]);
+  }
+
+  /** Persisted-output manifest write (worker harness, post-terminal). */
+  async setOutputFiles(runId: string, files: AutoRunOutputFile[]): Promise<void> {
+    await this.pool.query("UPDATE auto_runs SET output_files = $2 WHERE id = $1", [
+      runId,
+      JSON.stringify(files),
     ]);
   }
 
@@ -977,6 +996,111 @@ export class PostgresFireLogRepository implements FireLogRepository {
 }
 
 // ---------------------------------------------------------------------------
+// Postgres ConnectionRepository (non-secret connection records — S2)
+// ---------------------------------------------------------------------------
+
+function rowToConnection(row: Record<string, unknown>): Connection {
+  return {
+    id: row["id"] as string,
+    ownerType: row["owner_type"] as Connection["ownerType"],
+    ownerId: row["owner_id"] as string,
+    name: row["name"] as string,
+    type: row["type"] as Connection["type"],
+    config: asJson<Connection["config"]>(row["config"]),
+    secretRef: (row["secret_ref"] as string | null) ?? null,
+    status: (row["status"] as Connection["status"]) ?? "unverified",
+    ...(row["last_used_at"] ? { lastUsedAt: row["last_used_at"] as string } : {}),
+    createdAt: row["created_at"] as string,
+  };
+}
+
+export class PostgresConnectionRepository implements ConnectionRepository {
+  constructor(private readonly pool: PgPool) {}
+
+  async createConnection(input: CreateConnectionInput): Promise<Connection> {
+    const id = randomUUID();
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_connections
+         (id, owner_type, owner_id, name, type, config, secret_ref, status, last_used_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'unverified',NULL,$8)
+       RETURNING *`,
+      [
+        id,
+        input.ownerType,
+        input.ownerId,
+        input.name,
+        input.type,
+        JSON.stringify(input.config),
+        input.secretRef ?? null,
+        input.createdAt,
+      ],
+    );
+    return rowToConnection(rows[0]!);
+  }
+
+  async getConnection(connectionId: string): Promise<Connection | undefined> {
+    const { rows } = await this.pool.query("SELECT * FROM auto_connections WHERE id = $1", [
+      connectionId,
+    ]);
+    return rows[0] ? rowToConnection(rows[0]) : undefined;
+  }
+
+  async listConnectionsByOwner(
+    ownerType: ConnectionOwnerType,
+    ownerId: string,
+  ): Promise<Connection[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_connections WHERE owner_type = $1 AND owner_id = $2 ORDER BY created_at DESC",
+      [ownerType, ownerId],
+    );
+    return rows.map(rowToConnection);
+  }
+
+  async updateConnection(
+    connectionId: string,
+    patch: UpdateConnectionInput,
+  ): Promise<Connection | undefined> {
+    const sets: string[] = [];
+    const params: unknown[] = [connectionId];
+    const push = (col: string, value: unknown): void => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}`);
+    };
+    if (patch.name !== undefined) push("name", patch.name);
+    if (patch.config !== undefined) push("config", JSON.stringify(patch.config));
+    if (patch.secretRef !== undefined) push("secret_ref", patch.secretRef);
+    if (sets.length === 0) return this.getConnection(connectionId);
+    const { rows } = await this.pool.query(
+      `UPDATE auto_connections SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+      params,
+    );
+    return rows[0] ? rowToConnection(rows[0]) : undefined;
+  }
+
+  async setConnectionStatus(
+    connectionId: string,
+    status: ConnectionStatus,
+    lastUsedAt?: string,
+  ): Promise<void> {
+    if (lastUsedAt !== undefined) {
+      await this.pool.query(
+        "UPDATE auto_connections SET status = $2, last_used_at = $3 WHERE id = $1",
+        [connectionId, status, lastUsedAt],
+      );
+      return;
+    }
+    await this.pool.query("UPDATE auto_connections SET status = $2 WHERE id = $1", [
+      connectionId,
+      status,
+    ]);
+  }
+
+  async deleteConnection(connectionId: string): Promise<void> {
+    await this.pool.query("DELETE FROM auto_connections WHERE id = $1", [connectionId]);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Postgres SecretStore (encrypted-at-rest provider signing secrets — S2)
 // ---------------------------------------------------------------------------
 
@@ -1038,11 +1162,43 @@ export interface MakeSelfHostAutoDepsOptions {
    * MinIO/S3-backed store can be injected here for multi-node deployments.
    */
   inputs?: InputStore;
+  /**
+   * Persisted-output store. When omitted, a MinIO/S3-backed S3OutputStore is
+   * built from env (AUTO_OUTPUTS_BUCKET + the same S3_ENDPOINT/S3_ACCESS_KEY_ID/
+   * S3_SECRET_ACCESS_KEY the kit-tree store uses); when the env is absent too,
+   * outputs stay UNDEFINED and the worker skips output persistence silently
+   * (deploy-safe).
+   */
+  outputs?: OutputStore;
+}
+
+/**
+ * Builds the self-host OutputStore from env: the SAME S3-compatible client the
+ * kit-tree store uses, pointed at the bundled MinIO (endpoint + forcePathStyle).
+ * Returns undefined (→ persistence skipped) unless AUTO_OUTPUTS_BUCKET AND the
+ * S3 endpoint/credentials are configured.
+ */
+export function makeSelfHostOutputStoreFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): OutputStore | undefined {
+  const bucket = env["AUTO_OUTPUTS_BUCKET"]?.trim();
+  const endpoint = env["AUTO_OUTPUTS_S3_ENDPOINT"]?.trim() || env["S3_ENDPOINT"]?.trim();
+  const accessKeyId = env["S3_ACCESS_KEY_ID"]?.trim();
+  const secretAccessKey = env["S3_SECRET_ACCESS_KEY"]?.trim();
+  if (!bucket || !endpoint || !accessKeyId || !secretAccessKey) return undefined;
+  const client = new S3Client({
+    endpoint,
+    region: env["AWS_REGION"] || "us-east-1",
+    forcePathStyle: true,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+  return new S3OutputStore({ client, bucket, ensureBucket: true });
 }
 
 export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): AutoStorageDeps {
   const rootDir =
     options.workspaceRootDir ?? nodePath.join(os.tmpdir(), "agentkitauto-workspaces");
+  const outputs = options.outputs ?? makeSelfHostOutputStoreFromEnv();
   return {
     runs: new PostgresAutoRunRepository(options.pool),
     approvals: new PostgresAutoApprovalRepository(options.pool),
@@ -1050,6 +1206,8 @@ export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): Auto
     webhooks: new PostgresAutoWebhookRepository(options.pool),
     workspaces: new FsWorkspaceStore({ rootDir }),
     inputs: options.inputs ?? new LocalInputStore(),
+    // Persisted run outputs — absent env → undefined (worker skips silently).
+    ...(outputs ? { outputs } : {}),
     // Event-driven expansion stores (always populated by this adapter).
     events: {
       triggers: new PostgresTriggerRepository(options.pool),
@@ -1057,6 +1215,7 @@ export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): Auto
       receivedEvents: new PostgresReceivedEventRepository(options.pool),
       fireLogs: new PostgresFireLogRepository(options.pool),
       secrets: new PostgresSecretStore(options.pool),
+      connections: new PostgresConnectionRepository(options.pool),
     },
   };
 }
@@ -1261,6 +1420,24 @@ CREATE TABLE IF NOT EXISTS auto_secrets (
 );
 
 ALTER TABLE auto_event_sources ADD COLUMN IF NOT EXISTS signing_secret_ref TEXT;
+
+-- Idempotent migration: persisted-output manifest (contracts autoRunSchema.outputFiles).
+ALTER TABLE auto_runs ADD COLUMN IF NOT EXISTS output_files JSONB;
+
+CREATE TABLE IF NOT EXISTS auto_connections (
+  id           TEXT        NOT NULL PRIMARY KEY,
+  owner_type   TEXT        NOT NULL,
+  owner_id     TEXT        NOT NULL,
+  name         TEXT        NOT NULL,
+  type         TEXT        NOT NULL,
+  config       JSONB       NOT NULL,
+  secret_ref   TEXT,
+  status       TEXT        NOT NULL DEFAULT 'unverified',
+  last_used_at TEXT,
+  created_at   TEXT        NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS auto_connections_owner_idx ON auto_connections (owner_type, owner_id);
 
 `;
 

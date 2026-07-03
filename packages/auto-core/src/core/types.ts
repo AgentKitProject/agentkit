@@ -404,6 +404,13 @@ export interface AutoRun {
    * delivery failure never fails the run.
    */
   deliveryConfig?: DeliveryConfig;
+  /**
+   * PERSISTED-output manifest (event-driven expansion): durable,
+   * OutputStore-backed files written by the worker harness after the run
+   * reached a terminal status — distinct from the ephemeral `result.files`
+   * workspace manifest. Absent when no OutputStore is configured.
+   */
+  outputFiles?: ContractsAutoRunOutputFile[];
 }
 
 export interface CreateRunInput {
@@ -660,6 +667,7 @@ export type {
 } from "@agentkitforge/contracts";
 
 import type {
+  AutoRunOutputFile as ContractsAutoRunOutputFile,
   ConnectionConfig as ContractsConnectionConfig,
   ConnectionOwnerType as ContractsConnectionOwnerType,
   ConnectionType as ContractsConnectionType,

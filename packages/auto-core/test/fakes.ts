@@ -13,9 +13,12 @@ import type {
 } from "@agentkitforge/gateway-core";
 import type {
   AutoRunRepository,
+  ConnectionRepository,
   EventSourceRepository,
   FireLogRepository,
+  OutputStore,
   ReceivedEventRepository,
+  SecretStore,
   TriggerRepository,
   WorkspaceStore,
 } from "../src/core/ports.js";
@@ -24,10 +27,15 @@ import type {
   AppendReceivedEventInput,
   AuditEntry,
   AutoRun,
+  AutoRunOutputFile,
   AutoRunResult,
   AutoRunStatus,
   CanStartRunReason,
   CanStartRunRequest,
+  Connection,
+  ConnectionOwnerType,
+  ConnectionStatus,
+  CreateConnectionInput,
   CreateEventSourceInput,
   CreateRunInput,
   CreateTriggerInput,
@@ -37,6 +45,7 @@ import type {
   TriggerFireLog,
   TriggerFireRecord,
   TriggerType,
+  UpdateConnectionInput,
   UpdateEventSourceInput,
   UpdateTriggerInput,
   WorkspaceFileEntry,
@@ -118,6 +127,11 @@ export class InMemoryRunRepo implements AutoRunRepository {
   async appendAudit(runId: string, entry: AuditEntry): Promise<void> {
     const r = this.runs.get(runId);
     if (r) r.auditLog.push(entry);
+  }
+
+  async setOutputFiles(runId: string, files: AutoRunOutputFile[]): Promise<void> {
+    const r = this.runs.get(runId);
+    if (r) r.outputFiles = structuredClone(files);
   }
 
   async setResult(runId: string, result: AutoRunResult): Promise<void> {
@@ -539,4 +553,121 @@ export function fakeCanStart(
     };
   };
   return { fn, calls };
+}
+
+// ---------------------------------------------------------------------------
+// Persisted-output + connection fakes (Wave 3a)
+// ---------------------------------------------------------------------------
+
+/** In-memory OutputStore: bytes keyed by storeKey; presign returns a fake URL. */
+export class InMemoryOutputStore implements OutputStore {
+  objects = new Map<string, Uint8Array>();
+  /** When set, putRunOutput throws for matching paths (failure injection). */
+  failPaths = new Set<string>();
+
+  async putRunOutput(runId: string, path: string, bytes: Uint8Array): Promise<string> {
+    if (this.failPaths.has(path)) throw new Error(`put failed: ${path}`);
+    const key = `auto-outputs/${runId}/${path}`;
+    this.objects.set(key, bytes);
+    return key;
+  }
+  async presignGet(storeKey: string): Promise<string> {
+    return `https://outputs.example/presigned/${encodeURIComponent(storeKey)}`;
+  }
+  async getRunOutput(storeKey: string): Promise<Uint8Array> {
+    const bytes = this.objects.get(storeKey);
+    if (!bytes) throw new Error(`no such object: ${storeKey}`);
+    return bytes;
+  }
+  async delete(storeKey: string): Promise<void> {
+    this.objects.delete(storeKey);
+  }
+}
+
+/** In-memory SecretStore (PLAINTEXT — tests only; the real stores encrypt). */
+export class InMemorySecretStore implements SecretStore {
+  secrets = new Map<string, string>();
+  private seq = 0;
+
+  async put(plaintext: string): Promise<string> {
+    const ref = `sref-${++this.seq}`;
+    this.secrets.set(ref, plaintext);
+    return ref;
+  }
+  async reveal(secretRef: string): Promise<string> {
+    const v = this.secrets.get(secretRef);
+    if (v === undefined) throw new Error(`Unknown secretRef: ${secretRef}`);
+    return v;
+  }
+  async delete(secretRef: string): Promise<void> {
+    this.secrets.delete(secretRef);
+  }
+}
+
+let connectionSeq = 0;
+
+export class InMemoryConnectionRepo implements ConnectionRepository {
+  connections = new Map<string, Connection>();
+
+  seed(connection: Connection): Connection {
+    this.connections.set(connection.id, structuredClone(connection));
+    return connection;
+  }
+
+  async createConnection(input: CreateConnectionInput): Promise<Connection> {
+    const connection: Connection = {
+      id: `conn-${++connectionSeq}`,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      name: input.name,
+      type: input.type,
+      config: input.config,
+      secretRef: input.secretRef ?? null,
+      status: "unverified",
+      createdAt: input.createdAt,
+    };
+    this.connections.set(connection.id, structuredClone(connection));
+    return structuredClone(connection);
+  }
+
+  async getConnection(connectionId: string): Promise<Connection | undefined> {
+    const c = this.connections.get(connectionId);
+    return c ? structuredClone(c) : undefined;
+  }
+
+  async listConnectionsByOwner(
+    ownerType: ConnectionOwnerType,
+    ownerId: string,
+  ): Promise<Connection[]> {
+    return [...this.connections.values()]
+      .filter((c) => c.ownerType === ownerType && c.ownerId === ownerId)
+      .map((c) => structuredClone(c));
+  }
+
+  async updateConnection(
+    connectionId: string,
+    patch: UpdateConnectionInput,
+  ): Promise<Connection | undefined> {
+    const c = this.connections.get(connectionId);
+    if (!c) return undefined;
+    if (patch.name !== undefined) c.name = patch.name;
+    if (patch.config !== undefined) c.config = patch.config;
+    if (patch.secretRef !== undefined) c.secretRef = patch.secretRef;
+    return structuredClone(c);
+  }
+
+  async setConnectionStatus(
+    connectionId: string,
+    status: ConnectionStatus,
+    lastUsedAt?: string,
+  ): Promise<void> {
+    const c = this.connections.get(connectionId);
+    if (!c) return;
+    c.status = status;
+    if (lastUsedAt !== undefined) c.lastUsedAt = lastUsedAt;
+  }
+
+  async deleteConnection(connectionId: string): Promise<void> {
+    this.connections.delete(connectionId);
+  }
 }

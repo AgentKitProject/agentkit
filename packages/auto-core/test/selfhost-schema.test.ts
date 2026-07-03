@@ -75,6 +75,7 @@ describe("ensureAutoSchema", () => {
     expect(tableNames(AUTO_SCHEMA_SQL)).toEqual(tableNames(schemaSqlFile));
     expect(tableNames(AUTO_SCHEMA_SQL)).toEqual([
       "auto_approvals",
+      "auto_connections",
       "auto_event_sources",
       "auto_fire_logs",
       "auto_received_events",

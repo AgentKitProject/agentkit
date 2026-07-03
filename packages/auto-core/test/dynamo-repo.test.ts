@@ -27,6 +27,7 @@ import {
   DynamoAutoApprovalRepository,
   DynamoAutoScheduleRepository,
   DynamoAutoWebhookRepository,
+  DynamoConnectionRepository,
   DynamoEventSourceRepository,
   DynamoFireLogRepository,
   DynamoReceivedEventRepository,
@@ -51,6 +52,7 @@ if (!endpoint) {
   const RECEIVED_EVENTS = "AutoReceivedEvents-test";
   const FIRE_LOGS = "AutoFireLogs-test";
   const SECRETS = "AutoSecrets-test";
+  const CONNECTIONS = "AutoConnections-test";
 
   const raw = new DynamoDBClient({
     endpoint,
@@ -242,6 +244,27 @@ if (!endpoint) {
     KeySchema: [{ AttributeName: "secretRef", KeyType: "HASH" }],
   };
 
+  const connectionsTable: CreateTableCommandInput = {
+    TableName: CONNECTIONS,
+    BillingMode: "PAY_PER_REQUEST",
+    AttributeDefinitions: [
+      { AttributeName: "id", AttributeType: "S" },
+      { AttributeName: "gsiOwnerKey", AttributeType: "S" },
+      { AttributeName: "createdAt", AttributeType: "S" },
+    ],
+    KeySchema: [{ AttributeName: "id", KeyType: "HASH" }],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "owner-index",
+        KeySchema: [
+          { AttributeName: "gsiOwnerKey", KeyType: "HASH" },
+          { AttributeName: "createdAt", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "ALL" },
+      },
+    ],
+  };
+
   const drop = async (name: string): Promise<void> => {
     const { TableNames } = await raw.send(new ListTablesCommand({}));
     if (TableNames?.includes(name)) await raw.send(new DeleteTableCommand({ TableName: name }));
@@ -258,6 +281,7 @@ if (!endpoint) {
       await drop(RECEIVED_EVENTS);
       await drop(FIRE_LOGS);
       await drop(SECRETS);
+      await drop(CONNECTIONS);
       await raw.send(new CreateTableCommand(runsTable));
       await raw.send(new CreateTableCommand(approvalsTable));
       await raw.send(new CreateTableCommand(schedulesTable));
@@ -267,6 +291,7 @@ if (!endpoint) {
       await raw.send(new CreateTableCommand(receivedEventsTable));
       await raw.send(new CreateTableCommand(fireLogsTable));
       await raw.send(new CreateTableCommand(secretsTable));
+      await raw.send(new CreateTableCommand(connectionsTable));
     };
     return {
       runs: new DynamoAutoRunRepository(db, RUNS),
@@ -279,6 +304,7 @@ if (!endpoint) {
         receivedEvents: new DynamoReceivedEventRepository(db, RECEIVED_EVENTS),
         fireLogs: new DynamoFireLogRepository(db, FIRE_LOGS),
         secrets: new DynamoSecretStore(db, SECRETS),
+        connections: new DynamoConnectionRepository(db, CONNECTIONS),
       },
       reset,
     };

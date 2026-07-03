@@ -13,6 +13,7 @@ import {
   PostgresAutoApprovalRepository,
   PostgresAutoScheduleRepository,
   PostgresAutoWebhookRepository,
+  PostgresConnectionRepository,
   PostgresEventSourceRepository,
   PostgresFireLogRepository,
   PostgresReceivedEventRepository,
@@ -47,6 +48,7 @@ runRepositoryContract("postgres (pg-mem)", async () => {
         receivedEvents: new PostgresReceivedEventRepository(pool),
         fireLogs: new PostgresFireLogRepository(pool),
         secrets: new PostgresSecretStore(pool),
+        connections: new PostgresConnectionRepository(pool),
       },
       reset,
     };

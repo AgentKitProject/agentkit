@@ -24,6 +24,13 @@ import { makeSandboxExecutor } from "../core/sandbox-executor.js";
 import { runAutoRun, type RunAutoRunResult } from "../core/run-driver.js";
 import { makePromptRedactor } from "../core/leakage-guard.js";
 import { deliverResult } from "../core/delivery.js";
+import { persistRunOutputs } from "../core/run-output-persist.js";
+import { executeDestinations } from "../core/destination-executor.js";
+import {
+  loadOAuthProvidersConfig,
+  type OAuthProvidersConfig,
+} from "../core/oauth-connections.js";
+import type { AutoRunOutputFile } from "../core/types.js";
 import type { DnsResolver, FetchFn } from "../core/http-fetch.js";
 
 /** The kit context the run needs: a system prompt + the tools the kit declares. */
@@ -120,6 +127,13 @@ export interface ProcessAutoRunDeps {
   emailSender?: EmailSender;
   deliveryFetch?: FetchFn;
   deliveryResolver?: DnsResolver;
+  /**
+   * OAuth provider app credentials for gdrive/dropbox connection destinations
+   * (worker-harness refresh — S2). Defaults to loadOAuthProvidersConfig()
+   * (OAUTH_GDRIVE_CLIENT_ID/SECRET + OAUTH_DROPBOX_CLIENT_ID/SECRET); an
+   * unconfigured provider makes its destinations fail softly (audited).
+   */
+  oauth?: OAuthProvidersConfig;
 }
 
 /** Raised + recorded when the approval gate denies a run. */
@@ -276,6 +290,24 @@ export async function processAutoRun(
       ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
     });
 
+    // ---- Persisted run outputs (event-driven expansion) -------------------
+    // Uploads the terminal run's workspace files into the durable OutputStore
+    // (bounded: RUN_OUTPUT_MAX_FILES / _FILE_MAX_BYTES / _TOTAL_MAX_BYTES) and
+    // stamps run.outputFiles. DEPLOY-SAFE: skipped silently when no OutputStore
+    // is configured. BEST-EFFORT: persistRunOutputs never throws. Runs BEFORE
+    // workspace cleanup (it reads workspace bytes) and BEFORE delivery /
+    // destinations (so both can mint presigned links).
+    let outputFiles: AutoRunOutputFile[] = [];
+    if (storage.outputs && result.result?.files && result.result.files.length > 0) {
+      outputFiles = await persistRunOutputs({
+        runId: run.id,
+        workspaceId,
+        files: result.result.files,
+        deps: { workspace: workspaces, outputStore: storage.outputs, runs },
+        now,
+      });
+    }
+
     // ---- Opt-in result delivery (Phase D) --------------------------------
     // Fires AFTER the run reaches a terminal status (success OR failure — the
     // user wants to be notified of failures too). Best-effort: any delivery
@@ -303,6 +335,48 @@ export async function processAutoRun(
         // delivery hiccup mask the run's real terminal result.
         console.error(
           `Auto run ${run.id} delivery error (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // ---- Trigger destinations (event-driven expansion) --------------------
+    // A trigger-fired run delivers its summary / persisted outputs to the
+    // trigger's destinations[] (email / webhook_out / slack_incoming /
+    // connection). Runs IN ADDITION to legacy deliveryConfig delivery.
+    // S2: connection credentials are revealed ONLY inside executeDestinations
+    // (the harness) — never in the agent loop above. BEST-EFFORT: the executor
+    // never throws; every outcome is audited on the run.
+    if (run.triggerId && storage.events) {
+      try {
+        const trigger = await storage.events.triggers.getTrigger(run.triggerId);
+        if (trigger && trigger.destinations && trigger.destinations.length > 0) {
+          await executeDestinations({
+            run: { ...runWithWs, status: result.status, finishedAt: now() },
+            destinations: trigger.destinations,
+            result: {
+              status: result.status,
+              output: result.result?.output ?? "",
+              spentCents: result.spentCents,
+            },
+            outputFiles,
+            deps: {
+              runs,
+              connections: storage.events.connections,
+              secrets: storage.events.secrets,
+              ...(storage.outputs ? { outputStore: storage.outputs } : {}),
+              ...(deps.emailSender ? { emailSender: deps.emailSender } : {}),
+              ...(deps.deliveryFetch ? { fetchImpl: deps.deliveryFetch } : {}),
+              ...(deps.deliveryResolver ? { resolver: deps.deliveryResolver } : {}),
+              oauth: deps.oauth ?? loadOAuthProvidersConfig(),
+            },
+            now,
+          });
+        }
+      } catch (err) {
+        // Defensive: executeDestinations is contracted not to throw, but never
+        // let a destination hiccup mask the run's real terminal result.
+        console.error(
+          `Auto run ${run.id} destination error (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

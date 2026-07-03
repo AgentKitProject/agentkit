@@ -42,9 +42,11 @@ import type {
   AutoScheduleRepository,
   AutoStorageDeps,
   AutoWebhookRepository,
+  ConnectionRepository,
   EventSourceRepository,
   FireLogRepository,
   InputStore,
+  OutputStore,
   ReceivedEventRepository,
   ScheduleRunResult,
   SecretStore,
@@ -56,11 +58,16 @@ import type {
   AuditEntry,
   AutoApproval,
   AutoRun,
+  AutoRunOutputFile,
   AutoRunResult,
   AutoRunStatus,
   AutoSchedule,
   AutoWebhook,
+  Connection,
+  ConnectionOwnerType,
+  ConnectionStatus,
   CreateApprovalInput,
+  CreateConnectionInput,
   CreateEventSourceInput,
   CreateRunInput,
   CreateScheduleInput,
@@ -74,12 +81,14 @@ import type {
   TriggerFireLog,
   TriggerFireRecord,
   TriggerType,
+  UpdateConnectionInput,
   UpdateEventSourceInput,
   UpdateScheduleInput,
   UpdateTriggerInput,
   WebhookFireResult,
 } from "../../core/types.js";
 import { kitRefKey, normalizeNetworkPolicy } from "../../core/types.js";
+import { S3OutputStore } from "./s3-output-store.js";
 import {
   FIRE_LOGS_PER_TRIGGER_CAP,
   RECEIVED_EVENTS_PER_SOURCE_CAP,
@@ -156,6 +165,7 @@ export interface AutoDynamoTableNames {
   receivedEvents?: string;
   fireLogs?: string;
   secrets?: string;
+  connections?: string;
 }
 
 export const AUTO_TABLE_ENV_VARS = {
@@ -168,6 +178,7 @@ export const AUTO_TABLE_ENV_VARS = {
   receivedEvents: "AUTO_RECEIVED_EVENTS_TABLE",
   fireLogs: "AUTO_FIRE_LOGS_TABLE",
   secrets: "AUTO_SECRETS_TABLE",
+  connections: "AUTO_CONNECTIONS_TABLE",
 } as const;
 
 /** Documented defaults for the OPTIONAL event-driven expansion tables. */
@@ -177,6 +188,7 @@ export const AUTO_EVENT_TABLE_DEFAULTS = {
   receivedEvents: "AutoReceivedEvents",
   fireLogs: "AutoFireLogs",
   secrets: "AutoSecrets",
+  connections: "AutoConnections",
 } as const;
 
 export function loadAutoDynamoTableNames(
@@ -211,6 +223,10 @@ export function loadAutoDynamoTableNames(
     ),
     fireLogs: optional(AUTO_TABLE_ENV_VARS.fireLogs, AUTO_EVENT_TABLE_DEFAULTS.fireLogs),
     secrets: optional(AUTO_TABLE_ENV_VARS.secrets, AUTO_EVENT_TABLE_DEFAULTS.secrets),
+    connections: optional(
+      AUTO_TABLE_ENV_VARS.connections,
+      AUTO_EVENT_TABLE_DEFAULTS.connections,
+    ),
   };
 }
 
@@ -376,6 +392,18 @@ export class DynamoAutoRunRepository implements AutoRunRepository {
         Key: { id: runId },
         UpdateExpression: "SET cancelRequested = :t",
         ExpressionAttributeValues: { ":t": true },
+      }),
+    );
+  }
+
+  /** Persisted-output manifest write (worker harness, post-terminal). */
+  async setOutputFiles(runId: string, files: AutoRunOutputFile[]): Promise<void> {
+    await this.db.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { id: runId },
+        UpdateExpression: "SET outputFiles = :f",
+        ExpressionAttributeValues: { ":f": files },
       }),
     );
   }
@@ -1368,6 +1396,130 @@ export class DynamoSecretStore implements SecretStore {
 }
 
 // ---------------------------------------------------------------------------
+// DynamoDB ConnectionRepository (non-secret connection records — S2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Table `AutoConnections`, PK `id`.
+ *   - GSI `owner-index` (PK gsiOwnerKey = "{ownerType}#{ownerId}", SK createdAt)
+ *     — newest-first per-owner listing.
+ * SECRETS NEVER LAND HERE (S2): only the opaque `secretRef` handle is stored;
+ * plaintext credential material lives in the SecretStore.
+ */
+function connectionOwnerKey(ownerType: ConnectionOwnerType, ownerId: string): string {
+  return `${ownerType}#${ownerId}`;
+}
+
+function stripConnectionGsi(item: Record<string, unknown>): Connection {
+  const { gsiOwnerKey: _gsiOwnerKey, ...rest } = item as Record<string, unknown> & {
+    gsiOwnerKey?: string;
+  };
+  return rest as unknown as Connection;
+}
+
+export class DynamoConnectionRepository implements ConnectionRepository {
+  constructor(
+    private readonly db: DynamoDBDocumentClient,
+    private readonly tableName: string,
+  ) {}
+
+  private async put(connection: Connection): Promise<void> {
+    await this.db.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: {
+          ...connection,
+          gsiOwnerKey: connectionOwnerKey(connection.ownerType, connection.ownerId),
+        },
+      }),
+    );
+  }
+
+  async createConnection(input: CreateConnectionInput): Promise<Connection> {
+    const connection: Connection = {
+      id: randomUUID(),
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      name: input.name,
+      type: input.type,
+      config: input.config,
+      secretRef: input.secretRef ?? null,
+      status: "unverified",
+      createdAt: input.createdAt,
+    };
+    await this.put(connection);
+    return connection;
+  }
+
+  async getConnection(connectionId: string): Promise<Connection | undefined> {
+    const result = await this.db.send(
+      new GetCommand({ TableName: this.tableName, Key: { id: connectionId } }),
+    );
+    return result.Item ? stripConnectionGsi(result.Item) : undefined;
+  }
+
+  async listConnectionsByOwner(
+    ownerType: ConnectionOwnerType,
+    ownerId: string,
+  ): Promise<Connection[]> {
+    const result = await this.db.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: "owner-index",
+        KeyConditionExpression: "gsiOwnerKey = :o",
+        ExpressionAttributeValues: { ":o": connectionOwnerKey(ownerType, ownerId) },
+        ScanIndexForward: false,
+      }),
+    );
+    return (result.Items ?? []).map(stripConnectionGsi);
+  }
+
+  async updateConnection(
+    connectionId: string,
+    patch: UpdateConnectionInput,
+  ): Promise<Connection | undefined> {
+    // Read-modify-write Put (mirrors the event-source repo) — the owner key
+    // never changes, but a secretRef rotation must preserve every other field.
+    const current = await this.getConnection(connectionId);
+    if (!current) return undefined;
+    const next: Connection = {
+      ...current,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.config !== undefined ? { config: patch.config } : {}),
+      ...(patch.secretRef !== undefined ? { secretRef: patch.secretRef } : {}),
+    };
+    await this.put(next);
+    return next;
+  }
+
+  async setConnectionStatus(
+    connectionId: string,
+    status: ConnectionStatus,
+    lastUsedAt?: string,
+  ): Promise<void> {
+    await this.db.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { id: connectionId },
+        UpdateExpression:
+          lastUsedAt !== undefined ? "SET #s = :s, lastUsedAt = :l" : "SET #s = :s",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: {
+          ":s": status,
+          ...(lastUsedAt !== undefined ? { ":l": lastUsedAt } : {}),
+        },
+      }),
+    );
+  }
+
+  async deleteConnection(connectionId: string): Promise<void> {
+    await this.db.send(
+      new DeleteCommand({ TableName: this.tableName, Key: { id: connectionId } }),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Composition
 // ---------------------------------------------------------------------------
 
@@ -1382,6 +1534,13 @@ export interface MakeAwsAutoDepsOptions {
    * / tests). Defaults to AUTO_INPUTS_BUCKET when unset.
    */
   inputsBucket?: string;
+  /**
+   * S3 bucket for PERSISTED run outputs (`auto-outputs/{runId}/...`). When set,
+   * an S3OutputStore is composed and the worker persists terminal-run outputs;
+   * otherwise `outputs` stays absent and persistence is skipped silently
+   * (deploy-safe). Defaults to AUTO_OUTPUTS_BUCKET when unset.
+   */
+  outputsBucket?: string;
   /** Optional S3 client (defaults to one built from awsClientEnv). */
   s3Client?: S3Client;
 }
@@ -1398,6 +1557,13 @@ export function makeAwsAutoDeps(options: MakeAwsAutoDepsOptions = {}): AutoStora
         bucket: inputsBucket,
       })
     : new LocalInputStore();
+  const outputsBucket = options.outputsBucket ?? process.env["AUTO_OUTPUTS_BUCKET"];
+  const outputs: OutputStore | undefined = outputsBucket
+    ? new S3OutputStore({
+        client: options.s3Client ?? new S3Client(s3ClientEnv()),
+        bucket: outputsBucket,
+      })
+    : undefined;
   return {
     runs: new DynamoAutoRunRepository(db, tables.runs),
     approvals: new DynamoAutoApprovalRepository(db, tables.approvals),
@@ -1405,6 +1571,8 @@ export function makeAwsAutoDeps(options: MakeAwsAutoDepsOptions = {}): AutoStora
     webhooks: new DynamoAutoWebhookRepository(db, tables.webhooks),
     workspaces: new FsWorkspaceStore({ rootDir }),
     inputs,
+    // Persisted run outputs — absent bucket → undefined (worker skips silently).
+    ...(outputs ? { outputs } : {}),
     // Event-driven expansion stores (always populated; table names default to
     // the documented AutoTriggers/AutoEventSources/... when not configured).
     events: {
@@ -1427,6 +1595,10 @@ export function makeAwsAutoDeps(options: MakeAwsAutoDepsOptions = {}): AutoStora
       secrets: new DynamoSecretStore(
         db,
         tables.secrets ?? AUTO_EVENT_TABLE_DEFAULTS.secrets,
+      ),
+      connections: new DynamoConnectionRepository(
+        db,
+        tables.connections ?? AUTO_EVENT_TABLE_DEFAULTS.connections,
       ),
     },
   };
