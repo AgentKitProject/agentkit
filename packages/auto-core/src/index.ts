@@ -242,6 +242,46 @@ export type {
   TriggerSweepSummary,
 } from "./core/trigger-runner.js";
 
+// ---- Generalized pollers (Wave 3b: watch / rss / run_completed) ----------
+export { isPollDue, parsePollCursor, recordPollFailure } from "./core/poll-cursor.js";
+export type { PollCursorBase } from "./core/poll-cursor.js";
+export {
+  WATCH_DEFAULT_INTERVAL_MINUTES,
+  WATCH_MAX_EVENTS_PER_SWEEP,
+  WATCH_MAX_TRACKED_OBJECTS,
+  WATCH_MIN_INTERVAL_MINUTES,
+  runWatchPollSweep,
+} from "./core/watch-poller.js";
+export type {
+  S3ListObjectsFn,
+  S3ObjectSummary,
+  WatchCursor,
+  WatchPollDeps,
+} from "./core/watch-poller.js";
+export {
+  RSS_DEFAULT_INTERVAL_MINUTES,
+  RSS_FETCH_TIMEOUT_MS,
+  RSS_MAX_EVENTS_PER_SWEEP,
+  RSS_MAX_RESPONSE_BYTES,
+  RSS_MIN_INTERVAL_MINUTES,
+  RSS_SEEN_GUIDS_MAX,
+  parseFeedItems,
+  runRssPollSweep,
+} from "./core/rss-poller.js";
+export type { RssCursor, RssFeedItem, RssPollDeps } from "./core/rss-poller.js";
+export {
+  MAX_TRIGGER_CHAIN_DEPTH,
+  RUN_COMPLETED_MAX_EVENTS_PER_SWEEP,
+  RUN_COMPLETED_SCAN_LIMIT,
+  RUN_COMPLETED_SUMMARY_MAX_CHARS,
+  chainDepthOfRun,
+  runRunCompletedPollSweep,
+} from "./core/run-completed-poller.js";
+export type {
+  RunCompletedCursor,
+  RunCompletedPollDeps,
+} from "./core/run-completed-poller.js";
+
 // ---- Network egress (Phase C http_fetch) ---------------------------------
 export {
   guardedHttpFetch,

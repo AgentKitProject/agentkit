@@ -652,6 +652,8 @@ export type {
   PublicEventSource,
   ReceivedEvent,
   ReceivedEventDelivery,
+  RssTriggerConfig,
+  RunCompletedTriggerConfig,
   RunTerminalStatus,
   Trigger,
   TriggerCircuit,
@@ -664,6 +666,7 @@ export type {
   TriggerRateLimit,
   TriggerType,
   UpdateTriggerRequest,
+  WatchTriggerConfig,
 } from "@agentkitforge/contracts";
 
 import type {

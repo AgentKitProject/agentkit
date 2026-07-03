@@ -41,7 +41,15 @@ describe("encode/decode round trip", () => {
     };
     const encoded = encodeTemplateParam(t);
     expect(encoded).not.toMatch(/[+/=]/); // base64url, unpadded
-    expect(decodeTemplateParam(encoded)).toEqual(t);
+    // Decoding validates config through the contracts schema, which fills the
+    // Wave-3b rss default (intervalMinutes 15).
+    expect(decodeTemplateParam(encoded)).toEqual({
+      ...t,
+      trigger: {
+        type: "rss",
+        config: { feedUrl: "https://example.com/feed.xml", intervalMinutes: 15 }
+      }
+    });
   });
 });
 

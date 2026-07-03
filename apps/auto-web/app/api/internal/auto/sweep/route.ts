@@ -25,7 +25,7 @@
 import { autoErrorCodeSchema, autoInternalServiceKeyHeader } from "@agentkitforge/contracts";
 import { timingSafeEqual } from "node:crypto";
 import { runScheduleSweep } from "@/server/core/auto";
-import { runTriggerScheduleSweep } from "@/server/core/auto-events";
+import { runTriggerPollSweep, runTriggerScheduleSweep } from "@/server/core/auto-events";
 
 export const dynamic = "force-dynamic";
 
@@ -89,5 +89,28 @@ export async function POST(request: Request) {
     triggerSummary = { error: message };
   }
 
-  return Response.json({ ...summary, triggerSweep: triggerSummary }, { status: 200 });
+  // ---- ADDITIVE: Wave-3b pollers (watch / rss / run_completed) -------------
+  // Same isolation discipline: a poll-sweep failure never fails the legacy or
+  // trigger sweeps (or the endpoint). runTriggerPollSweep additionally isolates
+  // each poller AND each trigger internally.
+  let pollSummary: Awaited<ReturnType<typeof runTriggerPollSweep>> | { error: string };
+  try {
+    pollSummary = await runTriggerPollSweep();
+    for (const [kind, s] of Object.entries(pollSummary)) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[auto] ${kind} poll sweep processed=${s.processed} dispatched=${s.dispatched} skipped=${s.skipped} errors=${s.errors.length}`
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[auto] poll sweep failed: ${message}`);
+    pollSummary = { error: message };
+  }
+
+  return Response.json(
+    { ...summary, triggerSweep: triggerSummary, pollSweep: pollSummary },
+    { status: 200 }
+  );
 }

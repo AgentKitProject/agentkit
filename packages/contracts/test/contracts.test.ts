@@ -974,7 +974,27 @@ describe("contracts", () => {
     });
     assert.equal(watch.config.prefix, ""); // default
     assert.equal(watch.config.batchMode, "per_file"); // default
-    triggerSchema.parse({ ...baseTrigger, type: "rss", config: { feedUrl: "https://example.com/feed.xml" } });
+    assert.equal(watch.config.intervalMinutes, 5); // default (Wave 3b poller)
+    assert.equal(watch.config.includeExisting, false); // default: baseline-only first sweep
+    const rss = triggerSchema.parse({ ...baseTrigger, type: "rss", config: { feedUrl: "https://example.com/feed.xml" } });
+    assert.equal(rss.config.intervalMinutes, 15); // default (Wave 3b poller)
+    // Poll-interval floors: watch min 1, rss min 5 (feeds are polled gently).
+    triggerSchema.parse({ ...baseTrigger, type: "watch", config: { connectionId: "c1", intervalMinutes: 1 } });
+    assert.throws(() =>
+      triggerSchema.parse({ ...baseTrigger, type: "watch", config: { connectionId: "c1", intervalMinutes: 0 } })
+    );
+    triggerSchema.parse({
+      ...baseTrigger,
+      type: "rss",
+      config: { feedUrl: "https://example.com/feed.xml", intervalMinutes: 5 }
+    });
+    assert.throws(() =>
+      triggerSchema.parse({
+        ...baseTrigger,
+        type: "rss",
+        config: { feedUrl: "https://example.com/feed.xml", intervalMinutes: 4 }
+      })
+    );
     const chained = triggerSchema.parse({
       ...baseTrigger,
       type: "run_completed",

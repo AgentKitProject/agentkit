@@ -27,6 +27,9 @@
 import {
   consumeTriggerEvent,
   runDueScheduleTriggers,
+  runWatchPollSweep,
+  runRssPollSweep,
+  runRunCompletedPollSweep,
   checkConcurrency,
   countActiveRuns,
   resolveMaxConcurrentRuns,
@@ -38,9 +41,12 @@ import {
   SecretStoreUnconfiguredError,
   type ConsumeTriggerEventDeps,
   type CreateAndDispatchTriggerRun,
+  type DnsResolver,
   type EventStorageDeps,
+  type FetchFn,
   type InferenceMode,
   type ReceivedEvent,
+  type S3ListObjectsFn,
   type Trigger,
   type TriggerFireLog,
   type TriggerSweepSummary,
@@ -591,6 +597,9 @@ const createAndDispatch: CreateAndDispatchTriggerRun = async ({ trigger, input }
     budgetCents,
     ...(trigger.model ? { model: trigger.model } : {}),
     ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
+    // Wave 3b: event metadata (e.g. run_completed chainDepth) persists onto
+    // run.input.event — the chain loop guard's carrier.
+    ...(input.event !== undefined ? { event: input.event } : {}),
     kitContext: { serviceUserId: trigger.userId },
     // RunTrigger has no "trigger"/"event" value yet (contracts frozen for this
     // workstream): schedule-type triggers reuse "schedule", every other type
@@ -782,4 +791,110 @@ export async function runTriggerScheduleSweep(): Promise<TriggerSweepSummary> {
     inferenceMode: "managed",
   };
   return runDueScheduleTriggers(deps, nowIso());
+}
+
+// ---------------------------------------------------------------------------
+// Poll sweep (Wave 3b: watch / rss / run_completed — the generalized poller)
+// ---------------------------------------------------------------------------
+
+/** Per-poller summaries of one poll sweep (each poller is isolated). */
+export interface TriggerPollSweepSummary {
+  watch: TriggerSweepSummary;
+  rss: TriggerSweepSummary;
+  runCompleted: TriggerSweepSummary;
+}
+
+interface TriggerPollOverrides {
+  s3List?: S3ListObjectsFn;
+  fetchImpl?: FetchFn;
+  resolver?: DnsResolver;
+}
+
+let pollOverrides: TriggerPollOverrides = {};
+
+/** Test seam: inject the S3 list / fetch / DNS resolver (offline tests) —
+ *  mirrors setConnectionVerifyOverridesForTests in auto-connections.ts. */
+export function setTriggerPollOverridesForTests(overrides: TriggerPollOverrides): void {
+  pollOverrides = overrides;
+}
+
+/** Real DNS resolver for the feed SSRF guard (A + AAAA), mirroring
+ *  auto-connections' defaultDnsResolver. */
+async function defaultPollDnsResolver(hostname: string): Promise<string[]> {
+  const { lookup } = await import("node:dns/promises");
+  const records = await lookup(hostname, { all: true });
+  return records.map((r) => r.address);
+}
+
+/** Global fetch adapted to auto-core's injected FetchFn shape. */
+const defaultPollFetch: FetchFn = (url, init) => fetch(url, init as RequestInit);
+
+const EMPTY_SWEEP: TriggerSweepSummary = { processed: 0, dispatched: 0, skipped: 0, errors: [] };
+
+/**
+ * Run the Wave-3b pollers once (watch + rss + run_completed), ADDITIVE next to
+ * runTriggerScheduleSweep on the same /api/internal/auto/sweep tick.
+ *
+ *   - Each poller consults the trigger's cursor for interval gating
+ *     (config.intervalMinutes; watch floor 1 min, rss floor 5 min) and follows
+ *     the persist-cursor-before-dispatch discipline.
+ *   - ISOLATION at two levels: per-trigger inside each poller (auto-core), and
+ *     per-poller here — one poller's storage failure never blocks the others.
+ *   - S2: watch connection credentials are revealed by the poller server-side
+ *     (SecretStore) and never leave it.
+ *   - inferenceMode "managed" (fail-closed), exactly like the schedule sweep;
+ *     startRun still resolves the REAL billing mode per run.
+ */
+export async function runTriggerPollSweep(): Promise<TriggerPollSweepSummary> {
+  const storage = await getAutoStorage();
+  const events = await getEventStorage();
+  const base: ConsumeTriggerEventDeps = {
+    triggers: events.triggers,
+    approvals: storage.approvals,
+    fireLogs: events.fireLogs,
+    canStartRun: makeDefaultCanStartRun(),
+    createAndDispatch,
+    inferenceMode: "managed",
+  };
+
+  const isolated = async (
+    label: string,
+    run: () => Promise<TriggerSweepSummary>,
+  ): Promise<TriggerSweepSummary> => {
+    try {
+      return await run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // eslint-disable-next-line no-console
+      console.error(`[auto] ${label} poll sweep failed: ${message}`);
+      return { ...EMPTY_SWEEP, errors: [{ triggerId: "*", error: message }] };
+    }
+  };
+
+  const watch = await isolated("watch", () =>
+    runWatchPollSweep(
+      {
+        ...base,
+        connections: events.connections,
+        secrets: events.secrets,
+        ...(pollOverrides.s3List ? { s3List: pollOverrides.s3List } : {}),
+      },
+      nowIso(),
+    ),
+  );
+  const rss = await isolated("rss", () =>
+    runRssPollSweep(
+      {
+        ...base,
+        fetchImpl: pollOverrides.fetchImpl ?? defaultPollFetch,
+        resolver: pollOverrides.resolver ?? defaultPollDnsResolver,
+      },
+      nowIso(),
+    ),
+  );
+  const runCompleted = await isolated("run_completed", () =>
+    runRunCompletedPollSweep({ ...base, runs: storage.runs }, nowIso()),
+  );
+
+  return { watch, rss, runCompleted };
 }

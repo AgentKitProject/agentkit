@@ -63,6 +63,7 @@ function makeStorage() {
   const signingRefs = new Map<string, string>();
   const received = new Map<string, Row[]>();
   const fireLogs = new Map<string, Row[]>();
+  const connections = new Map<string, Row>();
   const secrets = { configured: false, map: new Map<string, string>(), seq: 0 };
   let n = 0;
 
@@ -283,6 +284,29 @@ function makeStorage() {
         async delete(ref: string) {
           secrets.map.delete(ref);
         }
+      },
+      connections: {
+        async getConnection(id: string) {
+          const c = connections.get(id);
+          return c ? structuredClone(c) : undefined;
+        },
+        async listConnectionsByOwner(ownerType: string, ownerId: string) {
+          return [...connections.values()].filter(
+            (c) => c.ownerType === ownerType && c.ownerId === ownerId
+          );
+        },
+        async createConnection(input: Row) {
+          const c = { id: `conn-${++n}`, status: "unverified", ...input };
+          connections.set(c.id as string, c);
+          return structuredClone(c);
+        },
+        async updateConnection() {
+          return undefined;
+        },
+        async setConnectionStatus() {},
+        async deleteConnection(id: string) {
+          connections.delete(id);
+        }
       }
     }
   };
@@ -297,6 +321,7 @@ function makeStorage() {
     signingRefs.clear();
     received.clear();
     fireLogs.clear();
+    connections.clear();
     secrets.map.clear();
     secrets.configured = false;
     secrets.seq = 0;
@@ -305,7 +330,7 @@ function makeStorage() {
   return {
     deps,
     reset,
-    state: { approvals, runs, triggers, sources, signingRefs, received, fireLogs, secrets }
+    state: { approvals, runs, triggers, sources, signingRefs, received, fireLogs, connections, secrets }
   };
 }
 
@@ -399,6 +424,8 @@ beforeEach(async () => {
   auto.setAutoDispatcher(async () => {});
   const ingestMod = await import("@/server/core/event-ingest");
   ingestMod.setEventIngestOverridesForTests({});
+  const eventsMod = await import("@/server/core/auto-events");
+  eventsMod.setTriggerPollOverridesForTests({});
 });
 
 afterEach(() => {
@@ -836,5 +863,243 @@ describe("sweep extension — schedule-TYPE triggers", () => {
     // Double-fire guard: the cursor advanced past now BEFORE dispatch.
     const cursor = storageRef.current.state.triggers.get(created.id)!.cursor as string;
     expect(Date.parse(cursor)).toBeGreaterThan(Date.now() - 60_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 3b — fan-out cap + the generalized poll sweep (watch/rss/run_completed)
+// ---------------------------------------------------------------------------
+
+describe("fan-out — one event to ALL matching triggers (capped)", () => {
+  it("delivers one ingested event to every subscribed trigger, capped at MAX_SUBSCRIPTIONS_PER_EVENT", async () => {
+    const { MAX_SUBSCRIPTIONS_PER_EVENT } = await import("@/server/core/auto-events");
+    seedApproval();
+    const { id: sourceId, token } = await createSourceViaRoute();
+    // Two more subscriptions than the cap.
+    for (let i = 0; i < MAX_SUBSCRIPTIONS_PER_EVENT + 2; i++) {
+      const res = await createTriggerViaRoute(sourceId, { name: `sub-${i}` });
+      expect(res.status).toBe(201);
+    }
+    const res = await ingest(sourceId, "deploy", {
+      headers: { "x-auto-event-token": token, "content-type": "application/json" },
+      body: JSON.stringify({ action: "released" })
+    });
+    expect(res.status).toBe(202);
+    // Exactly the cap fired — each through its OWN fully-gated consume.
+    expect(storageRef.current.state.runs).toHaveLength(MAX_SUBSCRIPTIONS_PER_EVENT);
+    const firedTriggers = new Set(storageRef.current.state.runs.map((r) => r.triggerId));
+    expect(firedTriggers.size).toBe(MAX_SUBSCRIPTIONS_PER_EVENT);
+  });
+});
+
+describe("poll sweep — Wave 3b (watch / rss / run_completed)", () => {
+  const SWEEP_KEY = "sweep-key";
+
+  async function callSweep() {
+    const sweep = await import("@/app/api/internal/auto/sweep/route");
+    const res = await sweep.POST(
+      new Request("https://auto.example/api/internal/auto/sweep", {
+        method: "POST",
+        headers: { "x-service-key": SWEEP_KEY }
+      })
+    );
+    expect(res.status).toBe(200);
+    return (await res.json()) as {
+      pollSweep: {
+        watch: { processed: number; dispatched: number; skipped: number; errors: unknown[] };
+        rss: { processed: number; dispatched: number; skipped: number; errors: unknown[] };
+        runCompleted: { processed: number; dispatched: number; skipped: number; errors: unknown[] };
+      };
+    };
+  }
+
+  function rewindPollCursor(triggerId: string) {
+    const trigger = storageRef.current.state.triggers.get(triggerId)!;
+    const cursor = JSON.parse(trigger.cursor as string) as { polledAt: string };
+    cursor.polledAt = "2020-01-01T00:00:00.000Z";
+    trigger.cursor = JSON.stringify(cursor);
+  }
+
+  it("watch: baseline sweep, then a new object fires a REAL run through startRun (S2: creds revealed server-side only)", async () => {
+    process.env.AUTO_WORKER_SERVICE_KEY = SWEEP_KEY;
+    seedApproval();
+    // An s3 connection whose credential lives in the (fake) SecretStore.
+    storageRef.current.state.secrets.map.set(
+      "sref-s3",
+      JSON.stringify({ accessKeyId: "AK", secretAccessKey: "SK" })
+    );
+    storageRef.current.state.connections.set("conn-s3", {
+      id: "conn-s3",
+      ownerType: "user",
+      ownerId: "user-1",
+      name: "dropbox bucket",
+      type: "s3",
+      config: { bucket: "drop" },
+      secretRef: "sref-s3",
+      status: "ok",
+      createdAt: new Date().toISOString()
+    });
+    const { POST: createRoute } = await import("@/app/api/auto/triggers/route");
+    const created = (await (
+      await createRoute(
+        new Request("https://auto.example/api/auto/triggers", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            triggerBody({
+              type: "watch",
+              config: { connectionId: "conn-s3", intervalMinutes: 1 },
+              mapping: { promptTemplate: "New file {{key}}" }
+            })
+          )
+        })
+      )
+    ).json()) as { id: string };
+
+    const listing: { key: string; size: number; etag: string; lastModified: string }[] = [];
+    const revealed: string[] = [];
+    const eventsMod = await import("@/server/core/auto-events");
+    eventsMod.setTriggerPollOverridesForTests({
+      s3List: async (args) => {
+        revealed.push(args.credentials.accessKeyId);
+        return [...listing];
+      }
+    });
+
+    // Sweep 1: BASELINE (pre-populated buckets never storm — here it's empty).
+    const first = await callSweep();
+    expect(first.pollSweep.watch.processed).toBe(1);
+    expect(first.pollSweep.watch.dispatched).toBe(0);
+    expect(revealed).toEqual(["AK"]); // SecretStore reveal happened server-side
+
+    // A file lands; the trigger becomes due again (rewind the interval clock).
+    listing.push({
+      key: "inbox/report.csv",
+      size: 42,
+      etag: "e-1",
+      lastModified: new Date().toISOString()
+    });
+    rewindPollCursor(created.id);
+
+    const second = await callSweep();
+    expect(second.pollSweep.watch.dispatched).toBe(1);
+    const run = storageRef.current.state.runs[0]!;
+    expect(run.triggerId).toBe(created.id);
+    expect((run.input as { prompt: string }).prompt).toBe("New file inbox/report.csv");
+    // S1: metadata payload rides as the attached file, never free prompt text.
+    const files = (run.input as { files: { path: string; content: string }[] }).files;
+    expect(files[0]!.path).toBe("event.json");
+    expect(JSON.parse(files[0]!.content)).toMatchObject({ key: "inbox/report.csv", eventName: "object_created" });
+  });
+
+  it("run_completed: a newly-terminal run chains a REAL run; chainDepth=1 persists onto run.input.event", async () => {
+    process.env.AUTO_WORKER_SERVICE_KEY = SWEEP_KEY;
+    seedApproval();
+    const { POST: createRoute } = await import("@/app/api/auto/triggers/route");
+    const created = (await (
+      await createRoute(
+        new Request("https://auto.example/api/auto/triggers", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            triggerBody({
+              type: "run_completed",
+              config: {},
+              mapping: { promptTemplate: "Chain off {{runId}} ({{status}})" }
+            })
+          )
+        })
+      )
+    ).json()) as { id: string };
+
+    // Sweep 1: BASELINE — the poller acknowledges "now"; nothing fires.
+    const first = await callSweep();
+    expect(first.pollSweep.runCompleted.processed).toBe(1);
+    expect(storageRef.current.state.runs).toHaveLength(0);
+
+    // A run reaches terminal AFTER the baseline mark.
+    storageRef.current.state.runs.push({
+      id: "upstream-run",
+      userId: "user-1",
+      kitRef: LOCAL_KIT,
+      status: "succeeded",
+      finishedAt: new Date(Date.now() + 60_000).toISOString(),
+      input: { prompt: "original work" },
+      result: { output: "Upstream summary." }
+    });
+
+    const second = await callSweep();
+    expect(second.pollSweep.runCompleted.dispatched).toBe(1);
+    const chained = storageRef.current.state.runs.find((r) => r.triggerId === created.id)!;
+    expect(chained).toBeTruthy();
+    expect((chained.input as { prompt: string }).prompt).toBe("Chain off upstream-run (succeeded)");
+    // The loop-guard carrier: depth 1 persisted through the REAL startRun path.
+    expect((chained.input as { event: unknown }).event).toEqual({
+      name: "run_completed",
+      chainDepth: 1
+    });
+    const payload = JSON.parse(
+      (chained.input as { files: { content: string }[] }).files[0]!.content
+    ) as { chainDepth: number; runId: string; summary: string };
+    expect(payload).toMatchObject({ runId: "upstream-run", chainDepth: 1, summary: "Upstream summary." });
+
+    // Sweep 3: no dupe — but note the CHAINED run itself is now terminal-free
+    // (queued), so nothing new fires either.
+    const third = await callSweep();
+    expect(third.pollSweep.runCompleted.dispatched).toBe(0);
+  });
+
+  it("error isolation: a broken watch connection + an SSRF-blocked feed never kill the sweep or each other", async () => {
+    process.env.AUTO_WORKER_SERVICE_KEY = SWEEP_KEY;
+    seedApproval();
+    const { POST: createRoute } = await import("@/app/api/auto/triggers/route");
+    const mk = async (body: Record<string, unknown>) =>
+      (await (
+        await createRoute(
+          new Request("https://auto.example/api/auto/triggers", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(triggerBody(body))
+          })
+        )
+      ).json()) as { id: string };
+
+    const watch = await mk({
+      type: "watch",
+      config: { connectionId: "does-not-exist" },
+      mapping: { promptTemplate: "w {{key}}" }
+    });
+    const rss = await mk({
+      type: "rss",
+      config: { feedUrl: "https://internal.example.com/feed.xml" },
+      mapping: { promptTemplate: "r {{title}}" }
+    });
+    await mk({ type: "run_completed", config: {}, mapping: { promptTemplate: "c {{runId}}" } });
+
+    const eventsMod = await import("@/server/core/auto-events");
+    const fetchCalls: string[] = [];
+    eventsMod.setTriggerPollOverridesForTests({
+      resolver: async () => ["10.0.0.8"], // private → SSRF-rejected
+      fetchImpl: async (url) => {
+        fetchCalls.push(url);
+        return { status: 200, headers: { forEach: () => {} }, text: async () => "<rss/>" };
+      }
+    });
+
+    const body = await callSweep();
+    // Both failures isolated per trigger; the endpoint stayed 200.
+    expect(body.pollSweep.watch.errors).toHaveLength(1);
+    expect(body.pollSweep.rss.errors).toHaveLength(1);
+    expect(fetchCalls).toHaveLength(0); // the SSRF guard fired BEFORE any request
+    // run_completed still baselined despite the sibling failures.
+    expect(body.pollSweep.runCompleted.processed).toBe(1);
+    expect(storageRef.current.state.runs).toHaveLength(0);
+    // Each failure produced an "error" fire-log row + a circuit count.
+    expect(storageRef.current.state.fireLogs.get(watch.id)![0]!.outcome).toBe("error");
+    expect(storageRef.current.state.fireLogs.get(rss.id)![0]!.outcome).toBe("error");
+    expect(
+      (storageRef.current.state.triggers.get(watch.id)!.circuit as { consecutiveFailures: number })
+        .consecutiveFailures
+    ).toBe(1);
   });
 });

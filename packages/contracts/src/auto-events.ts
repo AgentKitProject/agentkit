@@ -533,13 +533,23 @@ export const watchTriggerConfigSchema = z.object({
   /** Optional filename pattern (literal-safe, like filter "matches"). */
   pattern: z.string().min(1).nullable().optional(),
   /** One run per new file, or one run per detected batch. */
-  batchMode: z.enum(["per_file", "per_batch"]).default("per_file")
+  batchMode: z.enum(["per_file", "per_batch"]).default("per_file"),
+  /** Poll cadence in minutes (the sweep skips the trigger until due). */
+  intervalMinutes: z.number().int().min(1).max(1440).default(5),
+  /**
+   * First-sweep behavior: false (default) = the first sweep only BASELINES the
+   * watched prefix (no event storm on a pre-populated bucket); true = existing
+   * objects fire as new (still subject to the per-sweep cap).
+   */
+  includeExisting: z.boolean().default(false)
 });
 export type WatchTriggerConfig = z.infer<typeof watchTriggerConfigSchema>;
 
 /** config for type "rss" (poll a feed for new entries). */
 export const rssTriggerConfigSchema = z.object({
-  feedUrl: httpsUrlSchema
+  feedUrl: httpsUrlSchema,
+  /** Poll cadence in minutes (feeds are polled gently: minimum 5). */
+  intervalMinutes: z.number().int().min(5).max(1440).default(15)
 });
 export type RssTriggerConfig = z.infer<typeof rssTriggerConfigSchema>;
 

@@ -1196,6 +1196,11 @@ export async function startRun(input: {
   /** The unified Trigger (event-driven expansion) that produced this run.
    *  Persisted on the run for provenance (contracts autoRunSchema.triggerId). */
   triggerId?: string;
+  /** Structured trigger-event metadata persisted onto run.input.event
+   *  (contracts autoRunInputSchema.event) — e.g. { name, chainDepth } for
+   *  run_completed chain fires (Wave 3b loop guard). DATA only, never
+   *  instructions (S1). */
+  event?: unknown;
   /** Per-run inference-mode override ("managed" | "byo"). Absent → the user's
    *  account preference applies. A protected/paid kit ignores this (forced
    *  managed). */
@@ -1324,7 +1329,10 @@ export async function startRun(input: {
     kitRef: input.kitRef,
     input: {
       prompt: input.prompt,
-      ...(input.files && input.files.length > 0 ? { files: input.files } : {})
+      ...(input.files && input.files.length > 0 ? { files: input.files } : {}),
+      // Wave 3b: trigger-event metadata (e.g. run_completed chainDepth) rides
+      // on run.input.event so chain hops can read it back (loop guard).
+      ...(input.event !== undefined ? { event: input.event } : {})
     },
     budgetCents: effectiveBudgetCents,
     model,

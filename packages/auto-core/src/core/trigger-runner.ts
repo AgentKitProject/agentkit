@@ -99,6 +99,13 @@ export interface TriggerEventInput {
   payload?: unknown;
   /** ISO of when the event was received — the fire clock. */
   receivedAt: string;
+  /**
+   * run_completed chain depth (Wave 3b kit-chaining). When present it is
+   * stamped onto the created run's input.event so the NEXT chain hop can read
+   * it back (chainDepthOfRun) — the loop guard's carrier. Absent for every
+   * non-chain fire.
+   */
+  chainDepth?: number;
 }
 
 /** Dependencies for the trigger consume path (all injected). */
@@ -263,8 +270,13 @@ export async function consumeTriggerEvent(
       return log;
     }
 
-    // (f) fire: build the S1-safe run input and dispatch.
+    // (f) fire: build the S1-safe run input and dispatch. A chain fire stamps
+    // its depth onto input.event (metadata, not payload) so the created run
+    // carries it for the next run_completed hop's loop guard.
     const input = buildRunInput(trigger.mapping, event.payload, event.name);
+    if (event.chainDepth !== undefined) {
+      input.event = { name: event.name, chainDepth: event.chainDepth };
+    }
     const run = await deps.createAndDispatch({ trigger, input, firedAt: at });
     const log = await appendLog("run_created", null, run.id);
     await deps.triggers.resetCircuit(trigger.id);
