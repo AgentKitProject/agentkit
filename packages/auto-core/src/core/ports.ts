@@ -33,12 +33,14 @@ import type {
   CreateApprovalInput,
   CreateConnectionInput,
   CreateEventSourceInput,
+  CreatePendingApprovalInput,
   CreateRunInput,
   CreateScheduleInput,
   CreateTriggerInput,
   CreateWebhookInput,
   EventSource,
   KitRef,
+  PendingTriggerApproval,
   ReceivedEvent,
   Trigger,
   TriggerFireLog,
@@ -503,6 +505,41 @@ export interface FireLogRepository {
 }
 
 // ---------------------------------------------------------------------------
+// PendingApprovalRepository (Wave 4 — held requireApproval fires)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists HELD trigger fires awaiting an explicit Approve/Deny (Wave 4
+ * `requireApproval`).
+ *
+ * INVARIANTS:
+ *   - `tokenHash` is stored verbatim; the one-time plaintext approval token is
+ *     NEVER persisted (S2 — mirrors EventSource.tokenHash).
+ *   - resolvePending flips status ONLY from "pending" (a second Approve click,
+ *     a Deny after Approve, or an expiry race returns undefined — the fire can
+ *     never execute twice). S4: approve re-presents the held event through the
+ *     FULL gate chain; nothing here touches in-flight runs.
+ */
+export interface PendingApprovalRepository {
+  createPending(input: CreatePendingApprovalInput): Promise<PendingTriggerApproval>;
+  getPending(pendingId: string): Promise<PendingTriggerApproval | undefined>;
+  /** Callback auth lookup: the pending row whose tokenHash matches (the caller
+   *  hashes the presented one-time token — comparison happens on hashes). */
+  findByTokenHash(tokenHash: string): Promise<PendingTriggerApproval | undefined>;
+  /**
+   * Atomically resolves a PENDING row to approved/denied/expired, stamping
+   * resolvedAt. Returns the updated row, or undefined when the row is missing
+   * OR already resolved (single-consume guarantee).
+   */
+  resolvePending(
+    pendingId: string,
+    status: "approved" | "denied" | "expired",
+    resolvedAt: string,
+  ): Promise<PendingTriggerApproval | undefined>;
+  deletePending(pendingId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
 // Composed dependency bundle
 // ---------------------------------------------------------------------------
 
@@ -525,6 +562,12 @@ export interface EventStorageDeps {
   /** Non-secret Connection records (credentials live in `secrets` behind the
    *  opaque secretRef — S2). Both persistent adapters populate it. */
   connections: ConnectionRepository;
+  /**
+   * Wave 4: held requireApproval fires. OPTIONAL for backward compatibility
+   * with existing fakes/stubs (both persistent adapters populate it); when
+   * absent, requireApproval triggers FAIL CLOSED (error fire log, no run).
+   */
+  pendingApprovals?: PendingApprovalRepository;
 }
 
 /** The storage-layer dependencies, produced by makeAutoDeps({ backend }). */

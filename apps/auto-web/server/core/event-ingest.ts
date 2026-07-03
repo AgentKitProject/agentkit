@@ -26,15 +26,25 @@
 import {
   EVENT_PAYLOAD_MAX_BYTES,
   extractSnsSubscribeConfirmation,
+  parseApprovalCallback,
+  parseSlackInteractionPayload,
+  verifyDiscord,
   verifyGithub,
   verifySlack,
   verifySnsMessage,
   verifySourceToken,
   verifyStripe,
+  verifyTelegram,
   type EventSource,
+  type MessagePlatform,
+  type ResolvePendingApprovalResult,
 } from "@agentkitforge/auto-core";
 import { autoErrorCodeSchema, eventNameSchema } from "@agentkitforge/contracts";
-import { fanOutEvent, getEventStorage } from "@/server/core/auto-events";
+import {
+  fanOutEvent,
+  getEventStorage,
+  resolveApprovalFromCallback,
+} from "@/server/core/auto-events";
 
 // ---------------------------------------------------------------------------
 // Constants (exported)
@@ -186,6 +196,26 @@ async function authenticate(
         { now: nowIso },
       );
     }
+    case "telegram": {
+      // Telegram webhook mode: the registered secret_token is echoed back in
+      // this header on every update (constant-time compare vs the stored
+      // signing secret). NO long-poll daemon exists — webhook only.
+      const secret = await revealSigningSecret(source);
+      if (secret === undefined) return false;
+      return verifyTelegram(request.headers.get("x-telegram-bot-api-secret-token"), secret);
+    }
+    case "discord": {
+      // Discord interactions endpoint: ed25519 over timestamp+rawBody. The
+      // source's "signing secret" is the application PUBLIC KEY (hex).
+      const secret = await revealSigningSecret(source);
+      if (secret === undefined) return false;
+      return verifyDiscord(
+        request.headers.get("x-signature-ed25519"),
+        request.headers.get("x-signature-timestamp"),
+        rawBody,
+        secret,
+      );
+    }
     case "sns": {
       let message: unknown;
       try {
@@ -212,6 +242,119 @@ async function revealSigningSecret(source: EventSource): Promise<string | undefi
     // Unconfigured/failed secret storage = cannot verify = uniform reject.
     return undefined;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wave 4: messaging control-plane (handshakes + Approve/Deny callbacks)
+// ---------------------------------------------------------------------------
+
+function approvalAckText(result: ResolvePendingApprovalResult): string {
+  switch (result.outcome) {
+    case "approved":
+      return result.runId !== undefined
+        ? `Approved — run ${result.runId} started.`
+        : `Approved — but no run started (${result.fireLog?.outcome ?? "gated"}).`;
+    case "denied":
+      return "Denied — the run will not start.";
+    case "expired":
+      return "This approval expired before it was actioned.";
+    default:
+      return "This approval is no longer actionable.";
+  }
+}
+
+/**
+ * Handles the SIGNATURE-VERIFIED provider control-plane requests that must
+ * never become events:
+ *   - slack `url_verification` → challenge echo (Events API handshake);
+ *   - discord PING (type 1) → PONG (interactions endpoint validation);
+ *   - Approve/Deny button callbacks (slack block_actions / telegram
+ *     callback_query / discord component interaction) → pre-run approval
+ *     resolution via the SAME server-side mechanism the hold created
+ *     (resolveApprovalFromCallback → resolvePendingApprovalToken).
+ * Returns null when the request is a REGULAR event (falls through to the
+ * normal ring-buffer + fan-out pipeline). Runs AFTER auth: only verified
+ * requests reach here (the documented handshakes are not a new
+ * unauthenticated surface — they are signed like every other request).
+ */
+async function handleMessagingControlPlane(
+  source: EventSource,
+  platform: MessagePlatform,
+  rawBody: string,
+): Promise<Response | null> {
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    json = undefined;
+  }
+  const body =
+    json !== null && typeof json === "object" ? (json as Record<string, unknown>) : undefined;
+
+  if (platform === "slack") {
+    if (body !== undefined && body["type"] === "url_verification") {
+      const challenge = body["challenge"];
+      return Response.json(
+        { challenge: typeof challenge === "string" ? challenge : "" },
+        { status: 200 },
+      );
+    }
+    // Interactivity arrives form-encoded (payload=<json>) — never an event.
+    const interaction = parseSlackInteractionPayload(rawBody);
+    if (interaction !== null) {
+      const callback = parseApprovalCallback("slack", interaction);
+      if (callback !== null) {
+        const result = await resolveApprovalFromCallback(source, callback.decision, callback.token);
+        return Response.json(
+          { response_type: "ephemeral", text: approvalAckText(result) },
+          { status: 200 },
+        );
+      }
+      return Response.json(
+        { response_type: "ephemeral", text: "Nothing to do." },
+        { status: 200 },
+      );
+    }
+    return null;
+  }
+
+  if (platform === "telegram") {
+    const callback = parseApprovalCallback("telegram", json);
+    if (callback !== null) {
+      const result = await resolveApprovalFromCallback(source, callback.decision, callback.token);
+      // Webhook-reply: answer the callback query inline (no bot-token call).
+      const cq = body?.["callback_query"];
+      const cqId =
+        cq !== null && typeof cq === "object" ? (cq as { id?: unknown }).id : undefined;
+      return Response.json(
+        typeof cqId === "string"
+          ? { method: "answerCallbackQuery", callback_query_id: cqId, text: approvalAckText(result) }
+          : {},
+        { status: 200 },
+      );
+    }
+    // A foreign callback_query (not our buttons) is acked without an event.
+    if (body?.["callback_query"] !== undefined) return Response.json({}, { status: 200 });
+    return null;
+  }
+
+  // discord
+  if (body !== undefined && body["type"] === 1) {
+    return Response.json({ type: 1 }, { status: 200 }); // PING → PONG
+  }
+  const callback = parseApprovalCallback("discord", json);
+  if (callback !== null) {
+    const result = await resolveApprovalFromCallback(source, callback.decision, callback.token);
+    return Response.json(
+      { type: 4, data: { content: approvalAckText(result), flags: 64 } },
+      { status: 200 },
+    );
+  }
+  // A foreign component interaction is acked (deferred update) without an event.
+  if (body !== undefined && body["type"] === 3) {
+    return Response.json({ type: 6 }, { status: 200 });
+  }
+  return null;
 }
 
 /**
@@ -283,6 +426,18 @@ export async function handleEventIngest(
   const authed = await authenticate(source, request, url, rawBody, receivedAt);
   if (!authed) return UNAUTHORIZED();
 
+  // (b2) Wave 4 messaging control-plane: handshakes (slack url_verification /
+  // discord PING) and Approve/Deny callbacks. Signature-verified above; NEVER
+  // stored as events and never fanned out. Handled BEFORE the L2 limiter so a
+  // provider's endpoint-validation probe can never 429 during setup.
+  if (
+    source.kind === "provider" &&
+    (source.provider === "slack" || source.provider === "telegram" || source.provider === "discord")
+  ) {
+    const control = await handleMessagingControlPlane(source, source.provider, rawBody);
+    if (control !== null) return control;
+  }
+
   // (c) L2 rate limit: per source, then per user (sum across sources). REJECT
   // with Retry-After — never queue.
   const bySource = sourceLimiter.take(`src:${source.id}`);
@@ -331,6 +486,20 @@ export async function handleEventIngest(
   // ALREADY stored — a filtered/suppressed fan-out never loses the event.
   await fanOutEvent(source, nameParsed.data, payload, receivedAt);
 
-  // (g) contracts emitEventResponseSchema.
+  // (g) contracts emitEventResponseSchema — EXCEPT discord slash commands
+  // (type 2), which must be answered in Discord's interaction-response format
+  // within 3s (an ephemeral ack; the run reports back via message_reply).
+  if (source.kind === "provider" && source.provider === "discord") {
+    const parsedType =
+      payload !== null && typeof payload === "object"
+        ? (payload as { type?: unknown }).type
+        : undefined;
+    if (parsedType === 2) {
+      return Response.json(
+        { type: 4, data: { content: "AgentKitAuto: event accepted.", flags: 64 } },
+        { status: 200 },
+      );
+    }
+  }
   return Response.json({ accepted: true, eventId: event.id }, { status: 202 });
 }

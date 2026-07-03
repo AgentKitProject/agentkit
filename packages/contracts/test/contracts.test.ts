@@ -98,6 +98,13 @@ import {
   triggerFireOutcomeSchema,
   canStartRunRequestSchema,
   canStartRunResponseSchema,
+  eventSourceProviderSchema,
+  connectionTypeSchema,
+  emailInTriggerConfigSchema,
+  messageTriggerConfigSchema,
+  pendingTriggerApprovalSchema,
+  EMAIL_IN_BODY_MAX_CHARS,
+  PENDING_APPROVAL_TTL_MINUTES,
   CAN_START_FAIL_CLOSED_MODES,
   EVENT_PAYLOAD_MAX_BYTES,
   MAPPING_FIELD_INTERPOLATION_MAX_CHARS,
@@ -1001,12 +1008,19 @@ describe("contracts", () => {
       config: { kitRef: { source: "market", marketKitId: "k2" } }
     });
     assert.deepEqual(chained.config.statuses, ["succeeded"]); // default
-    triggerSchema.parse({ ...baseTrigger, type: "email_in", config: {} });
-    triggerSchema.parse({
+    const emailIn = triggerSchema.parse({ ...baseTrigger, type: "email_in", config: {} });
+    assert.deepEqual(emailIn.config.allowedFrom, []); // default: owner-only allowlist
+    assert.equal(emailIn.requireApproval, false); // Wave 4 default
+    const message = triggerSchema.parse({
       ...baseTrigger,
       type: "message",
-      config: { connectionId: "c1", scope: "mention" }
+      config: { platform: "slack", sourceId: "src1", connectionId: "c1", scope: "mention" }
     });
+    assert.equal(message.config.scope, "mention");
+    // Wave 4: message config requires platform + sourceId.
+    assert.throws(() =>
+      triggerSchema.parse({ ...baseTrigger, type: "message", config: { connectionId: "c1", scope: "mention" } })
+    );
     // Wrong/mismatched config rejects.
     assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "event", config: { cron: "0 9 * * 1" } }));
     assert.throws(() => triggerSchema.parse({ ...baseTrigger, type: "rss", config: { feedUrl: "http://insecure.example.com/feed" } }));
@@ -1069,7 +1083,70 @@ describe("contracts", () => {
     destinationSchema.parse({ type: "slack_incoming", url: "https://hooks.slack.com/services/T/B/x" });
     const conn = destinationSchema.parse({ type: "connection", connectionId: "c1", path: "reports/" });
     assert.equal(conn.type === "connection" ? conn.what : undefined, "both"); // default
+    // Wave 4: message_reply posts the summary back to the originating message.
+    const reply = destinationSchema.parse({ type: "message_reply", connectionId: "c1" });
+    assert.equal(reply.type === "message_reply" ? reply.replyToOrigin : undefined, true); // default
+    assert.throws(() => destinationSchema.parse({ type: "message_reply", connectionId: "" }));
+    assert.throws(() => destinationSchema.parse({ type: "message_reply", connectionId: "c1", replyToOrigin: false }));
     assert.throws(() => destinationSchema.parse({ type: "ftp", url: "https://x.example" }));
+  });
+
+  // --- Wave 4: email-in + conversational messaging --------------------------
+
+  it("email_in config: server-owned addressSlug shape; allowedFrom bounds", () => {
+    const cfg = emailInTriggerConfigSchema.parse({
+      addressSlug: "kit-ab12cd34",
+      address: "kit-ab12cd34@in.agentkitproject.com",
+      allowedFrom: ["boss@example.com"]
+    });
+    assert.equal(cfg.addressSlug, "kit-ab12cd34");
+    assert.throws(() => emailInTriggerConfigSchema.parse({ addressSlug: "Bad Slug!" }));
+    assert.throws(() => emailInTriggerConfigSchema.parse({ allowedFrom: ["not-an-email"] }));
+    assert.throws(() =>
+      emailInTriggerConfigSchema.parse({
+        allowedFrom: Array.from({ length: 21 }, (_, i) => `u${i}@example.com`)
+      })
+    );
+    assert.equal(EMAIL_IN_BODY_MAX_CHARS, 32_768);
+  });
+
+  it("message config: platform enum; provider + bot connection types exist", () => {
+    for (const platform of ["slack", "telegram", "discord"] as const) {
+      messageTriggerConfigSchema.parse({ platform, sourceId: "src1" });
+      eventSourceProviderSchema.parse(platform === "slack" ? "slack" : platform);
+    }
+    const cfg = messageTriggerConfigSchema.parse({ platform: "slack", sourceId: "src1" });
+    assert.equal(cfg.scope, "channel"); // default
+    assert.throws(() => messageTriggerConfigSchema.parse({ platform: "irc", sourceId: "src1" }));
+    assert.throws(() =>
+      messageTriggerConfigSchema.parse({
+        platform: "slack",
+        sourceId: "src1",
+        events: Array.from({ length: 11 }, (_, i) => `e${i}`)
+      })
+    );
+    // Bot connection types carry tokens ONLY via the SecretStore (S2).
+    for (const t of ["slack_bot", "telegram_bot", "discord_bot"]) connectionTypeSchema.parse(t);
+  });
+
+  it("pending approval: token stored hashed; held event round-trips; outcomes exist", () => {
+    const pending = pendingTriggerApprovalSchema.parse({
+      id: "pa1",
+      triggerId: "t1",
+      userId: "u1",
+      tokenHash: "ab".repeat(32),
+      event: { name: "app_mention", payload: { text: "deploy please" }, receivedAt: "2026-07-03T00:00:00.000Z" },
+      status: "pending",
+      createdAt: "2026-07-03T00:00:00.000Z",
+      expiresAt: "2026-07-03T01:00:00.000Z"
+    });
+    assert.equal(pending.status, "pending");
+    assert.throws(() =>
+      pendingTriggerApprovalSchema.parse({ ...pending, status: "granted" })
+    );
+    triggerFireOutcomeSchema.parse("awaiting_approval");
+    triggerFireOutcomeSchema.parse("approval_denied");
+    assert.equal(PENDING_APPROVAL_TTL_MINUTES, 60);
   });
 
   it("trigger create/patch requests mirror the record patterns", () => {

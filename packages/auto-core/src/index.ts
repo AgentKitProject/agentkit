@@ -74,12 +74,18 @@ export type {
   ConnectionType,
   CreateConnectionInput,
   CreateEventSourceInput,
+  CreatePendingApprovalInput,
   CreateTriggerInput,
   CreateTriggerRequest,
   Destination,
+  EmailInTriggerConfig,
   EventSource,
   EventSourceKind,
   EventSourceProvider,
+  MessagePlatform,
+  MessageTriggerConfig,
+  PendingApprovalStatus,
+  PendingTriggerApproval,
   PublicEventSource,
   ReceivedEvent,
   ReceivedEventDelivery,
@@ -102,9 +108,11 @@ export type {
 } from "./core/types.js";
 export {
   CAN_START_FAIL_CLOSED_MODES,
+  EMAIL_IN_BODY_MAX_CHARS,
   EVENT_PAYLOAD_MAX_BYTES,
   MAPPING_FIELD_INTERPOLATION_MAX_CHARS,
   MAPPING_TOTAL_PROMPT_MAX_CHARS,
+  PENDING_APPROVAL_TTL_MINUTES,
   autoRunOutputFileSchema,
   canStartRunReasonSchema,
   canStartRunRequestSchema,
@@ -119,6 +127,12 @@ export {
   eventSourceKindSchema,
   eventSourceProviderSchema,
   eventSourceSchema,
+  emailAddressSlugSchema,
+  emailInTriggerConfigSchema,
+  messagePlatformSchema,
+  messageTriggerConfigSchema,
+  pendingApprovalStatusSchema,
+  pendingTriggerApprovalSchema,
   publicEventSourceSchema,
   receivedEventSchema,
   runTerminalStatusSchema,
@@ -149,6 +163,7 @@ export type {
   InputStore,
   OutboundEmail,
   OutputStore,
+  PendingApprovalRepository,
   ReceivedEventRepository,
   ScheduleRunResult,
   SecretStore,
@@ -214,11 +229,13 @@ export type { FilterEvaluation, ResolvedPath } from "./core/mapping-evaluator.js
 export {
   extractSnsSubscribeConfirmation,
   isValidSnsHost,
+  verifyDiscord,
   verifyGithub,
   verifySlack,
   verifySnsMessage,
   verifySourceToken,
   verifyStripe,
+  verifyTelegram,
 } from "./core/signature-verifiers.js";
 export type {
   SnsCertFetch,
@@ -232,6 +249,56 @@ export {
   consumeTriggerEvent,
   runDueScheduleTriggers,
 } from "./core/trigger-runner.js";
+export { resolvePendingApprovalToken } from "./core/pending-approval.js";
+export type { ResolvePendingApprovalResult } from "./core/pending-approval.js";
+
+// ---- Conversational messaging (Wave 4: slack / telegram / discord) --------
+export {
+  APPROVAL_CALLBACK_PREFIX,
+  PLATFORM_POST_MAX_CHARS,
+  PLATFORM_POST_TIMEOUT_MS,
+  botConnectionTypeFor,
+  buildApprovalCallbackData,
+  defaultTargetFromConnectionConfig,
+  messageTriggerMatches,
+  normalizeMessageEvent,
+  originFromMessagePayload,
+  parseApprovalCallback,
+  parseApprovalCallbackData,
+  parseSlackInteractionPayload,
+  platformOfBotConnectionType,
+  postPlatformMessage,
+} from "./core/messaging.js";
+export type {
+  ApprovalCallback,
+  MessageOrigin,
+  NormalizedMessageEvent,
+  PlatformPostArgs,
+  PlatformPostResult,
+  PlatformPostTarget,
+} from "./core/messaging.js";
+
+// ---- Email-in poller (Wave 4: SES inbound → S3; IMAP = clean skip) --------
+export {
+  EMAIL_IN_MAX_EVENTS_PER_SWEEP,
+  EMAIL_IN_MAX_FETCHES_PER_SWEEP,
+  EMAIL_IN_MAX_LIST_OBJECTS,
+  EMAIL_IN_MAX_OBJECT_BYTES,
+  EMAIL_IN_POLL_INTERVAL_MINUTES,
+  EMAIL_IN_SEEN_KEYS_MAX,
+  extractAddresses,
+  parseInboundEmail,
+  runEmailInPollSweep,
+} from "./core/email-in-poller.js";
+export type {
+  EmailInCursor,
+  EmailInPollDeps,
+  EmailInboxConfig,
+  InboxGetFn,
+  InboxListFn,
+  InboxObjectSummary,
+  ParsedInboundEmail,
+} from "./core/email-in-poller.js";
 export type {
   CanStartRun,
   ConsumeTriggerEventDeps,
@@ -461,6 +528,7 @@ export {
   DynamoConnectionRepository,
   DynamoEventSourceRepository,
   DynamoFireLogRepository,
+  DynamoPendingApprovalRepository,
   DynamoReceivedEventRepository,
   DynamoSecretStore,
   DynamoTriggerRepository,
@@ -498,6 +566,7 @@ export {
   PostgresConnectionRepository,
   PostgresEventSourceRepository,
   PostgresFireLogRepository,
+  PostgresPendingApprovalRepository,
   PostgresReceivedEventRepository,
   PostgresSecretStore,
   PostgresTriggerRepository,

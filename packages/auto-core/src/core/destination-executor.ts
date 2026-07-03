@@ -19,6 +19,10 @@
  *                      10s timeout, 64 KiB body: summary + presigned links).
  *   - slack_incoming → Slack-format `{ text }` POST (SSRF-guarded like
  *                      webhook_out; https-only).
+ *   - message_reply  → Wave 4: posts the summary back to the ORIGINATING
+ *                      message (run.input.event.origin) via a bot connection
+ *                      (slack_bot/telegram_bot/discord_bot; token from the
+ *                      SecretStore, revealed harness-side only).
  *   - connection     → s3: server-side copy of persisted outputs into the
  *                      connection's bucket/prefix using SecretStore-revealed
  *                      creds (bounded by the run-output caps);
@@ -58,6 +62,11 @@ import {
   isOAuthProvider,
   type OAuthProvidersConfig,
 } from "./oauth-connections.js";
+import {
+  platformOfBotConnectionType,
+  postPlatformMessage,
+  type MessageOrigin,
+} from "./messaging.js";
 
 /** Max output-file LINKS included in an email destination body. */
 export const DESTINATION_EMAIL_MAX_LINKS = 3;
@@ -293,19 +302,120 @@ async function sendWebhookDestination(
   return postGuardedJson(deps, url, body, headers);
 }
 
+/** Builds the compact chat summary shared by slack_incoming + message_reply. */
+async function buildChatSummaryText(
+  args: ExecuteDestinationsArgs,
+  linkFormat: "slack" | "plain",
+): Promise<string> {
+  const { run, result, deps, outputFiles } = args;
+  const kit = kitRefLabel(run);
+  const links = await presignLinks(outputFiles, deps.outputStore, DESTINATION_EMAIL_MAX_LINKS);
+  const linkLines = links
+    .map((l) => (linkFormat === "slack" ? `• <${l.url}|${l.path}>` : `• ${l.path}: ${l.url}`))
+    .join("\n");
+  return (
+    `*[AgentKitAuto]* ${kit} run *${result.status}* (run ${run.id})\n` +
+    `${truncate(result.output ?? "", 1000)}` +
+    (linkLines ? `\n${linkLines}` : "")
+  );
+}
+
 async function sendSlackDestination(
   args: ExecuteDestinationsArgs,
   url: string,
 ): Promise<ChannelResult> {
-  const { run, result, deps, outputFiles } = args;
-  const kit = kitRefLabel(run);
-  const links = await presignLinks(outputFiles, deps.outputStore, DESTINATION_EMAIL_MAX_LINKS);
-  const linkLines = links.map((l) => `• <${l.url}|${l.path}>`).join("\n");
-  const text =
-    `*[AgentKitAuto]* ${kit} run *${result.status}* (run ${run.id})\n` +
-    `${truncate(result.output ?? "", 1000)}` +
-    (linkLines ? `\n${linkLines}` : "");
-  return postGuardedJson(deps, url, JSON.stringify({ text }), {});
+  const text = await buildChatSummaryText(args, "slack");
+  return postGuardedJson(args.deps, url, JSON.stringify({ text }), {});
+}
+
+/** Minimal shape check: run.input.event.origin as stamped by the message
+ *  fan-out (trigger-runner). Undefined for non-message-fired runs. */
+function originOfRun(run: AutoRun): MessageOrigin | undefined {
+  const event = (run.input as { event?: unknown } | undefined)?.event;
+  if (event === null || typeof event !== "object") return undefined;
+  const origin = (event as { origin?: unknown }).origin;
+  if (origin === null || typeof origin !== "object") return undefined;
+  const o = origin as Record<string, unknown>;
+  if (o["platform"] === "slack" && typeof o["channel"] === "string") {
+    return {
+      platform: "slack",
+      channel: o["channel"],
+      threadTs: typeof o["threadTs"] === "string" ? o["threadTs"] : "",
+    };
+  }
+  if (o["platform"] === "telegram" && typeof o["chatId"] === "string") {
+    return {
+      platform: "telegram",
+      chatId: o["chatId"],
+      ...(typeof o["messageId"] === "number" ? { messageId: o["messageId"] } : {}),
+    };
+  }
+  if (o["platform"] === "discord" && typeof o["channelId"] === "string") {
+    return { platform: "discord", channelId: o["channelId"] };
+  }
+  return undefined;
+}
+
+/**
+ * Wave 4 `message_reply`: posts the run summary back to the ORIGINATING
+ * channel/thread/chat (run.input.event.origin) through a bot connection
+ * (slack_bot chat.postMessage — the thread-capable extension of the
+ * slack_incoming path — / telegram sendMessage / discord channel message).
+ * S2: the bot token is revealed from the SecretStore HERE (harness-side) and
+ * handed straight to the platform post; it never lands on any record or log.
+ */
+async function sendMessageReplyDestination(
+  args: ExecuteDestinationsArgs,
+  destination: Extract<Destination, { type: "message_reply" }>,
+): Promise<ChannelResult> {
+  const { run, deps } = args;
+  if (!deps.connections || !deps.secrets || !deps.fetchImpl) {
+    return { status: "failed", error: "No ConnectionRepository/SecretStore/fetch wired." };
+  }
+  const connection = await deps.connections.getConnection(destination.connectionId);
+  if (!connection) return { status: "failed", error: "Connection not found." };
+  if (connection.ownerType === "user" && connection.ownerId !== run.userId) {
+    return { status: "failed", error: "Connection is not owned by the run's user." };
+  }
+  const platform = platformOfBotConnectionType(connection.type);
+  if (platform === undefined) {
+    return {
+      status: "failed",
+      error: `message_reply requires a bot connection (got "${connection.type}").`,
+    };
+  }
+  const origin = originOfRun(run);
+  if (origin === undefined) {
+    return {
+      status: "skipped",
+      error: "Run carries no originating message (replyToOrigin needs a message-fired run).",
+    };
+  }
+  if (origin.platform !== platform) {
+    return {
+      status: "failed",
+      error: `Originating platform "${origin.platform}" does not match the "${connection.type}" connection.`,
+    };
+  }
+  if (!connection.secretRef) {
+    return { status: "failed", error: "Bot connection has no stored token." };
+  }
+  let botToken: string;
+  try {
+    botToken = await deps.secrets.reveal(connection.secretRef);
+  } catch (err) {
+    return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+  }
+  const text = await buildChatSummaryText(args, platform === "slack" ? "slack" : "plain");
+  const result = await postPlatformMessage({
+    target: origin,
+    botToken,
+    text,
+    fetchImpl: deps.fetchImpl,
+  });
+  return result.status === "delivered"
+    ? { status: "delivered" }
+    : { status: "failed", ...(result.error ? { error: result.error } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +739,9 @@ export async function executeDestinations(
           break;
         case "slack_incoming":
           result = await sendSlackDestination(args, destination.url);
+          break;
+        case "message_reply":
+          result = await sendMessageReplyDestination(args, destination);
           break;
         case "connection":
           result = await executeConnectionDestination(args, destination);

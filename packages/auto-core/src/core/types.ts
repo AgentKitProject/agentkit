@@ -598,9 +598,11 @@ export interface WebhookFireResult {
  */
 export {
   CAN_START_FAIL_CLOSED_MODES,
+  EMAIL_IN_BODY_MAX_CHARS,
   EVENT_PAYLOAD_MAX_BYTES,
   MAPPING_FIELD_INTERPOLATION_MAX_CHARS,
   MAPPING_TOTAL_PROMPT_MAX_CHARS,
+  PENDING_APPROVAL_TTL_MINUTES,
   autoRunOutputFileSchema,
   canStartRunReasonSchema,
   canStartRunRequestSchema,
@@ -617,7 +619,11 @@ export {
   eventSourceProviderSchema,
   eventSourceSchema,
   eventTriggerConfigSchema,
+  emailAddressSlugSchema,
+  messagePlatformSchema,
   messageTriggerConfigSchema,
+  pendingApprovalStatusSchema,
+  pendingTriggerApprovalSchema,
   publicEventSourceSchema,
   receivedEventSchema,
   rssTriggerConfigSchema,
@@ -649,6 +655,11 @@ export type {
   EventSource,
   EventSourceKind,
   EventSourceProvider,
+  EmailInTriggerConfig,
+  MessagePlatform,
+  MessageTriggerConfig,
+  PendingApprovalStatus,
+  PendingTriggerApproval,
   PublicEventSource,
   ReceivedEvent,
   ReceivedEventDelivery,
@@ -771,6 +782,20 @@ export interface UpdateConnectionInput {
   config?: ContractsConnectionConfig;
   /** Replaces the SecretStore handle (rotation); null clears it. */
   secretRef?: string | null;
+}
+
+/**
+ * Fields a PendingApprovalRepository.createPending call persists (Wave 4 —
+ * id assigned by the repository; status starts "pending"). `tokenHash` is the
+ * sha256 hex of the one-time approval token — plaintext is NEVER stored (S2).
+ */
+export interface CreatePendingApprovalInput {
+  triggerId: string;
+  userId: string;
+  tokenHash: string;
+  event: { name: string; payload?: unknown; receivedAt: string };
+  createdAt: string;
+  expiresAt: string;
 }
 
 /** One fire-log row presented for append (id assigned by the repository). */

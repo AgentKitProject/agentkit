@@ -39,6 +39,7 @@
 import type {
   AutoApprovalRepository,
   FireLogRepository,
+  PendingApprovalRepository,
   TriggerRepository,
 } from "./ports.js";
 import type {
@@ -47,13 +48,16 @@ import type {
   CanStartRunRequest,
   CanStartRunResponse,
   InferenceMode,
+  PendingTriggerApproval,
   Trigger,
   TriggerFireLog,
   TriggerFireOutcome,
 } from "./types.js";
-import { CAN_START_FAIL_CLOSED_MODES } from "./types.js";
+import { CAN_START_FAIL_CLOSED_MODES, PENDING_APPROVAL_TTL_MINUTES } from "./types.js";
 import { buildRunInput, evaluateFilters } from "./mapping-evaluator.js";
 import { nextFireAfter } from "./cron.js";
+import { generateWebhookSecret, hashWebhookSecret } from "./webhook-secret.js";
+import type { MessageOrigin } from "./messaging.js";
 
 // ---------------------------------------------------------------------------
 // Ports + shapes
@@ -106,6 +110,19 @@ export interface TriggerEventInput {
    * non-chain fire.
    */
   chainDepth?: number;
+  /**
+   * Wave 4 message fires: where the message came from. Stamped (metadata,
+   * never instructions) onto the created run's input.event.origin so
+   * message_reply destinations can post back to the originating
+   * channel/thread/chat.
+   */
+  origin?: MessageOrigin;
+  /**
+   * Wave 4: this event was ALREADY explicitly approved (a held requireApproval
+   * fire being re-presented after an Approve). Skips the hold gate ONLY —
+   * every other gate re-runs (S4: fresh gated run per event).
+   */
+  preApproved?: boolean;
 }
 
 /** Dependencies for the trigger consume path (all injected). */
@@ -123,6 +140,23 @@ export interface ConsumeTriggerEventDeps {
    * mode — so an unwired mode can never widen spending.
    */
   inferenceMode?: InferenceMode;
+  /**
+   * Wave 4: held requireApproval fires. When ABSENT, requireApproval triggers
+   * FAIL CLOSED — an "error" fire log, never an unapproved run.
+   */
+  pendingApprovals?: PendingApprovalRepository;
+  /**
+   * Wave 4: the approval-prompt sender (app-wired — posts the Approve/Deny
+   * message through the trigger's bot connection). Best-effort: a send failure
+   * leaves the hold in place (it simply expires unactioned). Receives the ONLY
+   * copy of the plaintext one-time token (S2: only its hash is persisted).
+   */
+  onApprovalRequested?: (
+    pending: PendingTriggerApproval,
+    plaintextToken: string,
+    trigger: Trigger,
+    event: TriggerEventInput,
+  ) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,12 +304,56 @@ export async function consumeTriggerEvent(
       return log;
     }
 
+    // (e2) Wave 4 pre-run approval hold: a requireApproval trigger that passed
+    // every gate is HELD (never dispatched) until an explicit Approve — which
+    // re-presents the event with preApproved (S4: the whole chain re-runs; the
+    // hold is the only gate skipped). Fails CLOSED when no pending store is
+    // wired: an unapproved run must never start.
+    if (trigger.requireApproval === true && event.preApproved !== true) {
+      if (!deps.pendingApprovals) {
+        const log = await appendLog(
+          "error",
+          "requireApproval is set but pre-run approvals are not available on this instance.",
+        );
+        await recordFailureAndMaybePause(deps, trigger.id, at);
+        return log;
+      }
+      const token = generateWebhookSecret();
+      const pending = await deps.pendingApprovals.createPending({
+        triggerId: trigger.id,
+        userId: trigger.userId,
+        tokenHash: hashWebhookSecret(token),
+        event: { name: event.name, payload: event.payload, receivedAt: at },
+        createdAt: at,
+        expiresAt: new Date(Date.parse(at) + PENDING_APPROVAL_TTL_MINUTES * 60_000).toISOString(),
+      });
+      let promptDetail = "Held for pre-run approval.";
+      if (deps.onApprovalRequested) {
+        try {
+          await deps.onApprovalRequested(pending, token, trigger, event);
+        } catch (err) {
+          // Best-effort: an unsendable prompt leaves the hold to expire.
+          promptDetail = `Held for pre-run approval (prompt not delivered: ${
+            err instanceof Error ? err.message : String(err)
+          }).`;
+        }
+      } else {
+        promptDetail = "Held for pre-run approval (no prompt channel configured).";
+      }
+      return await appendLog("awaiting_approval", promptDetail);
+    }
+
     // (f) fire: build the S1-safe run input and dispatch. A chain fire stamps
     // its depth onto input.event (metadata, not payload) so the created run
-    // carries it for the next run_completed hop's loop guard.
+    // carries it for the next run_completed hop's loop guard; a message fire
+    // stamps its origin so message_reply destinations can post back.
     const input = buildRunInput(trigger.mapping, event.payload, event.name);
-    if (event.chainDepth !== undefined) {
-      input.event = { name: event.name, chainDepth: event.chainDepth };
+    if (event.chainDepth !== undefined || event.origin !== undefined) {
+      input.event = {
+        name: event.name,
+        ...(event.chainDepth !== undefined ? { chainDepth: event.chainDepth } : {}),
+        ...(event.origin !== undefined ? { origin: event.origin } : {}),
+      };
     }
     const run = await deps.createAndDispatch({ trigger, input, firedAt: at });
     const log = await appendLog("run_created", null, run.id);

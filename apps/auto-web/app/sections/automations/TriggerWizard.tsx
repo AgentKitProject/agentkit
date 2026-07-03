@@ -384,6 +384,8 @@ export function TriggerWizard({
         return `Slack → ${d.url}`;
       case "connection":
         return `Connection → ${d.connectionId}`;
+      case "message_reply":
+        return `Reply in thread → ${d.connectionId}`;
     }
   };
 

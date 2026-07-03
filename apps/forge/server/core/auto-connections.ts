@@ -97,9 +97,11 @@ async function storeConnectionSecret(plaintext: string): Promise<string> {
 
 /**
  * Create a connection. Directly creatable types: s3 / email / webhook_out /
- * slack_incoming. gdrive/dropbox → 501 (use the OAuth flow); imap → 501
- * (coming soon). A write-only `secret` is moved into the SecretStore; only the
- * opaque secretRef lands on the record.
+ * slack_incoming, plus the Wave 4 bot types (slack_bot / telegram_bot /
+ * discord_bot — `secret` REQUIRED: it is the bot token, SecretStore-only, S2).
+ * gdrive/dropbox → 501 (use the OAuth flow); imap → 501 (coming soon). A
+ * write-only `secret` is moved into the SecretStore; only the opaque
+ * secretRef lands on the record.
  */
 export async function createConnection(userId: string, body: unknown): Promise<Connection> {
   const parsed = createConnectionRequestSchema.safeParse(body ?? {});
@@ -117,6 +119,14 @@ export async function createConnection(userId: string, body: unknown): Promise<C
   }
   if (request.type === "imap") {
     throw new ConnectionNotImplementedError("imap connections are coming soon.");
+  }
+  if (
+    (request.type === "slack_bot" || request.type === "telegram_bot" || request.type === "discord_bot") &&
+    request.secret === undefined
+  ) {
+    throw new AutoValidationError(
+      `"${request.type}" connections require \`secret\` (the bot token — stored encrypted, never echoed).`,
+    );
   }
   const secretRef = request.secret !== undefined ? await storeConnectionSecret(request.secret) : null;
   const events = await getEventStorage();
@@ -280,6 +290,7 @@ export interface VerifyConnectionResult {
  *   - webhook_out /
  *     slack_incoming → https + SSRF-guard resolve (NO request is sent).
  *   - email          → recipient format check.
+ *   - *_bot          → stored-token presence check (no live API call).
  * Stamps connection.status ok|error and returns the updated connection.
  * gdrive/dropbox/imap probes are not supported (→ 400). Null → 404.
  */
@@ -337,6 +348,16 @@ export async function verifyConnection(
     case "email": {
       if (!isValidEmailList(config["to"])) {
         error = "Connection config.to must be a non-empty list of valid email addresses.";
+      }
+      break;
+    }
+    case "slack_bot":
+    case "telegram_bot":
+    case "discord_bot": {
+      // Cheap, side-effect-free: a bot connection is usable iff a token is
+      // stored (S2 — no live API call is made here).
+      if (!connection.secretRef) {
+        error = "Bot connection has no stored token.";
       }
       break;
     }

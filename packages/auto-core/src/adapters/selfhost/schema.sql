@@ -235,3 +235,18 @@ CREATE TABLE IF NOT EXISTS auto_connections (
 );
 
 CREATE INDEX IF NOT EXISTS auto_connections_owner_idx ON auto_connections (owner_type, owner_id);
+
+CREATE TABLE IF NOT EXISTS auto_pending_approvals (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  trigger_id  TEXT        NOT NULL,
+  user_id     TEXT        NOT NULL,
+  token_hash  TEXT        NOT NULL,
+  event_json  TEXT        NOT NULL,
+  status      TEXT        NOT NULL DEFAULT 'pending',
+  created_at  TEXT        NOT NULL,
+  expires_at  TEXT        NOT NULL,
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_pending_approvals_token_idx ON auto_pending_approvals (token_hash);
+CREATE INDEX IF NOT EXISTS auto_pending_approvals_trigger_idx ON auto_pending_approvals (trigger_id);

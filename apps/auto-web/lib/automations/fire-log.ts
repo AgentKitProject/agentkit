@@ -10,6 +10,8 @@ export const FIRE_OUTCOME_LABELS: Record<TriggerFireOutcome, string> = {
   suppressed_rate: "Rate limit",
   skipped_funds: "Insufficient funds",
   suppressed_circuit: "Paused (repeated failures)",
+  awaiting_approval: "Waiting for approval",
+  approval_denied: "Approval denied",
   error: "Error"
 };
 

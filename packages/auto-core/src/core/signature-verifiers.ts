@@ -18,7 +18,14 @@
  * caller reveals them from the SecretStore); nothing is persisted (S2).
  */
 
-import { createHash, createHmac, createVerify, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createPublicKey,
+  createVerify,
+  timingSafeEqual,
+  verify as cryptoVerify,
+} from "node:crypto";
 import { verifyWebhookSecret } from "./webhook-secret.js";
 
 // ---------------------------------------------------------------------------
@@ -130,6 +137,64 @@ export function verifySlack(
   const expected =
     "v0=" + createHmac("sha256", secret).update(`v0:${ts}:${rawBody}`, "utf8").digest("hex");
   return constantTimeStringEqual(sigHeader.trim().toLowerCase(), expected);
+}
+
+// ---------------------------------------------------------------------------
+// Telegram (X-Telegram-Bot-Api-Secret-Token)
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies a Telegram webhook update: Telegram echoes back the operator-chosen
+ * `secret_token` (registered via setWebhook) verbatim in the
+ * `X-Telegram-Bot-Api-Secret-Token` header. The expected token is the event
+ * source's stored signing secret (SecretStore — S2); the compare is
+ * constant-time (hash-then-timingSafeEqual, like every verifier here).
+ */
+export function verifyTelegram(
+  secretTokenHeader: string | null | undefined,
+  expectedToken: string,
+): boolean {
+  if (!secretTokenHeader || expectedToken.length === 0) return false;
+  return constantTimeStringEqual(secretTokenHeader.trim(), expectedToken);
+}
+
+// ---------------------------------------------------------------------------
+// Discord (interactions ed25519: X-Signature-Ed25519 + X-Signature-Timestamp)
+// ---------------------------------------------------------------------------
+
+/** DER SPKI prefix for a raw ed25519 public key (RFC 8410). */
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+/**
+ * Verifies a Discord interactions request: ed25519 signature (hex, header
+ * `X-Signature-Ed25519`) over `timestamp + rawBody` (header
+ * `X-Signature-Timestamp`), against the APPLICATION PUBLIC KEY (32-byte hex —
+ * stored as the event source's "signing secret"; it is not actually secret,
+ * but rides the same encrypted channel). Pure node:crypto — no new dependency.
+ * Returns false on any malformed input; never throws.
+ */
+export function verifyDiscord(
+  signatureHeader: string | null | undefined,
+  timestampHeader: string | null | undefined,
+  rawBody: string,
+  publicKeyHex: string,
+): boolean {
+  if (!signatureHeader || !timestampHeader) return false;
+  const sigHex = signatureHeader.trim();
+  const keyHex = publicKeyHex.trim();
+  if (!/^[0-9a-fA-F]{128}$/.test(sigHex)) return false;
+  if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) return false;
+  try {
+    const key = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(keyHex, "hex")]),
+      format: "der",
+      type: "spki",
+    });
+    const message = Buffer.from(timestampHeader.trim() + rawBody, "utf8");
+    return cryptoVerify(null, message, key, Buffer.from(sigHex, "hex"));
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

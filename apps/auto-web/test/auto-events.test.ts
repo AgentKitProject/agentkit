@@ -1103,3 +1103,90 @@ describe("poll sweep — Wave 3b (watch / rss / run_completed)", () => {
     ).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wave 4 — messaging control-plane handshakes (signature-verified, never events)
+// ---------------------------------------------------------------------------
+
+describe("messaging control-plane — provider handshakes", () => {
+  const { createHmac, generateKeyPairSync, sign: cryptoSign } = require("node:crypto") as
+    typeof import("node:crypto");
+
+  async function createProviderSource(provider: string, signingSecret: string): Promise<string> {
+    storageRef.current.state.secrets.configured = true;
+    const { POST } = await import("@/app/api/auto/event-sources/route");
+    const res = await POST(
+      new Request("https://auto.example/api/auto/event-sources", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: `${provider}-src`, kind: "provider", provider, signingSecret })
+      })
+    );
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  it("slack url_verification → 200 challenge echo; NO event stored, NO run", async () => {
+    const secret = "slack-hush";
+    const id = await createProviderSource("slack", secret);
+    const body = JSON.stringify({ type: "url_verification", challenge: "chal-123" });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sig = "v0=" + createHmac("sha256", secret).update(`v0:${ts}:${body}`, "utf8").digest("hex");
+    const res = await ingest(id, "message", {
+      headers: { "x-slack-request-timestamp": ts, "x-slack-signature": sig },
+      body
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { challenge: string }).challenge).toBe("chal-123");
+    expect(storageRef.current.state.received.get(id) ?? []).toHaveLength(0);
+    expect(storageRef.current.state.runs).toHaveLength(0);
+  });
+
+  it("slack url_verification with a BAD signature → uniform 401 (no challenge echo)", async () => {
+    const id = await createProviderSource("slack", "slack-hush");
+    const body = JSON.stringify({ type: "url_verification", challenge: "chal-123" });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const res = await ingest(id, "message", {
+      headers: { "x-slack-request-timestamp": ts, "x-slack-signature": "v0=deadbeef" },
+      body
+    });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).not.toContain("chal-123");
+  });
+
+  it("discord PING (type 1) → PONG (type 1); NO event stored", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const pubHex = (publicKey.export({ type: "spki", format: "der" }) as Buffer)
+      .subarray(-32)
+      .toString("hex");
+    const id = await createProviderSource("discord", pubHex);
+    const body = JSON.stringify({ type: 1 });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const sig = cryptoSign(null, Buffer.from(ts + body, "utf8"), privateKey).toString("hex");
+    const res = await ingest(id, "interaction", {
+      headers: { "x-signature-ed25519": sig, "x-signature-timestamp": ts },
+      body
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { type: number }).type).toBe(1);
+    expect(storageRef.current.state.received.get(id) ?? []).toHaveLength(0);
+    expect(storageRef.current.state.runs).toHaveLength(0);
+  });
+
+  it("telegram: wrong secret_token → uniform 401; correct → foreign callback acked, no event", async () => {
+    const id = await createProviderSource("telegram", "tg-hush");
+    const cb = JSON.stringify({ callback_query: { id: "cq-1", data: "not-ours" } });
+    const bad = await ingest(id, "message", {
+      headers: { "x-telegram-bot-api-secret-token": "wrong" },
+      body: cb
+    });
+    expect(bad.status).toBe(401);
+    const ok = await ingest(id, "message", {
+      headers: { "x-telegram-bot-api-secret-token": "tg-hush" },
+      body: cb
+    });
+    expect(ok.status).toBe(200);
+    expect(storageRef.current.state.received.get(id) ?? []).toHaveLength(0);
+    expect(storageRef.current.state.runs).toHaveLength(0);
+  });
+});

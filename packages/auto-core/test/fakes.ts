@@ -17,6 +17,7 @@ import type {
   EventSourceRepository,
   FireLogRepository,
   OutputStore,
+  PendingApprovalRepository,
   ReceivedEventRepository,
   SecretStore,
   TriggerRepository,
@@ -37,9 +38,11 @@ import type {
   ConnectionStatus,
   CreateConnectionInput,
   CreateEventSourceInput,
+  CreatePendingApprovalInput,
   CreateRunInput,
   CreateTriggerInput,
   EventSource,
+  PendingTriggerApproval,
   ReceivedEvent,
   Trigger,
   TriggerFireLog,
@@ -669,5 +672,53 @@ export class InMemoryConnectionRepo implements ConnectionRepository {
 
   async deleteConnection(connectionId: string): Promise<void> {
     this.connections.delete(connectionId);
+  }
+}
+
+let pendingSeq = 0;
+
+export class InMemoryPendingApprovalRepo implements PendingApprovalRepository {
+  pendings = new Map<string, PendingTriggerApproval>();
+
+  async createPending(input: CreatePendingApprovalInput): Promise<PendingTriggerApproval> {
+    const pending: PendingTriggerApproval = {
+      id: `pend-${++pendingSeq}`,
+      triggerId: input.triggerId,
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      event: input.event as PendingTriggerApproval["event"],
+      status: "pending",
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      resolvedAt: null,
+    };
+    this.pendings.set(pending.id, structuredClone(pending));
+    return structuredClone(pending);
+  }
+
+  async getPending(pendingId: string): Promise<PendingTriggerApproval | undefined> {
+    const p = this.pendings.get(pendingId);
+    return p ? structuredClone(p) : undefined;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<PendingTriggerApproval | undefined> {
+    const p = [...this.pendings.values()].find((x) => x.tokenHash === tokenHash);
+    return p ? structuredClone(p) : undefined;
+  }
+
+  async resolvePending(
+    pendingId: string,
+    status: "approved" | "denied" | "expired",
+    resolvedAt: string,
+  ): Promise<PendingTriggerApproval | undefined> {
+    const p = this.pendings.get(pendingId);
+    if (!p || p.status !== "pending") return undefined;
+    p.status = status;
+    p.resolvedAt = resolvedAt;
+    return structuredClone(p);
+  }
+
+  async deletePending(pendingId: string): Promise<void> {
+    this.pendings.delete(pendingId);
   }
 }

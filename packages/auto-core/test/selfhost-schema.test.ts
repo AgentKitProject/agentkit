@@ -78,6 +78,7 @@ describe("ensureAutoSchema", () => {
       "auto_connections",
       "auto_event_sources",
       "auto_fire_logs",
+      "auto_pending_approvals",
       "auto_received_events",
       "auto_runs",
       "auto_schedules",

@@ -4,16 +4,18 @@
  * SigningCertURL / SubscribeURL), and source-token verification.
  */
 
-import { createHmac, createSign, generateKeyPairSync } from "node:crypto";
+import { createHmac, createSign, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   extractSnsSubscribeConfirmation,
   isValidSnsHost,
+  verifyDiscord,
   verifyGithub,
   verifySlack,
   verifySnsMessage,
   verifySourceToken,
   verifyStripe,
+  verifyTelegram,
   type SnsCertFetch,
 } from "../src/core/signature-verifiers.js";
 import { hashWebhookSecret } from "../src/core/webhook-secret.js";
@@ -287,5 +289,60 @@ describe("verifySourceToken", () => {
     expect(verifySourceToken("", hash)).toBe(false);
     // Malformed stored hash never throws.
     expect(verifySourceToken(token, "short")).toBe(false);
+  });
+});
+
+describe("verifyTelegram (Wave 4)", () => {
+  it("accepts the exact secret token (constant-time compare)", () => {
+    expect(verifyTelegram("tg-secret-token", "tg-secret-token")).toBe(true);
+    expect(verifyTelegram("  tg-secret-token  ", "tg-secret-token")).toBe(true); // trimmed
+  });
+
+  it("rejects a wrong/missing header and an empty expected token", () => {
+    expect(verifyTelegram("wrong", "tg-secret-token")).toBe(false);
+    expect(verifyTelegram(null, "tg-secret-token")).toBe(false);
+    expect(verifyTelegram(undefined, "tg-secret-token")).toBe(false);
+    expect(verifyTelegram("", "tg-secret-token")).toBe(false);
+    // Empty expected token must NEVER verify (unconfigured = reject).
+    expect(verifyTelegram("", "")).toBe(false);
+    expect(verifyTelegram("anything", "")).toBe(false);
+  });
+});
+
+describe("verifyDiscord (Wave 4 — ed25519)", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicKeyHex = publicKey
+    .export({ format: "der", type: "spki" })
+    .subarray(-32)
+    .toString("hex");
+  const timestamp = String(NOW_SEC);
+  const body = JSON.stringify({ type: 1 });
+  const signature = cryptoSign(
+    null,
+    Buffer.from(timestamp + body, "utf8"),
+    privateKey,
+  ).toString("hex");
+
+  it("accepts a valid ed25519 signature over timestamp+body", () => {
+    expect(verifyDiscord(signature, timestamp, body, publicKeyHex)).toBe(true);
+  });
+
+  it("rejects a tampered body / timestamp / signature", () => {
+    expect(verifyDiscord(signature, timestamp, body + "x", publicKeyHex)).toBe(false);
+    expect(verifyDiscord(signature, timestamp + "1", body, publicKeyHex)).toBe(false);
+    const flipped = (signature[0] === "0" ? "1" : "0") + signature.slice(1);
+    expect(verifyDiscord(flipped, timestamp, body, publicKeyHex)).toBe(false);
+  });
+
+  it("rejects the wrong key, malformed hex, and missing headers — never throws", () => {
+    const other = generateKeyPairSync("ed25519")
+      .publicKey.export({ format: "der", type: "spki" })
+      .subarray(-32)
+      .toString("hex");
+    expect(verifyDiscord(signature, timestamp, body, other)).toBe(false);
+    expect(verifyDiscord("zz".repeat(64), timestamp, body, publicKeyHex)).toBe(false);
+    expect(verifyDiscord(signature, timestamp, body, "not-hex")).toBe(false);
+    expect(verifyDiscord(null, timestamp, body, publicKeyHex)).toBe(false);
+    expect(verifyDiscord(signature, null, body, publicKeyHex)).toBe(false);
   });
 });

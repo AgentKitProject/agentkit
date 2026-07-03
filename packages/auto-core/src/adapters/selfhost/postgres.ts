@@ -25,6 +25,7 @@ import type {
   FireLogRepository,
   InputStore,
   OutputStore,
+  PendingApprovalRepository,
   ReceivedEventRepository,
   ScheduleRunResult,
   SecretStore,
@@ -53,8 +54,10 @@ import type {
   CreateTriggerInput,
   CreateWebhookInput,
   CreateEventSourceInput,
+  CreatePendingApprovalInput,
   EventSource,
   KitRef,
+  PendingTriggerApproval,
   ReceivedEvent,
   Trigger,
   TriggerFireLog,
@@ -1100,6 +1103,84 @@ export class PostgresConnectionRepository implements ConnectionRepository {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Postgres PendingApprovalRepository (Wave 4 — held requireApproval fires)
+// ---------------------------------------------------------------------------
+
+function rowToPendingApproval(row: Record<string, unknown>): PendingTriggerApproval {
+  return {
+    id: row["id"] as string,
+    triggerId: row["trigger_id"] as string,
+    userId: row["user_id"] as string,
+    tokenHash: row["token_hash"] as string,
+    event: JSON.parse(row["event_json"] as string) as PendingTriggerApproval["event"],
+    status: row["status"] as PendingTriggerApproval["status"],
+    createdAt: row["created_at"] as string,
+    expiresAt: row["expires_at"] as string,
+    resolvedAt: (row["resolved_at"] as string | null) ?? null,
+  };
+}
+
+export class PostgresPendingApprovalRepository implements PendingApprovalRepository {
+  constructor(private readonly pool: PgPool) {}
+
+  async createPending(input: CreatePendingApprovalInput): Promise<PendingTriggerApproval> {
+    const id = randomUUID();
+    const { rows } = await this.pool.query(
+      `INSERT INTO auto_pending_approvals
+         (id, trigger_id, user_id, token_hash, event_json, status, created_at, expires_at, resolved_at)
+       VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,NULL)
+       RETURNING *`,
+      [
+        id,
+        input.triggerId,
+        input.userId,
+        input.tokenHash,
+        JSON.stringify(input.event),
+        input.createdAt,
+        input.expiresAt,
+      ],
+    );
+    return rowToPendingApproval(rows[0]!);
+  }
+
+  async getPending(pendingId: string): Promise<PendingTriggerApproval | undefined> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_pending_approvals WHERE id = $1",
+      [pendingId],
+    );
+    return rows[0] ? rowToPendingApproval(rows[0]) : undefined;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<PendingTriggerApproval | undefined> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM auto_pending_approvals WHERE token_hash = $1",
+      [tokenHash],
+    );
+    return rows[0] ? rowToPendingApproval(rows[0]) : undefined;
+  }
+
+  async resolvePending(
+    pendingId: string,
+    status: "approved" | "denied" | "expired",
+    resolvedAt: string,
+  ): Promise<PendingTriggerApproval | undefined> {
+    // Single-consume: flips ONLY from 'pending' (atomic conditional UPDATE).
+    const { rows } = await this.pool.query(
+      `UPDATE auto_pending_approvals SET status = $2, resolved_at = $3
+       WHERE id = $1 AND status = 'pending'
+       RETURNING *`,
+      [pendingId, status, resolvedAt],
+    );
+    return rows[0] ? rowToPendingApproval(rows[0]) : undefined;
+  }
+
+  async deletePending(pendingId: string): Promise<void> {
+    await this.pool.query("DELETE FROM auto_pending_approvals WHERE id = $1", [pendingId]);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Postgres SecretStore (encrypted-at-rest provider signing secrets — S2)
 // ---------------------------------------------------------------------------
@@ -1216,6 +1297,7 @@ export function makeSelfHostAutoDeps(options: MakeSelfHostAutoDepsOptions): Auto
       fireLogs: new PostgresFireLogRepository(options.pool),
       secrets: new PostgresSecretStore(options.pool),
       connections: new PostgresConnectionRepository(options.pool),
+      pendingApprovals: new PostgresPendingApprovalRepository(options.pool),
     },
   };
 }
@@ -1438,6 +1520,21 @@ CREATE TABLE IF NOT EXISTS auto_connections (
 );
 
 CREATE INDEX IF NOT EXISTS auto_connections_owner_idx ON auto_connections (owner_type, owner_id);
+
+CREATE TABLE IF NOT EXISTS auto_pending_approvals (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  trigger_id  TEXT        NOT NULL,
+  user_id     TEXT        NOT NULL,
+  token_hash  TEXT        NOT NULL,
+  event_json  TEXT        NOT NULL,
+  status      TEXT        NOT NULL DEFAULT 'pending',
+  created_at  TEXT        NOT NULL,
+  expires_at  TEXT        NOT NULL,
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_pending_approvals_token_idx ON auto_pending_approvals (token_hash);
+CREATE INDEX IF NOT EXISTS auto_pending_approvals_trigger_idx ON auto_pending_approvals (trigger_id);
 
 `;
 

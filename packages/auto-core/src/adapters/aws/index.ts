@@ -44,6 +44,7 @@ import type {
   AutoWebhookRepository,
   ConnectionRepository,
   EventSourceRepository,
+  PendingApprovalRepository,
   FireLogRepository,
   InputStore,
   OutputStore,
@@ -69,11 +70,13 @@ import type {
   CreateApprovalInput,
   CreateConnectionInput,
   CreateEventSourceInput,
+  CreatePendingApprovalInput,
   CreateRunInput,
   CreateScheduleInput,
   CreateTriggerInput,
   CreateWebhookInput,
   EventSource,
+  PendingTriggerApproval,
   KitRef,
   NetworkPolicy,
   ReceivedEvent,
@@ -166,6 +169,7 @@ export interface AutoDynamoTableNames {
   fireLogs?: string;
   secrets?: string;
   connections?: string;
+  pendingApprovals?: string;
 }
 
 export const AUTO_TABLE_ENV_VARS = {
@@ -179,6 +183,7 @@ export const AUTO_TABLE_ENV_VARS = {
   fireLogs: "AUTO_FIRE_LOGS_TABLE",
   secrets: "AUTO_SECRETS_TABLE",
   connections: "AUTO_CONNECTIONS_TABLE",
+  pendingApprovals: "AUTO_PENDING_APPROVALS_TABLE",
 } as const;
 
 /** Documented defaults for the OPTIONAL event-driven expansion tables. */
@@ -189,6 +194,7 @@ export const AUTO_EVENT_TABLE_DEFAULTS = {
   fireLogs: "AutoFireLogs",
   secrets: "AutoSecrets",
   connections: "AutoConnections",
+  pendingApprovals: "AutoPendingApprovals",
 } as const;
 
 export function loadAutoDynamoTableNames(
@@ -226,6 +232,10 @@ export function loadAutoDynamoTableNames(
     connections: optional(
       AUTO_TABLE_ENV_VARS.connections,
       AUTO_EVENT_TABLE_DEFAULTS.connections,
+    ),
+    pendingApprovals: optional(
+      AUTO_TABLE_ENV_VARS.pendingApprovals,
+      AUTO_EVENT_TABLE_DEFAULTS.pendingApprovals,
     ),
   };
 }
@@ -1519,6 +1529,90 @@ export class DynamoConnectionRepository implements ConnectionRepository {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// DynamoDB PendingApprovalRepository (Wave 4 — held requireApproval fires)
+// ---------------------------------------------------------------------------
+
+/**
+ * Table `AutoPendingApprovals`, PK `id`.
+ *   - GSI `tokenHash-index` (PK tokenHash) — the callback auth lookup.
+ * Single-consume: resolvePending is a CONDITIONAL update (status = "pending")
+ * so a double Approve/Deny click can never fire twice.
+ */
+export class DynamoPendingApprovalRepository implements PendingApprovalRepository {
+  constructor(
+    private readonly db: DynamoDBDocumentClient,
+    private readonly tableName: string,
+  ) {}
+
+  async createPending(input: CreatePendingApprovalInput): Promise<PendingTriggerApproval> {
+    const pending: PendingTriggerApproval = {
+      id: randomUUID(),
+      triggerId: input.triggerId,
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      event: input.event,
+      status: "pending",
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      resolvedAt: null,
+    };
+    await this.db.send(new PutCommand({ TableName: this.tableName, Item: pending }));
+    return pending;
+  }
+
+  async getPending(pendingId: string): Promise<PendingTriggerApproval | undefined> {
+    const result = await this.db.send(
+      new GetCommand({ TableName: this.tableName, Key: { id: pendingId } }),
+    );
+    return result.Item ? (result.Item as PendingTriggerApproval) : undefined;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<PendingTriggerApproval | undefined> {
+    const result = await this.db.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: "tokenHash-index",
+        KeyConditionExpression: "tokenHash = :h",
+        ExpressionAttributeValues: { ":h": tokenHash },
+        Limit: 1,
+      }),
+    );
+    return (result.Items ?? [])[0] as PendingTriggerApproval | undefined;
+  }
+
+  async resolvePending(
+    pendingId: string,
+    status: "approved" | "denied" | "expired",
+    resolvedAt: string,
+  ): Promise<PendingTriggerApproval | undefined> {
+    try {
+      const result = await this.db.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { id: pendingId },
+          UpdateExpression: "SET #s = :s, resolvedAt = :r",
+          ConditionExpression: "#s = :pending",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: { ":s": status, ":r": resolvedAt, ":pending": "pending" },
+          ReturnValues: "ALL_NEW",
+        }),
+      );
+      return result.Attributes as PendingTriggerApproval | undefined;
+    } catch (err) {
+      if ((err as Error).name === "ConditionalCheckFailedException") return undefined;
+      throw err;
+    }
+  }
+
+  async deletePending(pendingId: string): Promise<void> {
+    await this.db.send(
+      new DeleteCommand({ TableName: this.tableName, Key: { id: pendingId } }),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Composition
 // ---------------------------------------------------------------------------
@@ -1599,6 +1693,10 @@ export function makeAwsAutoDeps(options: MakeAwsAutoDepsOptions = {}): AutoStora
       connections: new DynamoConnectionRepository(
         db,
         tables.connections ?? AUTO_EVENT_TABLE_DEFAULTS.connections,
+      ),
+      pendingApprovals: new DynamoPendingApprovalRepository(
+        db,
+        tables.pendingApprovals ?? AUTO_EVENT_TABLE_DEFAULTS.pendingApprovals,
       ),
     },
   };

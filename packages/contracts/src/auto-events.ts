@@ -89,13 +89,19 @@ export type RunTerminalStatus = z.infer<typeof runTerminalStatusSchema>;
 export const eventSourceKindSchema = z.enum(["custom", "provider"]);
 export type EventSourceKind = z.infer<typeof eventSourceKindSchema>;
 
-/** Known provider payload shapes for kind === "provider". */
+/** Known provider payload shapes for kind === "provider".
+ *  Wave 4 messaging providers: "telegram" verifies the
+ *  X-Telegram-Bot-Api-Secret-Token header against the stored signing secret
+ *  (constant-time); "discord" verifies the interactions ed25519 signature —
+ *  its `signingSecret` is the Discord APPLICATION PUBLIC KEY (hex). */
 export const eventSourceProviderSchema = z.enum([
   "generic",
   "github",
   "stripe",
   "sns",
-  "slack"
+  "slack",
+  "telegram",
+  "discord"
 ]);
 export type EventSourceProvider = z.infer<typeof eventSourceProviderSchema>;
 
@@ -206,7 +212,13 @@ export const triggerFireOutcomeSchema = z.enum([
   /** Circuit breaker is paused (consecutive failures). */
   "suppressed_circuit",
   /** The fire attempt errored. */
-  "error"
+  "error",
+  /** requireApproval held the fire pending an explicit Approve/Deny (Wave 4).
+   *  A later approve re-presents the event through the FULL gate chain (S4:
+   *  approvals are only ever PRE-run). */
+  "awaiting_approval",
+  /** The held fire was explicitly denied (or the approval expired). */
+  "approval_denied"
 ]);
 export type TriggerFireOutcome = z.infer<typeof triggerFireOutcomeSchema>;
 
@@ -349,6 +361,21 @@ export const destinationSchema = z.discriminatedUnion("type", [
     path: z.string().optional(),
     /** What to deliver: output files, the run summary, or both. */
     what: z.enum(["outputs", "summary", "both"]).default("both")
+  }),
+  z.object({
+    /**
+     * Wave 4 conversational reply: posts the run summary back to the CHANNEL /
+     * THREAD / CHAT the originating message event came from (`replyToOrigin`
+     * reads the coordinates from the run's `input.event.origin` — stamped by
+     * the message fan-out). The connection must be a bot connection
+     * (slack_bot / telegram_bot / discord_bot); its token lives in the
+     * SecretStore and is revealed harness-side only (S2).
+     */
+    type: z.literal("message_reply"),
+    connectionId: z.string().min(1),
+    /** Read reply coordinates from the originating event. Only `true` is
+     *  meaningful today (explicit targets may come later). */
+    replyToOrigin: z.literal(true).default(true)
   })
 ]);
 export type Destination = z.infer<typeof destinationSchema>;
@@ -360,6 +387,9 @@ export type Destination = z.infer<typeof destinationSchema>;
 export const connectionOwnerTypeSchema = z.enum(["user", "org"]);
 export type ConnectionOwnerType = z.infer<typeof connectionOwnerTypeSchema>;
 
+/** Bot connection types (Wave 4): the connection's SecretStore secret is the
+ *  BOT TOKEN (Slack bot token / Telegram bot token / Discord bot token) used
+ *  by message_reply destinations and approval prompts — server/harness only. */
 export const connectionTypeSchema = z.enum([
   "s3",
   "email",
@@ -367,7 +397,10 @@ export const connectionTypeSchema = z.enum([
   "slack_incoming",
   "gdrive",
   "dropbox",
-  "imap"
+  "imap",
+  "slack_bot",
+  "telegram_bot",
+  "discord_bot"
 ]);
 export type ConnectionType = z.infer<typeof connectionTypeSchema>;
 
@@ -564,20 +597,71 @@ export const runCompletedTriggerConfigSchema = z.object({
 });
 export type RunCompletedTriggerConfig = z.infer<typeof runCompletedTriggerConfigSchema>;
 
-/** config for type "email_in" (inbound email fires the trigger). */
+/** The path-safe local part of a generated inbound address (server-owned). */
+export const emailAddressSlugSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9._-]*$/, "address slug must match ^[a-z0-9][a-z0-9._-]*$");
+
+/**
+ * config for type "email_in" (inbound email fires the trigger — Wave 4).
+ *
+ * Hosted path (SES → S3): the server GENERATES `addressSlug` at create time
+ * (never client-supplied) and derives `address` as
+ * `<addressSlug>@<AUTO_EMAIL_INBOX_DOMAIN>`; the email-in poller routes parsed
+ * inbound mail to triggers by TO-address match.
+ *
+ * Self-host path (IMAP): `connectionId` references an `imap` Connection
+ * (host/port in config, credentials in the SecretStore). The full IMAP client
+ * is not implemented yet — the poller skips such triggers cleanly.
+ */
 export const emailInTriggerConfigSchema = z.object({
-  /** The inbound address (assigned server-side on hosted). */
+  /** The full inbound address (derived server-side on hosted; display only). */
   address: z.string().min(1).nullable().optional(),
+  /** Server-generated local part of the hosted inbound address. */
+  addressSlug: emailAddressSlugSchema.nullable().optional(),
+  /**
+   * Sender allowlist (addr-spec, case-insensitive). EMPTY = only the trigger
+   * owner's verified email may fire it (fail closed when the owner email
+   * cannot be resolved); non-matching senders land as fire-log "filtered".
+   */
+  allowedFrom: z.array(z.string().email()).max(20).default([]),
   /** IMAP Connection to poll (self-host path). */
   connectionId: z.string().min(1).nullable().optional()
 });
 export type EmailInTriggerConfig = z.infer<typeof emailInTriggerConfigSchema>;
 
-/** config for type "message" (P5 — chat mention/DM/channel; schema only). */
+/** Messaging platforms a "message" trigger can listen on (Wave 4). */
+export const messagePlatformSchema = z.enum(["slack", "telegram", "discord"]);
+export type MessagePlatform = z.infer<typeof messagePlatformSchema>;
+
+/**
+ * config for type "message" (Wave 4 — conversational messaging). Inbound
+ * messages arrive on the EXISTING public ingest route through an EventSource
+ * whose provider matches `platform` (slack signing secret / telegram secret
+ * token / discord ed25519); the fan-out normalizes the provider payload and
+ * presents it to subscribed message triggers.
+ */
 export const messageTriggerConfigSchema = z.object({
-  connectionId: z.string().min(1),
-  scope: z.enum(["mention", "dm", "channel"]),
-  channelId: z.string().min(1).nullable().optional()
+  /** The messaging platform this trigger listens on. */
+  platform: messagePlatformSchema,
+  /** The EventSource (kind "provider", provider === platform) delivering the
+   *  inbound messages. */
+  sourceId: z.string().min(1),
+  /**
+   * OPTIONAL bot Connection (slack_bot/telegram_bot/discord_bot) used for
+   * message_reply destinations and pre-run approval prompts. The bot token
+   * lives in the SecretStore (S2) — never here.
+   */
+  connectionId: z.string().min(1).nullable().optional(),
+  /** Which messages fire: mentions only, DMs only, or any channel message. */
+  scope: z.enum(["mention", "dm", "channel"]).default("channel"),
+  /** Restrict to one channel/chat id; null/absent = all. */
+  channelId: z.string().min(1).nullable().optional(),
+  /** Provider event-type filter (e.g. Slack "message"/"app_mention");
+   *  absent = the scope's default set. */
+  events: z.array(z.string().min(1).max(64)).max(10).optional()
 });
 export type MessageTriggerConfig = z.infer<typeof messageTriggerConfigSchema>;
 
@@ -605,6 +689,14 @@ const triggerBaseShape = {
   /** Output destinations (max 5). Supersedes legacy deliveryConfig. */
   destinations: z.array(destinationSchema).max(5).optional(),
   rateLimit: triggerRateLimitSchema.default({}),
+  /**
+   * Wave 4 pre-run approval gate: when true, a fire that passes every gate is
+   * HELD (fire-log "awaiting_approval") until an explicit Approve/Deny — sent
+   * as a messaging prompt when a bot connection is available. Approvals are
+   * only ever PRE-run (S4): approve re-presents the held event through the
+   * full gate chain; in-flight runs are never touched.
+   */
+  requireApproval: z.boolean().default(false),
   /** Whether the trigger is active. Disabled triggers never fire. */
   enabled: z.boolean(),
   /** Poll resume point (watch/rss/run_completed; schedule stores next-fire ISO). */
@@ -658,6 +750,8 @@ const createTriggerBaseShape = {
   mapping: triggerMappingSchema,
   destinations: z.array(destinationSchema).max(5).optional(),
   rateLimit: triggerRateLimitSchema.optional(),
+  /** Wave 4 pre-run approval gate (defaults to false). */
+  requireApproval: z.boolean().optional(),
   /** Defaults to true (enabled) when omitted. */
   enabled: z.boolean().optional()
 } as const;
@@ -688,6 +782,7 @@ export const updateTriggerRequestSchema = z.object({
   mapping: triggerMappingSchema.optional(),
   destinations: z.array(destinationSchema).max(5).optional(),
   rateLimit: triggerRateLimitSchema.optional(),
+  requireApproval: z.boolean().optional(),
   enabled: z.boolean().optional(),
   config: z
     .union([
@@ -750,6 +845,56 @@ export const testFireTriggerResponseSchema = z.object({
   runId: z.string().min(1).optional()
 });
 export type TestFireTriggerResponse = z.infer<typeof testFireTriggerResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Pending pre-run approvals (Wave 4 — Approve/Deny via messaging)
+// ---------------------------------------------------------------------------
+
+/** Max characters of parsed inbound-email body text carried on an email_in
+ *  event (the poller truncates beyond this — S1: payloads stay data-sized). */
+export const EMAIL_IN_BODY_MAX_CHARS = 32_768;
+
+/** Minutes a held (requireApproval) fire stays approvable before it expires. */
+export const PENDING_APPROVAL_TTL_MINUTES = 60;
+
+export const pendingApprovalStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "denied",
+  "expired"
+]);
+export type PendingApprovalStatus = z.infer<typeof pendingApprovalStatusSchema>;
+
+/**
+ * One HELD trigger fire awaiting an explicit Approve/Deny (requireApproval —
+ * Wave 4). SERVER-INTERNAL record (never shaped into an HTTP response):
+ * `tokenHash` is the sha256 hex of the one-time approval token embedded in the
+ * prompt's buttons — the plaintext is NEVER stored (mirrors EventSource
+ * `tokenHash`). The held `event` is re-presented through the FULL
+ * consumeTriggerEvent gate chain on approve (S4: pre-run only, fresh gated
+ * run; nothing here can touch an in-flight run).
+ */
+export const pendingTriggerApprovalSchema = z.object({
+  id: z.string().min(1),
+  triggerId: z.string().min(1),
+  /** The trigger owner (callback ownership check). */
+  userId: z.string().min(1),
+  /** sha256 HEX of the one-time approval token. Plaintext is NEVER stored. */
+  tokenHash: z.string().min(1),
+  /** The held event, re-presented verbatim on approve. */
+  event: z.object({
+    name: eventNameSchema,
+    payload: z.unknown(),
+    receivedAt: z.string().min(1)
+  }),
+  status: pendingApprovalStatusSchema,
+  createdAt: z.string().min(1),
+  /** ISO after which the hold can no longer be approved (→ expired). */
+  expiresAt: z.string().min(1),
+  /** ISO of the approve/deny/expire resolution. */
+  resolvedAt: z.string().min(1).nullable().optional()
+});
+export type PendingTriggerApproval = z.infer<typeof pendingTriggerApprovalSchema>;
 
 // ---------------------------------------------------------------------------
 // Affordability seam (canStartRun — pre-fire ledger check)
