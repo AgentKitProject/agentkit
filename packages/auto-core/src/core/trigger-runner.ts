@@ -366,11 +366,16 @@ export async function consumeTriggerEvent(
     return log;
   } catch (err) {
     // NEVER throws out (sweep isolation): any error becomes an "error" fire
-    // log + circuit failure, all best-effort.
+    // log + circuit failure, all best-effort. EXCEPTION: the app's L4
+    // concurrent-run cap (recognized by error NAME — auto-core cannot import
+    // the app's class) is load-shedding, not breakage: it gets the dedicated
+    // "suppressed_concurrency" outcome and does NOT count toward the circuit.
     const message = err instanceof Error ? err.message : String(err);
-    await recordFailureAndMaybePause(deps, trigger.id, at);
+    const shed = err instanceof Error && err.name === "ConcurrencyCapError";
+    const outcome = shed ? ("suppressed_concurrency" as const) : ("error" as const);
+    if (!shed) await recordFailureAndMaybePause(deps, trigger.id, at);
     try {
-      return await appendLog("error", message);
+      return await appendLog(outcome, message);
     } catch {
       // Even the fire log failed — return an unpersisted row so callers still
       // get a truthful outcome.
@@ -378,7 +383,7 @@ export async function consumeTriggerEvent(
         id: "unpersisted",
         triggerId: trigger.id,
         at,
-        outcome: "error",
+        outcome,
         runId: null,
         detail: message,
       };
