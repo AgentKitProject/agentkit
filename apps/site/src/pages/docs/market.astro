@@ -48,18 +48,23 @@ import { marketUrl } from '../../data/products';
     owning org, enabling private team catalogs.
   </p>
 
-  <h2>Paid kits</h2>
+  <h2>Premium kits</h2>
   <p>Kit owners choose how to list each kit:</p>
   <ul>
     <li><strong>Free</strong> — anyone can download it.</li>
-    <li><strong>One-time</strong> — a single up-front price.</li>
-    <li><strong>Subscription</strong> — a recurring price, with an optional free trial.</li>
+    <li>
+      <strong>Premium</strong> — priced per run. A premium kit runs on <strong>AgentKitAuto</strong>
+      (server-side; its files are never handed to the buyer), and each run charges the buyer the
+      seller-set per-run price from their prepaid balance. The seller earns that price — net of the
+      platform fee — every time the kit runs.
+    </li>
   </ul>
   <p>
     Payments and payouts run through <strong>Stripe</strong> (Stripe Connect for seller
     payouts). The platform fee is <strong>6%</strong> — <strong>sellers keep 94%</strong>
-    of each sale. Access to paid, non-downloadable kits is gated by buyer entitlements,
-    and entitlements track subscription lifecycle (active / expired / revoked).
+    of every run. A buyer prepays a balance; each premium run draws it down and accrues the
+    seller's share, which is paid out on a periodic schedule. Access to premium kits is gated
+    by buyer entitlements.
   </p>
   <div class="docs-note">
     <strong>Note.</strong> The commercial billing layer (Stripe webhooks, credit/entitlement
