@@ -7,7 +7,9 @@ import { hasRealSession } from "../../global-setup";
 //
 // Tag rules: `@reversible` in the TITLE = safe for prod (reversible, zero
 // LLM/billing spend). Untagged = gamma-only (the run-dispatch test additionally
-// hard-guards on envName because a prod run costs real money).
+// hard-guards on envName because a prod run costs real money). Gamma now has a
+// real BYO Anthropic key, so the run-dispatch test executes a REAL run — always
+// on the cheapest model (claude-haiku-4-5) to keep spend negligible.
 //
 // ENVIRONMENT QUIRK (discovered live on gamma): the self-host Auto chart runs
 // its OWN bundled kit store, fully isolated from Web Forge's — a kit created in
@@ -389,8 +391,10 @@ test("run history surface renders (empty state OK) @reversible", async ({ page }
 // Never on prod (a successful prod run costs real money).
 // ---------------------------------------------------------------------------
 
-test("run dispatch surfaces a failed run record (gamma only)", async ({ page }, testInfo) => {
+test("run dispatch completes a real run on the cheapest model (gamma only, BYO key)", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "run dispatch spends real money on prod — gamma only");
+  // Always the cheapest managed model so a real run costs a fraction of a cent.
+  const CHEAPEST_MODEL = "claude-haiku-4-5";
   // NOTE on cleanup racing the worker: the afterAll kit sweep can delete this
   // run's kit before the k8s worker Job starts. That's HANDLED by design now:
   // the worker records the run as failed ("run context unavailable") and exits
@@ -407,10 +411,15 @@ test("run dispatch surfaces a failed run record (gamma only)", async ({ page }, 
     await page.getByPlaceholder("What should the kit do, end to end?").fill(label);
     await page.getByRole("button", { name: "Start run" }).click();
   } else {
-    // Isolated-store deployment: same route the form posts to (see header).
+    // Isolated-store deployment (gamma): same route the form posts to (see
+    // header). Pin the cheapest model so the real run costs a fraction of a cent.
     noteApiFallback(testInfo, "run");
     const res = await page.request.post(`${AUTO}/api/auto/runs`, {
-      data: { kitRef: { source: "local", localKitId: p!.kitId }, input: { prompt: label } },
+      data: {
+        kitRef: { source: "local", localKitId: p!.kitId },
+        model: CHEAPEST_MODEL,
+        input: { prompt: label },
+      },
     });
     expect(res.ok(), `run create failed: HTTP ${res.status()} ${await res.text()}`).toBe(true);
   }
@@ -429,17 +438,24 @@ test("run dispatch surfaces a failed run record (gamma only)", async ({ page }, 
     )
     .toBe(true);
 
-  // Wait (bounded) for a terminal state (broken provider key / missing kit →
-  // failure). Gamma's dispatcher may never pick the run up at all — see header.
-  const deadline = Date.now() + 45_000;
+  // Wait (bounded) for a terminal state. With a real BYO key + Haiku a simple
+  // run finishes in a few seconds; allow generous margin. Gamma's dispatcher may
+  // still be slow to pick the run up — if it never reaches terminal in time we
+  // don't fail (the run record + graceful UI are asserted below regardless).
+  const deadline = Date.now() + 90_000;
   const ACTIVE = new Set(["queued", "running"]);
   while (ACTIVE.has(run!.status) && Date.now() < deadline) {
     await page.waitForTimeout(3_000);
     run = (await listRuns(page.request)).find((r) => r.id === run!.id) ?? run;
   }
   if (!ACTIVE.has(run!.status)) {
-    // Gamma must not produce a successful (billable) run.
-    expect(run!.status, "gamma placeholder key should make the run fail, not succeed").not.toBe("succeeded");
+    // Gamma has a real key now, so a real Haiku run should SUCCEED. The only
+    // tolerated non-success is the known kit-cleanup race (worker starts after
+    // teardown → "run context unavailable"); see the header note.
+    const ok =
+      run!.status === "succeeded" ||
+      (run!.status === "failed" && /context unavailable|not found/i.test(run!.error ?? ""));
+    expect(ok, `expected a successful Haiku run; got ${run!.status}: ${run!.error ?? "(no error)"}`).toBe(true);
   }
 
   // The run + its state are surfaced gracefully in the History UI.
