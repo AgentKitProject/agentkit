@@ -70,6 +70,10 @@ import type {
   WebhookFireResult,
 } from "../../core/types.js";
 import { kitRefKey, normalizeNetworkPolicy } from "../../core/types.js";
+import type {
+  RoyaltyAccrualStore,
+  UnaccruedRoyalty,
+} from "../../core/royalty-reconciliation.js";
 import {
   FIRE_LOGS_PER_TRIGGER_CAP,
   RECEIVED_EVENTS_PER_SOURCE_CAP,
@@ -1230,6 +1234,83 @@ export class PostgresSecretStore implements SecretStore {
 }
 
 // ---------------------------------------------------------------------------
+// Postgres RoyaltyAccrualStore (M6 #5 — durable royalty-accrual reconciliation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Durable store of buyer-charged royalties whose immediate accrual to the seller
+ * did NOT confirm (the run-driver flags `royaltyAccrued === false`; the worker
+ * records the intent here). Backed by the `auto_unaccrued_royalties` table over
+ * the SAME pool the run repository uses, so the record write happens on the
+ * durable worker connection and survives the failed accrual. The periodic
+ * reconciliation job re-drives these through the idempotent gateway
+ * `accrueRoyalty`.
+ *
+ * Semantics match the tested `InMemoryRoyaltyAccrualStore` reference exactly:
+ *   - recordUnaccrued is idempotent on runId (first-write-wins via ON CONFLICT).
+ *   - listUnaccrued returns not-yet-accrued rows oldest-first.
+ *   - markAccrued stamps accrued_at (idempotent).
+ *   - markError records the latest error ONLY while still pending (accrued_at IS NULL).
+ *
+ * INERT on open-core / self-host: the table is created harmlessly, but nothing is
+ * ever recorded unless a premium royalty was actually charged and its accrual threw.
+ */
+export class PostgresRoyaltyAccrualStore implements RoyaltyAccrualStore {
+  constructor(private readonly pool: PgPool) {}
+
+  async recordUnaccrued(intent: UnaccruedRoyalty, now: string): Promise<void> {
+    // First-write-wins: a re-record of the same runId is a no-op (idempotent).
+    await this.pool.query(
+      `INSERT INTO auto_unaccrued_royalties
+         (run_id, org_id, kit_id, gross_cents, commission_bps, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (run_id) DO NOTHING`,
+      [
+        intent.runId,
+        intent.orgId,
+        intent.kitId,
+        intent.grossRoyaltyCents,
+        intent.commissionBps,
+        now,
+      ],
+    );
+  }
+
+  async listUnaccrued(limit: number): Promise<UnaccruedRoyalty[]> {
+    const { rows } = await this.pool.query(
+      `SELECT run_id, org_id, kit_id, gross_cents, commission_bps
+         FROM auto_unaccrued_royalties
+        WHERE accrued_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows.map((row) => ({
+      runId: row["run_id"] as string,
+      orgId: row["org_id"] as string,
+      kitId: row["kit_id"] as string,
+      grossRoyaltyCents: Number(row["gross_cents"]),
+      commissionBps: Number(row["commission_bps"] ?? 0),
+    }));
+  }
+
+  async markAccrued(runId: string, now: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE auto_unaccrued_royalties SET accrued_at = $2 WHERE run_id = $1",
+      [runId, now],
+    );
+  }
+
+  async markError(runId: string, error: string, _now: string): Promise<void> {
+    // Observability only; never overwrite a resolved (accrued) row.
+    await this.pool.query(
+      "UPDATE auto_unaccrued_royalties SET accrual_error = $2 WHERE run_id = $1 AND accrued_at IS NULL",
+      [runId, error],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Composition
 // ---------------------------------------------------------------------------
 
@@ -1535,6 +1616,27 @@ CREATE TABLE IF NOT EXISTS auto_pending_approvals (
 
 CREATE INDEX IF NOT EXISTS auto_pending_approvals_token_idx ON auto_pending_approvals (token_hash);
 CREATE INDEX IF NOT EXISTS auto_pending_approvals_trigger_idx ON auto_pending_approvals (trigger_id);
+
+-- ---------------------------------------------------------------------------
+-- M6 #5 — durable royalty-accrual reconciliation.
+-- Records a run whose buyer-charged royalty was NOT accrued to the seller (the
+-- immediate accrual threw). The reconciliation job re-drives pending rows
+-- (accrued_at IS NULL) through the idempotent gateway accrual. INERT on
+-- open-core / self-host: created harmlessly, never written unless a premium
+-- royalty was charged and its accrual failed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auto_unaccrued_royalties (
+  run_id          TEXT        NOT NULL PRIMARY KEY,
+  org_id          TEXT        NOT NULL,
+  kit_id          TEXT        NOT NULL,
+  gross_cents     INTEGER     NOT NULL,
+  commission_bps  INTEGER     NOT NULL DEFAULT 0,
+  created_at      TEXT        NOT NULL,
+  accrued_at      TEXT,
+  accrual_error   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_unaccrued_royalties_pending_idx ON auto_unaccrued_royalties (accrued_at, created_at);
 
 `;
 

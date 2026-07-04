@@ -32,7 +32,7 @@ describe("InMemoryCreditLedger seller-earnings (premium royalties)", () => {
       commissionBps: 0,
       now: NOW,
     });
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500, transferredCents: 0 }]);
   });
 
   it("applies commissionBps: net = gross - floor(gross * bps / 10000)", async () => {
@@ -45,7 +45,7 @@ describe("InMemoryCreditLedger seller-earnings (premium royalties)", () => {
       commissionBps: 600,
       now: NOW,
     });
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 470 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 470, transferredCents: 0 }]);
   });
 
   it("floors the commission (partial-cent commission rounds DOWN, seller keeps the remainder)", async () => {
@@ -58,7 +58,7 @@ describe("InMemoryCreditLedger seller-earnings (premium royalties)", () => {
       commissionBps: 600,
       now: NOW,
     });
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 314 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 314, transferredCents: 0 }]);
   });
 
   it("is idempotent per runId: accruing the same run twice accrues once", async () => {
@@ -72,13 +72,13 @@ describe("InMemoryCreditLedger seller-earnings (premium royalties)", () => {
     };
     await ledger.accrueRoyalty(input);
     await ledger.accrueRoyalty(input); // replay — no double-accrual
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500, transferredCents: 0 }]);
   });
 
   it("sums distinct runs for the same org", async () => {
     await ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "run-1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
     await ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "run-2", grossRoyaltyCents: 300, commissionBps: 0, now: NOW });
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 800 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 800, transferredCents: 0 }]);
   });
 
   it("no-op at gross 0 (and negative): nothing accrues", async () => {
@@ -92,20 +92,20 @@ describe("InMemoryCreditLedger seller-earnings (premium royalties)", () => {
     await ledger.accrueRoyalty({ orgId: "org-a", kitId: "k", runId: "r2", grossRoyaltyCents: 100, commissionBps: 0, now: NOW });
     // org-a fully paid out → excluded from pending.
     await ledger.markSellerEarningsTransferred("org-a", 100, "xfer-a", NOW);
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-b", pendingCents: 200 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-b", pendingCents: 200, transferredCents: 0 }]);
   });
 
   it("markSellerEarningsTransferred reduces the pending balance", async () => {
     await ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "r1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
     await ledger.markSellerEarningsTransferred("org-1", 200, "xfer-1", NOW);
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300, transferredCents: 200 }]);
   });
 
   it("markSellerEarningsTransferred is idempotent per transferRef", async () => {
     await ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "r1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
     await ledger.markSellerEarningsTransferred("org-1", 200, "xfer-1", NOW);
     await ledger.markSellerEarningsTransferred("org-1", 200, "xfer-1", NOW); // replay
-    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300 }]);
+    expect(await ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300, transferredCents: 200 }]);
   });
 
   it("a fully-transferred org drops out of pending", async () => {

@@ -250,3 +250,24 @@ CREATE TABLE IF NOT EXISTS auto_pending_approvals (
 
 CREATE INDEX IF NOT EXISTS auto_pending_approvals_token_idx ON auto_pending_approvals (token_hash);
 CREATE INDEX IF NOT EXISTS auto_pending_approvals_trigger_idx ON auto_pending_approvals (trigger_id);
+
+-- ---------------------------------------------------------------------------
+-- M6 #5 — durable royalty-accrual reconciliation.
+-- Records a run whose buyer-charged royalty was NOT accrued to the seller (the
+-- immediate accrual threw). The reconciliation job re-drives pending rows
+-- (accrued_at IS NULL) through the idempotent gateway accrual. INERT on
+-- open-core / self-host: created harmlessly, never written unless a premium
+-- royalty was charged and its accrual failed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auto_unaccrued_royalties (
+  run_id          TEXT        NOT NULL PRIMARY KEY,
+  org_id          TEXT        NOT NULL,
+  kit_id          TEXT        NOT NULL,
+  gross_cents     INTEGER     NOT NULL,
+  commission_bps  INTEGER     NOT NULL DEFAULT 0,
+  created_at      TEXT        NOT NULL,
+  accrued_at      TEXT,
+  accrual_error   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS auto_unaccrued_royalties_pending_idx ON auto_unaccrued_royalties (accrued_at, created_at);

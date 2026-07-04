@@ -299,7 +299,7 @@ describe("accrue-royalty + seller-earnings", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true });
     expect(await d.ledger.getPendingSellerEarnings()).toEqual([
-      { orgId: "org-1", pendingCents: 470 },
+      { orgId: "org-1", pendingCents: 470, transferredCents: 0 },
     ]);
   });
 
@@ -308,7 +308,7 @@ describe("accrue-royalty + seller-earnings", () => {
     const body = { orgId: "org-1", kitId: "kit-1", runId: "run-1", grossRoyaltyCents: 500, commissionBps: 0 };
     await call(d, KEY, "/accrue-royalty", "POST", body);
     await call(d, KEY, "/accrue-royalty", "POST", body);
-    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500 }]);
+    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500, transferredCents: 0 }]);
   });
 
   it("400 on a missing orgId / negative gross / negative commission", async () => {
@@ -323,7 +323,7 @@ describe("accrue-royalty + seller-earnings", () => {
     await d.ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "r1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
     const res = await call(d, KEY, "/seller-earnings/pending", "GET");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ pending: [{ orgId: "org-1", pendingCents: 500 }] });
+    expect(res.body).toEqual({ pending: [{ orgId: "org-1", pendingCents: 500, transferredCents: 0 }] });
   });
 
   it("POST transferred reduces the pending balance and is idempotent per transferRef", async () => {
@@ -334,7 +334,7 @@ describe("accrue-royalty + seller-earnings", () => {
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ ok: true });
     await call(d, KEY, "/seller-earnings/transferred", "POST", body); // replay
-    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300 }]);
+    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300, transferredCents: 200 }]);
   });
 
   it("transferred 400 on a missing orgId / transferRef / negative amount", async () => {

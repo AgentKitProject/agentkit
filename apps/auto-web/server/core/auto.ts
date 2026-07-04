@@ -44,6 +44,7 @@ import {
   makeFreeCreditLedger,
   nextFireAfter,
   normalizeNetworkPolicy,
+  PostgresRoyaltyAccrualStore,
   processAutoRun,
   runDueSchedules,
   validateCron,
@@ -855,12 +856,28 @@ async function selectLedger() {
   return makeFreeCreditLedger();
 }
 
+/**
+ * The durable royalty-accrual reconciliation store (M6 #5) for the worker path.
+ * Backed by the SAME Auto Postgres pool (getAutoRunPgPool). Present ONLY on the
+ * selfhost/Postgres backend — the DynamoDB (local/dev/aws) backend has no pool,
+ * and premium royalties are a hosted-on-Postgres concern, so it stays undefined
+ * there (the worker simply skips the durable record). Harmless when present:
+ * nothing is written unless a premium accrual actually failed.
+ */
+async function getRoyaltyStore(): Promise<PostgresRoyaltyAccrualStore | undefined> {
+  if (autoBackend() !== "selfhost") return undefined;
+  const { getAutoRunPgPool } = await import("@/server/store/selfhost-user-settings");
+  const pool = await getAutoRunPgPool();
+  return new PostgresRoyaltyAccrualStore(pool as never);
+}
+
 async function buildProcessDeps(
   storage: AutoStorageDeps,
   opts: KitContextOptions,
   billing: AutoBilling
 ): Promise<ProcessAutoRunDeps> {
   const rates = await autoV2Rates();
+  const royaltyStore = await getRoyaltyStore();
   return {
     storage,
     // PLATFORM managed provider — routes by the run's model to the platform
@@ -901,7 +918,11 @@ async function buildProcessDeps(
     // seam. Best-effort + fail-open inside the client (no-op when Profile is
     // disabled/unreachable or the user has no single org with monthly limits).
     recordOrgUsage: (info) =>
-      recordOrgUsageSeam(info.userId, info.period, info.cents, info.minutes)
+      recordOrgUsageSeam(info.userId, info.period, info.cents, info.minutes),
+    // Durable royalty-accrual reconciliation store (M6 #5). Present only on the
+    // Postgres backend; the worker records an unaccrued intent iff a premium
+    // royalty was charged and its accrual threw (best-effort; never fails a run).
+    ...(royaltyStore ? { royaltyStore } : {})
   };
 }
 

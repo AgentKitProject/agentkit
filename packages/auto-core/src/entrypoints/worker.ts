@@ -20,6 +20,7 @@
 import type { ChatProvider, CreditLedgerRepository, ToolDefinition } from "@agentkitforge/gateway-core";
 import type { AutoStorageDeps, EmailSender } from "../core/ports.js";
 import type { AutoApproval, AutoRun, InferenceMode } from "../core/types.js";
+import type { RoyaltyAccrualStore } from "../core/royalty-reconciliation.js";
 import { makeSandboxExecutor } from "../core/sandbox-executor.js";
 import { runAutoRun, type RunAutoRunResult } from "../core/run-driver.js";
 import { makePromptRedactor } from "../core/leakage-guard.js";
@@ -150,6 +151,16 @@ export interface ProcessAutoRunDeps {
    * unconfigured provider makes its destinations fail softly (audited).
    */
   oauth?: OAuthProvidersConfig;
+  /**
+   * Durable store for the M6 royalty-accrual RECONCILIATION (M6 #5). When a
+   * PREMIUM run charged the buyer a royalty but the immediate seller accrual threw
+   * (`result.royaltyAccrued === false`), the worker records an unaccrued-royalty
+   * intent here so the periodic reconciliation job can re-drive it (idempotent by
+   * runId). OPTIONAL: absent on open-core / self-host (no premium royalties ever
+   * fail there) → the recording is simply skipped. Best-effort — a record failure
+   * NEVER affects the run result.
+   */
+  royaltyStore?: Pick<RoyaltyAccrualStore, "recordUnaccrued">;
 }
 
 /** Raised + recorded when the approval gate denies a run. */
@@ -318,6 +329,35 @@ export async function processAutoRun(
       },
       ...(deps.maxToolRounds !== undefined ? { maxToolRounds: deps.maxToolRounds } : {}),
     });
+
+    // ---- Durable royalty-accrual reconciliation record (M6 #5) ------------
+    // The buyer was charged a premium royalty (spentRoyaltyCents > 0) but its
+    // immediate accrual to the seller threw (royaltyAccrued === false). Record a
+    // durable unaccrued-royalty intent so the periodic reconciliation job can
+    // re-drive it (idempotent by runId). BEST-EFFORT: a record failure is logged
+    // and NEVER affects the run result. INERT on open-core / self-host: no
+    // royaltyStore is injected (and no premium royalty ever fails there), so this
+    // whole block is skipped.
+    if (deps.royaltyStore && result.spentRoyaltyCents > 0 && result.royaltyAccrued === false) {
+      try {
+        await deps.royaltyStore.recordUnaccrued(
+          {
+            runId: run.id,
+            orgId: kit.royaltyOrgId ?? "",
+            kitId: kit.royaltyKitId ?? "",
+            grossRoyaltyCents: kit.premiumRoyaltyCents ?? 0,
+            commissionBps: kit.royaltyCommissionBps ?? 0,
+          },
+          now(),
+        );
+      } catch (err) {
+        console.error(
+          `Auto run ${run.id} unaccrued-royalty record error (non-fatal): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
 
     // ---- Persisted run outputs (event-driven expansion) -------------------
     // Uploads the terminal run's workspace files into the durable OutputStore

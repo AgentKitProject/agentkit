@@ -207,7 +207,7 @@ export class PostgresSellerEarningsRepository {
 
   async getPendingSellerEarnings(): Promise<PendingSellerEarnings[]> {
     const { rows } = await this.pool.query(
-      `SELECT org_id, (accrued_cents - transferred_cents) AS pending_cents
+      `SELECT org_id, (accrued_cents - transferred_cents) AS pending_cents, transferred_cents
          FROM gateway_seller_earnings
         WHERE accrued_cents - transferred_cents > 0
         ORDER BY org_id`,
@@ -215,6 +215,7 @@ export class PostgresSellerEarningsRepository {
     return rows.map((r) => ({
       orgId: r["org_id"] as string,
       pendingCents: Number(r["pending_cents"]),
+      transferredCents: Number(r["transferred_cents"]),
     }));
   }
 

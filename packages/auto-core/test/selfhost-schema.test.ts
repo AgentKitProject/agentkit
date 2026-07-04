@@ -84,6 +84,7 @@ describe("ensureAutoSchema", () => {
       "auto_schedules",
       "auto_secrets",
       "auto_triggers",
+      "auto_unaccrued_royalties",
       "auto_webhooks",
     ]);
   });

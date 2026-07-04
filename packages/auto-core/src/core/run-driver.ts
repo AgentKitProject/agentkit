@@ -107,6 +107,14 @@ export interface RunAutoRunResult {
    * self-host / non-premium run.
    */
   spentRoyaltyCents: number;
+  /**
+   * Whether the seller royalty for this run was accrued. true when a royalty was
+   * charged AND the accrual succeeded, OR when no royalty applied (nothing owed).
+   * false ONLY when the buyer was charged a royalty (spentRoyaltyCents > 0) but the
+   * accrual threw — the worker uses this to durably queue the run for the M6
+   * royalty-reconciliation job. Always true on open-core / self-host / non-premium.
+   */
+  royaltyAccrued: boolean;
   /** Number of tool-execution rounds driven. */
   toolRounds: number;
 }
@@ -315,6 +323,11 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   let spentInvocationCents = 0;
   let spentActiveMinuteCents = 0;
   let spentRoyaltyCents = 0;
+  // Whether the seller royalty for this run was successfully accrued. Starts true
+  // (nothing owed / non-premium); set false ONLY when the buyer WAS charged a
+  // royalty but the immediate accrual threw — the signal the worker uses to
+  // durably record an unaccrued-royalty intent for the reconciliation job (M6 #5).
+  let royaltyAccrued = true;
   const budgetCents = run.budgetCents;
 
   // ---- Auto v2 run compute fee (invocation + active-minute) -----------------
@@ -471,9 +484,14 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
           now: now(),
         });
       } catch (err) {
+        // Buyer already settled; the accrual failed. Flag it so the worker durably
+        // records an unaccrued-royalty intent that the reconciliation job re-drives
+        // (idempotent by runId) — this is the "reconciliation will cover" promise,
+        // now backed by a real durable retry (M6 #5).
+        royaltyAccrued = false;
         // eslint-disable-next-line no-console
         console.error(
-          `[auto-core] royalty accrual failed for run ${run.id} (buyer already settled; reconciliation will cover): ${
+          `[auto-core] royalty accrual failed for run ${run.id} (buyer already settled; queued for reconciliation): ${
             err instanceof Error ? err.message : String(err)
           }`,
         );
@@ -579,6 +597,7 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       spentInvocationCents,
       spentActiveMinuteCents,
       spentRoyaltyCents,
+      royaltyAccrued,
       toolRounds,
     };
   };

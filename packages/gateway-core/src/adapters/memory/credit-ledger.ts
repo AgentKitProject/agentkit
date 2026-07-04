@@ -196,8 +196,9 @@ export class InMemoryCreditLedgerRepository implements CreditLedgerRepository {
     const orgs = new Set<string>([...this.sellerAccrued.keys(), ...this.sellerTransferred.keys()]);
     const pending: PendingSellerEarnings[] = [];
     for (const orgId of [...orgs].sort()) {
-      const pendingCents = (this.sellerAccrued.get(orgId) ?? 0) - (this.sellerTransferred.get(orgId) ?? 0);
-      if (pendingCents > 0) pending.push({ orgId, pendingCents });
+      const transferredCents = this.sellerTransferred.get(orgId) ?? 0;
+      const pendingCents = (this.sellerAccrued.get(orgId) ?? 0) - transferredCents;
+      if (pendingCents > 0) pending.push({ orgId, pendingCents, transferredCents });
     }
     return pending;
   }

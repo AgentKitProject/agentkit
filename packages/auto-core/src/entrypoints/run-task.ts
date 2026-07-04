@@ -41,8 +41,10 @@ import { makeSesEmailSender } from "../adapters/aws/ses-email-sender.js";
 import {
   ensureAutoSchema,
   makeSelfHostAutoDeps,
+  PostgresRoyaltyAccrualStore,
   type PgPool,
 } from "../adapters/selfhost/postgres.js";
+import type { RoyaltyAccrualStore } from "../core/royalty-reconciliation.js";
 import { makeSelfHostEmailSender } from "../adapters/selfhost/email-sender.js";
 import { makeFreeCreditLedger } from "../adapters/selfhost/free-ledger.js";
 import { HttpLedgerClient } from "../adapters/http/http-ledger-client.js";
@@ -108,6 +110,13 @@ interface BackendDeps {
    * path, so a free deployment never touches the ledger and pays nothing.
    */
   managed: boolean;
+  /**
+   * Durable royalty-accrual reconciliation store (M6 #5). Present ONLY on the
+   * Postgres self-host/DOKS backend (it needs the same pool). Absent on the AWS
+   * DynamoDB backend and skipped there — a failed premium accrual there is still
+   * flagged by the driver but not durably queued (the AWS worker path is legacy).
+   */
+  royaltyStore?: RoyaltyAccrualStore;
 }
 
 /**
@@ -161,9 +170,12 @@ async function buildBackendDeps(env: Env): Promise<BackendDeps> {
       billing === "managed"
         ? loadManagedLedgerWithFlag(env)
         : { ledger: makeFreeCreditLedger(), managed: false };
+    // Durable royalty-accrual reconciliation store (M6 #5): over the SAME pool.
+    // Harmless on free/BYO (nothing records unless a premium accrual fails).
+    const royaltyStore = new PostgresRoyaltyAccrualStore(pool);
     // SMTP email sender: active when SMTP_HOST + SMTP_FROM are set in env;
     // inert (skipped) otherwise — webhook delivery still works regardless.
-    return { storage, ledger, emailSender: makeSelfHostEmailSender(), managed };
+    return { storage, ledger, emailSender: makeSelfHostEmailSender(), managed, royaltyStore };
   }
 
   // AWS (hosted) — storage uses the task role (default credential chain) + the
@@ -373,7 +385,7 @@ export async function runTask(env: Env = process.env): Promise<void> {
   // self-host). Phase D (hardened isolation): AUTO_WORKSPACE_DIR points per-run
   // workspaces at the writable scratch mount under a read-only root filesystem;
   // when unset both backends fall back to os.tmpdir() (backward-compatible).
-  const { storage, ledger, emailSender, managed } = await buildBackendDeps(env);
+  const { storage, ledger, emailSender, managed, royaltyStore } = await buildBackendDeps(env);
 
   // Auto v2 run fee (invocation + active-minute), in US cents. Resolved from the
   // commercial gateway overlay and gated on `managed`: the free / open-core ledger
@@ -443,6 +455,10 @@ export async function runTask(env: Env = process.env): Promise<void> {
     emailSender,
     deliveryFetch: globalFetch,
     deliveryResolver: dnsResolver,
+    // Durable royalty-accrual reconciliation store (M6 #5). Present only on the
+    // Postgres backend; the worker records an unaccrued intent iff a premium
+    // royalty was charged and its accrual threw (best-effort; never fails a run).
+    ...(royaltyStore ? { royaltyStore } : {}),
     ...(env["AUTO_MAX_TOKENS"] !== undefined
       ? { maxTokens: parseIntEnv(env, "AUTO_MAX_TOKENS", 0) }
       : {}),

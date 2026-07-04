@@ -404,6 +404,14 @@ export interface PendingSellerEarnings {
   orgId: string;
   /** accruedCents - transferredCents (> 0). */
   pendingCents: number;
+  /**
+   * The org's transferred_cents watermark. It advances ONLY when a payout is
+   * confirmed (markSellerEarningsTransferred), so it is a stable anchor for the
+   * payout job's Stripe idempotency key: a retry after a failed mark — even with
+   * new earnings accrued in between — sees the SAME watermark and reuses the SAME
+   * transfer instead of double-paying.
+   */
+  transferredCents: number;
 }
 
 export interface AppendSessionMessagesInput {

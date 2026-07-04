@@ -419,6 +419,18 @@ export type {
   RunAutoRunResult,
 } from "./core/run-driver.js";
 
+// ---- Royalty accrual reconciliation (M6 #5) ------------------------------
+export {
+  reconcileRoyaltyAccrualsCore,
+  InMemoryRoyaltyAccrualStore,
+} from "./core/royalty-reconciliation.js";
+export type {
+  UnaccruedRoyalty,
+  RoyaltyAccrualStore,
+  ReconcileRoyaltiesDeps,
+  ReconcileRoyaltiesResult,
+} from "./core/royalty-reconciliation.js";
+
 // ---- Concurrency cap (L4 — per-user active-run limit) --------------------
 export {
   ACTIVE_RUN_STATUSES,
@@ -568,6 +580,7 @@ export {
   PostgresFireLogRepository,
   PostgresPendingApprovalRepository,
   PostgresReceivedEventRepository,
+  PostgresRoyaltyAccrualStore,
   PostgresSecretStore,
   PostgresTriggerRepository,
   makeSelfHostOutputStoreFromEnv,
