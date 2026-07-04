@@ -26,7 +26,23 @@ import {
   type EntitledKit
 } from "./market-kit-ref";
 
-type ManagedModel = { id: string; label: string; tier: string };
+type ManagedModel = { id: string; label: string; tier: string; provider: "anthropic" | "openai" };
+
+const PROVIDER_GROUP_LABEL: Record<ManagedModel["provider"], string> = {
+  anthropic: "Claude",
+  openai: "OpenAI (GPT)"
+};
+
+// Groups managed models by provider, preserving each group's first-seen order.
+function groupModelsByProvider(models: ManagedModel[]): [ManagedModel["provider"], ManagedModel[]][] {
+  const groups = new Map<ManagedModel["provider"], ManagedModel[]>();
+  for (const m of models) {
+    const list = groups.get(m.provider);
+    if (list) list.push(m);
+    else groups.set(m.provider, [m]);
+  }
+  return [...groups.entries()];
+}
 type ChatMessage = { role: "user" | "assistant"; text: string; streaming?: boolean };
 type CreditsError = { message: string; requiredCents?: number; balanceCents?: number };
 
@@ -258,8 +274,12 @@ export function RunSection({
           <Field label="Model">
             <Select value={model} onChange={(e) => setModel(e.target.value)} disabled={!models.length}>
               {models.length === 0 && <option value="">Default</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
+              {groupModelsByProvider(models).map(([provider, group]) => (
+                <optgroup key={provider} label={PROVIDER_GROUP_LABEL[provider]}>
+                  {group.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
               ))}
             </Select>
           </Field>

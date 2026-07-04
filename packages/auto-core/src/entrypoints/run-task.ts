@@ -29,7 +29,7 @@
 
 import {
   buildChatProvider,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   type ChatProvider,
   type CreditLedgerRepository,
 } from "@agentkitforge/gateway-core";
@@ -383,7 +383,7 @@ export async function runTask(env: Env = process.env): Promise<void> {
 
   // Platform (managed) provider. In self-host FREE mode every run is BYO so this
   // is never exercised; it stays inert (throws) when ANTHROPIC_API_KEY is unset.
-  const chatProvider = createManagedAnthropicProvider();
+  const chatProvider = createManagedRoutingProvider();
 
   // Single up-front fetch of the resolve payload: it carries BOTH the kit
   // context AND the per-run inference mode / BYO provider config. We reuse the

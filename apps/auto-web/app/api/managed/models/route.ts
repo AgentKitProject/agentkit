@@ -1,7 +1,7 @@
 // GET /api/managed/models -> the managed (in-house, prepaid-credit) model list.
 // Returns { models: [{ id, label, tier, provider }], defaultModel }. Used by the
-// Build generate/revise + Edit-with-AI + Run selectors when a user is on managed
-// inference (no BYO provider configured). Static catalog gated by runtime env.
+// Auto run/schedule/webhook model selectors when a user is on managed inference
+// (no BYO provider configured). Static catalog gated by runtime env.
 import { MANAGED_MODELS, MANAGED_DEFAULT_MODEL } from "@/server/core/managed-models";
 import { isManagedInferenceEnabled } from "@/lib/self-host";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 // Managed OpenAI (GPT) is offered only when the platform has provisioned it.
 // Two signals so this works across the hosted split topology (the web pod may
-// not itself hold the inference key — Forge managed turns run in the gateway)
+// not itself hold the inference key — e.g. Forge inference runs in the gateway)
 // AND self-host (the web pod holds the operator's own key):
 //   - OPENAI_API_KEY present in the route's env, OR
 //   - MANAGED_OPENAI_ENABLED=true (explicit deployment flag).

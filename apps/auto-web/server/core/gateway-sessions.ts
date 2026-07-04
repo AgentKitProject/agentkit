@@ -30,7 +30,7 @@
 import {
   DynamoSessionStore,
   createDynamoDBDocumentClient,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   loadDynamoTableNames,
   routeGatewayRequest,
   type GatewayRequest,
@@ -200,7 +200,7 @@ function buildRouterDeps(
   const ledger = getCreditLedger();
   // The managed provider reads the PLATFORM ANTHROPIC_API_KEY. When unset, the
   // factory throws inertly; runStreamingTurn surfaces it as an `error` event.
-  const chatProvider = createManagedAnthropicProvider();
+  const chatProvider = createManagedRoutingProvider();
   // Per-request turn context: captures the protected prompt during resolve and
   // redacts verbatim leaks from emitted events. Inert for non-protected turns.
   const turnCtx = makeProtectedTurnContext();

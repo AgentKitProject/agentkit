@@ -5,9 +5,10 @@
 //     DynamoDB tables (names from GATEWAY_*_TABLE env via loadDynamoTableNames),
 //     using the SAME AWS region/credentials as the KitStore aws adapter
 //     (awsClientEnv() / FORGE_AWS_*).
-//   - createManagedAnthropicProvider() — reads the PLATFORM ANTHROPIC_API_KEY.
-//     If ANTHROPIC_API_KEY is unset, the provider factory throws inertly and
-//     managed turns surface a clear "not configured" error; BYO is unaffected.
+//   - createManagedRoutingProvider() — routes by model to the PLATFORM
+//     ANTHROPIC_API_KEY (claude-*) or OPENAI_API_KEY (gpt-*). If the selected
+//     family's key is unset, its factory throws inertly and managed turns
+//     surface a clear "not configured" error; BYO is unaffected.
 //
 // Managed mode charges the buyer's prepaid credit balance for each turn via the
 // two-phase hold flow in runManagedTurn (reserveHold → sendMessage →
@@ -15,7 +16,7 @@
 import {
   InMemoryCreditLedgerRepository,
   createDynamoDBDocumentClient,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   loadDynamoTableNames,
   runManagedTurn,
   InsufficientCreditsError,
@@ -136,7 +137,7 @@ export async function runManagedChat(
   request: ChatRequest,
   opts: { estimatedInputTokens?: number; sourceRef?: string } = {}
 ): Promise<ManagedChatResult> {
-  const chatProvider = createManagedAnthropicProvider();
+  const chatProvider = createManagedRoutingProvider();
   const deps: ManagedTurnDeps = {
     chatProvider,
     ledger: getCreditLedger(),

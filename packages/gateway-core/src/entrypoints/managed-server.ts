@@ -46,7 +46,7 @@ import {
 } from "../core/config.js";
 import { InMemoryCreditLedgerRepository } from "../adapters/memory/credit-ledger.js";
 import { PostgresSessionStore, type PgPool } from "../adapters/selfhost/postgres.js";
-import { createManagedAnthropicProvider } from "../adapters/anthropic/index.js";
+import { createManagedRoutingProvider } from "../adapters/managed-routing.js";
 import {
   makeObjectStorageKitResolvers,
   type KitPackageStore,
@@ -287,7 +287,7 @@ export async function composeManagedGateway(
     await applyGatewaySchema(options.pool, loaded?.schemaSql);
   }
 
-  const chatProvider = options.chatProvider ?? createManagedAnthropicProvider();
+  const chatProvider = options.chatProvider ?? createManagedRoutingProvider();
   const sessions = new PostgresSessionStore(options.pool);
 
   // Seam #1: server-side kit-context resolution. Explicit resolvers win; else an

@@ -39,7 +39,7 @@
 //    conversational, exactly like the web path (which never declares tools).
 import {
   createGatewaySession,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   routeGatewayRequest,
   type GatewayRequest,
   type GatewayResponse,
@@ -273,7 +273,7 @@ function buildRouterDeps(
 ): GatewayRouterDeps {
   const sessions = getSessionStore();
   const ledger = getCreditLedger();
-  const chatProvider = createManagedAnthropicProvider();
+  const chatProvider = createManagedRoutingProvider();
   // Per-request turn context: threads the forwarded bearer into the protected
   // server-fetch + redacts verbatim prompt leaks from emitted events.
   const turnCtx = makeForgeTurnContext(bearerToken);

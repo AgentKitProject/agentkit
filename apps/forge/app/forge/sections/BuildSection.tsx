@@ -17,13 +17,34 @@ import { useConfig } from "../config-context";
 // passed through generate/revise as `model` → runManagedTurn. BYO mode keeps
 // using the provider's own model selection and ignores this entirely.
 // ---------------------------------------------------------------------------
-type ManagedModel = { id: string; label: string; tier: "cheaper" | "standard" | "premium" };
+type ManagedModel = {
+  id: string;
+  label: string;
+  tier: "cheaper" | "standard" | "premium";
+  provider: "anthropic" | "openai";
+};
 
 const TIER_HINT: Record<ManagedModel["tier"], string> = {
   cheaper: "cheaper",
   standard: "standard",
   premium: "premium"
 };
+
+const PROVIDER_GROUP_LABEL: Record<ManagedModel["provider"], string> = {
+  anthropic: "Claude",
+  openai: "OpenAI (GPT)"
+};
+
+// Groups managed models by provider, preserving each group's first-seen order.
+function groupModelsByProvider(models: ManagedModel[]): [ManagedModel["provider"], ManagedModel[]][] {
+  const groups = new Map<ManagedModel["provider"], ManagedModel[]>();
+  for (const m of models) {
+    const list = groups.get(m.provider);
+    if (list) list.push(m);
+    else groups.set(m.provider, [m]);
+  }
+  return [...groups.entries()];
+}
 
 function useManagedModel() {
   // managed === user has no BYO provider configured. `undefined` while loading.
@@ -82,10 +103,14 @@ function ManagedModelSelector({
         </span>
       </label>
       <Select value={model} onChange={(e) => setModel(e.target.value)}>
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label} — {TIER_HINT[m.tier]}
-          </option>
+        {groupModelsByProvider(models).map(([provider, group]) => (
+          <optgroup key={provider} label={PROVIDER_GROUP_LABEL[provider]}>
+            {group.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} — {TIER_HINT[m.tier]}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </Select>
     </div>

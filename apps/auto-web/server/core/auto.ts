@@ -72,7 +72,7 @@ import {
 } from "@agentkitforge/auto-core";
 import {
   buildChatProvider,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   type AiProviderType,
   type ChatProvider,
   type CreditLedgerRepository,
@@ -842,11 +842,13 @@ async function buildProcessDeps(
   const rates = await autoV2Rates();
   return {
     storage,
-    // PLATFORM Anthropic key — same managed provider the gateway uses. On
-    // self-host this reads the operator's own ANTHROPIC_API_KEY (BYO). Inert
-    // (throws) when ANTHROPIC_API_KEY is unset; a run then fails with a clear
-    // error rather than billing the user.
-    chatProvider: createManagedAnthropicProvider(),
+    // PLATFORM managed provider — routes by the run's model to the platform
+    // Anthropic (claude-*) or OpenAI (gpt-*) key, same as the gateway. On
+    // self-host this reads the operator's own ANTHROPIC_API_KEY / OPENAI_API_KEY
+    // (BYO). Each family is inert (throws a clear error) when its key is unset,
+    // only when a run actually selects that family — so a Claude-only box is
+    // unaffected — and the run then fails rather than billing the user.
+    chatProvider: createManagedRoutingProvider(),
     // BYO provider (user's own key) when this run is BYO; auto-core uses it
     // instead of the managed provider and does NOT debit inference.
     ...(billing.byoChatProvider ? { byoChatProvider: billing.byoChatProvider } : {}),

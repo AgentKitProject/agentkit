@@ -60,6 +60,27 @@ type AutoBillingSummary = {
   activeMinuteRateCents: number;
 };
 
+// A managed (in-house, prepaid-credit) model offered by GET /api/managed/models —
+// Claude + GPT entries the create forms let the user pick per-run/schedule/webhook.
+type ManagedModel = { id: string; label: string; tier: string; provider: "anthropic" | "openai" };
+
+const PROVIDER_GROUP_LABEL: Record<ManagedModel["provider"], string> = {
+  anthropic: "Claude",
+  openai: "OpenAI (GPT)"
+};
+
+// Groups models by provider, preserving each group's first-seen order, for the
+// <optgroup> split in the model selector.
+function groupModelsByProvider(models: ManagedModel[]): [ManagedModel["provider"], ManagedModel[]][] {
+  const groups = new Map<ManagedModel["provider"], ManagedModel[]>();
+  for (const m of models) {
+    const list = groups.get(m.provider);
+    if (list) list.push(m);
+    else groups.set(m.provider, [m]);
+  }
+  return [...groups.entries()];
+}
+
 // Phase C: network egress policy (deny_all default, or an allowlist of hosts).
 type NetworkPolicy = { mode: "deny_all" } | { mode: "allowlist"; hosts: string[] };
 
@@ -315,12 +336,19 @@ export function AutoSection({
   // free minutes + the buy-credits link the same as managed users.
   const [billing, setBilling] = useState<AutoBillingSummary | null>(null);
 
+  // Managed model catalog (Claude + GPT) for the create forms below. Empty (or
+  // `disabled`) on a BYO-only self-host — the pickers stay hidden in that case.
+  const [managedModels, setManagedModels] = useState<ManagedModel[]>([]);
+  const [managedDefaultModel, setManagedDefaultModel] = useState("");
+
   // Run form state.
   const [runKitId, setRunKitId] = useState("");
   const [runPrompt, setRunPrompt] = useState("");
   const [runBusy, setRunBusy] = useState(false);
   // Phase 2: per-run inference-mode override ("" = use account preference).
   const [runInferenceMode, setRunInferenceMode] = useState<"" | "managed" | "byo">("");
+  // Managed model override for this run ("" = server-resolved default).
+  const [runModel, setRunModel] = useState("");
   // Phase C: user-provided input files staged via presigned upload then attached
   // to the run as a manifest. Selected files are uploaded on run start.
   const [runInputFiles, setRunInputFiles] = useState<File[]>([]);
@@ -331,6 +359,8 @@ export function AutoSection({
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [whKitId, setWhKitId] = useState("");
   const [whBusy, setWhBusy] = useState(false);
+  // Managed model override for webhook-fired runs ("" = server-resolved default).
+  const [whModel, setWhModel] = useState("");
   // The one-time plaintext secret + ingest URL, shown ONCE after creation.
   const [whSecret, setWhSecret] = useState<{ secret: string; ingestUrl: string } | null>(null);
   // Phase D: opt-in result-delivery fields for webhook-fired runs.
@@ -348,6 +378,8 @@ export function AutoSection({
   const [schedTz, setSchedTz] = useState(localTimezone());
   const [schedPrompt, setSchedPrompt] = useState("");
   const [schedBusy, setSchedBusy] = useState(false);
+  // Managed model override for scheduled runs ("" = server-resolved default).
+  const [schedModel, setSchedModel] = useState("");
 
   // Per-run budget settings (Phase 2.5): the per-run budget is no longer entered
   // on each form — it is resolved server-side (org override → user default → 50¢).
@@ -504,6 +536,20 @@ export function AutoSection({
     }
   }, [marketEnabled]);
 
+  // The managed model catalog (Claude + GPT) for the create forms' model pickers.
+  // Empty `models` (BYO-only self-host, or `disabled: true`) hides every picker.
+  const loadManagedModels = useCallback(async () => {
+    try {
+      const res = await jsonFetch<{ models?: ManagedModel[]; defaultModel?: string | null; disabled?: true }>(
+        "/api/managed/models"
+      );
+      setManagedModels(res.disabled ? [] : (res.models ?? []));
+      setManagedDefaultModel(res.defaultModel ?? "");
+    } catch {
+      /* non-fatal — pickers stay hidden */
+    }
+  }, []);
+
   useEffect(() => {
     void loadApprovals();
     void loadRuns();
@@ -514,7 +560,19 @@ export function AutoSection({
     void loadRunBudget();
     void loadBilling();
     void loadEntitled();
-  }, [loadApprovals, loadRuns, loadSchedules, loadWebhooks, loadByo, loadProviders, loadRunBudget, loadBilling, loadEntitled]);
+    void loadManagedModels();
+  }, [
+    loadApprovals,
+    loadRuns,
+    loadSchedules,
+    loadWebhooks,
+    loadByo,
+    loadProviders,
+    loadRunBudget,
+    loadBilling,
+    loadEntitled,
+    loadManagedModels
+  ]);
 
   // The catalog filtered to the deployment's allowed provider types (disallowed
   // are hidden from the form; the server enforces the lock regardless).
@@ -812,7 +870,8 @@ export function AutoSection({
           input: { prompt: runPrompt },
           ...(inputFiles && inputFiles.length > 0 ? { inputFiles } : {}),
           ...(deliveryConfig ? { deliveryConfig } : {}),
-          ...(runInferenceMode ? { inferenceMode: runInferenceMode } : {})
+          ...(runInferenceMode ? { inferenceMode: runInferenceMode } : {}),
+          ...(runModel ? { model: runModel } : {})
         })
       });
       notify("Run started.");
@@ -820,6 +879,7 @@ export function AutoSection({
       setRunInputFiles([]);
       setRunDelivery(EMPTY_DELIVERY);
       setRunInferenceMode("");
+      setRunModel("");
       setOpenRunId(id);
       await loadRuns();
       // The run consumes free minutes / balance — refresh the billing snapshot.
@@ -869,12 +929,14 @@ export function AutoSection({
           timezone: schedTz.trim() || "UTC",
           input: { prompt: schedPrompt },
           approvalId: approval.id,
-          ...(deliveryConfig ? { deliveryConfig } : {})
+          ...(deliveryConfig ? { deliveryConfig } : {}),
+          ...(schedModel ? { model: schedModel } : {})
         })
       });
       notify("Schedule created.");
       setSchedPrompt("");
       setSchedDelivery(EMPTY_DELIVERY);
+      setSchedModel("");
       await loadSchedules();
     } catch (e) {
       notify(errMsg(e), true);
@@ -923,12 +985,14 @@ export function AutoSection({
         body: JSON.stringify({
           kitRef,
           approvalId: approval.id,
-          ...(deliveryConfig ? { deliveryConfig } : {})
+          ...(deliveryConfig ? { deliveryConfig } : {}),
+          ...(whModel ? { model: whModel } : {})
         })
       });
       // Show the plaintext secret + ingest URL ONCE — never retrievable again.
       setWhSecret({ secret: created.secret, ingestUrl: created.ingestUrl });
       setWhDelivery(EMPTY_DELIVERY);
+      setWhModel("");
       notify("Webhook created. Copy the secret now — it is shown only once.");
       await loadWebhooks();
     } catch (e) {
@@ -1374,6 +1438,21 @@ export function AutoSection({
             </Select>
           </Field>
         )}
+        {/* ---- Managed model picker (managed models only; hidden for BYO-only self-host) ---- */}
+        {managedModels.length > 0 && (
+          <Field label="Model">
+            <Select value={runModel} onChange={(e) => setRunModel(e.target.value)}>
+              <option value="">Default ({managedDefaultModel})</option>
+              {groupModelsByProvider(managedModels).map(([provider, group]) => (
+                <optgroup key={provider} label={PROVIDER_GROUP_LABEL[provider]}>
+                  {group.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </Field>
+        )}
         {/* ---- Input files (Phase C) ---- */}
         <Field label="Input files (optional)">
           <input
@@ -1469,6 +1548,21 @@ export function AutoSection({
         <Field label="Task">
           <Textarea rows={3} value={schedPrompt} onChange={(e) => setSchedPrompt(e.target.value)} placeholder="What should the kit do on each run?" />
         </Field>
+        {/* ---- Managed model picker (managed models only; hidden for BYO-only self-host) ---- */}
+        {managedModels.length > 0 && (
+          <Field label="Model">
+            <Select value={schedModel} onChange={(e) => setSchedModel(e.target.value)}>
+              <option value="">Default ({managedDefaultModel})</option>
+              {groupModelsByProvider(managedModels).map(([provider, group]) => (
+                <optgroup key={provider} label={PROVIDER_GROUP_LABEL[provider]}>
+                  {group.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </Field>
+        )}
         {budgetNote}
         {/* ---- Deliver result (Phase D) ---- */}
         <DeliverySection value={schedDelivery} onChange={setSchedDelivery} scopeNoun="scheduled run" />
@@ -1528,6 +1622,21 @@ export function AutoSection({
             {renderKitOptions(true)}
           </Select>
         </Field>
+        {/* ---- Managed model picker (managed models only; hidden for BYO-only self-host) ---- */}
+        {managedModels.length > 0 && (
+          <Field label="Model">
+            <Select value={whModel} onChange={(e) => setWhModel(e.target.value)}>
+              <option value="">Default ({managedDefaultModel})</option>
+              {groupModelsByProvider(managedModels).map(([provider, group]) => (
+                <optgroup key={provider} label={PROVIDER_GROUP_LABEL[provider]}>
+                  {group.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </Field>
+        )}
         {budgetNote}
         {/* ---- Deliver result (Phase D) ---- */}
         <DeliverySection value={whDelivery} onChange={setWhDelivery} scopeNoun="webhook-fired run" />

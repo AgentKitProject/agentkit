@@ -10,7 +10,7 @@
 //                    credit ledger, and the new AUTO_RUNS_TABLE/AUTO_APPROVALS_TABLE
 //                    DynamoDB tables (defaults AutoRuns/AutoApprovals).
 //   - BILLING      — the PLATFORM Anthropic provider + the gateway credit ledger,
-//                    reused verbatim from the gateway (createManagedAnthropicProvider
+//                    reused verbatim from the gateway (createManagedRoutingProvider
 //                    + getCreditLedger()). Auto NEVER invents billing — every model
 //                    turn runs through gateway-core's managed-turn pricing.
 //   - KIT CONTEXT  — resolveKitContext resolves a kit (KitStore id OR Market ref) to
@@ -70,7 +70,7 @@ import {
 } from "@agentkitforge/auto-core";
 import {
   AnthropicChatProvider,
-  createManagedAnthropicProvider,
+  createManagedRoutingProvider,
   type ChatProvider,
   type ToolDefinition,
   FREE_TRIAL_PERIOD_KEY
@@ -518,7 +518,7 @@ async function buildProcessDeps(
     // PLATFORM Anthropic key — same managed provider the gateway uses. Inert
     // (throws) when ANTHROPIC_API_KEY is unset; a run then fails with a clear
     // error rather than billing the user.
-    chatProvider: createManagedAnthropicProvider(),
+    chatProvider: createManagedRoutingProvider(),
     // BYO provider (user's own key) when this run is BYO; auto-core uses it
     // instead of the managed provider and does NOT debit inference.
     ...(billing.byoChatProvider ? { byoChatProvider: billing.byoChatProvider } : {}),

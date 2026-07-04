@@ -68,6 +68,26 @@ const PRICE_TABLE: Record<string, ModelPricing> = {
     inputPerMillion: 10.0,
     outputPerMillion: 50.0,
   },
+  // --- OpenAI (GPT) managed family. Prices from OpenAI's public API pricing
+  //     (developers.openai.com/api/docs/pricing, 2026-07). Cached-input is 10%
+  //     of the input rate — the same ratio as the getModelPricing default
+  //     (inputPerMillion * 0.1) — so no explicit cachedReadPerMillion needed. ---
+  "gpt-5.4-nano": {
+    inputPerMillion: 0.2,
+    outputPerMillion: 1.25,
+  },
+  "gpt-5.4-mini": {
+    inputPerMillion: 0.75,
+    outputPerMillion: 4.5,
+  },
+  "gpt-5.4": {
+    inputPerMillion: 2.5,
+    outputPerMillion: 15.0,
+  },
+  "gpt-5.5": {
+    inputPerMillion: 5.0,
+    outputPerMillion: 30.0,
+  },
   // --- Legacy / kept for historical billing records ---
   "claude-haiku-3-0": {
     inputPerMillion: 0.25,

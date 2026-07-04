@@ -187,3 +187,10 @@ export {
   buildChatProvider,
   type BuildChatProviderOptions,
 } from "./adapters/build-chat-provider.js";
+
+// Managed model-aware routing provider (Anthropic + OpenAI by model id)
+export {
+  createManagedRoutingProvider,
+  classifyManagedModelProvider,
+  type ManagedProviderFamily,
+} from "./adapters/managed-routing.js";
