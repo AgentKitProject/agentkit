@@ -51,6 +51,22 @@ export interface ResolvedKitContext {
    * self-host runs are unaffected).
    */
   protected?: boolean;
+  /**
+   * PREMIUM (per-invocation) kit royalty context for THIS run (M6 P5). Populated
+   * by the resolver ONLY for a premium kit (perRunRoyaltyCents > 0); absent/0 for
+   * local / free / non-premium kits, in which case the whole royalty path in the
+   * run-driver stays inert. Threaded straight into the run-driver deps by
+   * processAutoRun.
+   *   - `premiumRoyaltyCents` — the seller-set gross per-run royalty (US cents).
+   *   - `royaltyOrgId` — the SELLING org that earns the royalty (ownerOrgId).
+   *   - `royaltyKitId` — the Market kit id of the run.
+   *   - `royaltyCommissionBps` — the platform commission (bps) withheld at accrual;
+   *     flows through from the service response, never hardcoded (0 → seller keeps 100%).
+   */
+  premiumRoyaltyCents?: number;
+  royaltyOrgId?: string;
+  royaltyKitId?: string;
+  royaltyCommissionBps?: number;
 }
 
 /** Hook that resolves a run's kit context. Injected; no hard web-forge dep. */
@@ -281,6 +297,19 @@ export async function processAutoRun(
           : {}),
         ...(deps.freeActiveMinutesPerMonth !== undefined
           ? { freeActiveMinutesPerMonth: deps.freeActiveMinutesPerMonth }
+          : {}),
+        // PREMIUM (per-invocation) kit royalty (M6 P5). Carried on the RESOLVED
+        // kit context (per-run), NOT on the deployment-level deps — only a premium
+        // kit's resolve populates these. Absent/0 → the run-driver's royalty path
+        // stays inert (byte-identical for local / free / non-premium runs). The
+        // commission bps flows through from the service response; never hardcoded.
+        ...(kit.premiumRoyaltyCents !== undefined
+          ? { premiumRoyaltyCents: kit.premiumRoyaltyCents }
+          : {}),
+        ...(kit.royaltyOrgId !== undefined ? { royaltyOrgId: kit.royaltyOrgId } : {}),
+        ...(kit.royaltyKitId !== undefined ? { royaltyKitId: kit.royaltyKitId } : {}),
+        ...(kit.royaltyCommissionBps !== undefined
+          ? { royaltyCommissionBps: kit.royaltyCommissionBps }
           : {}),
         ...(deps.maxTokens !== undefined ? { maxTokens: deps.maxTokens } : {}),
         ...(deps.recordOrgUsage !== undefined

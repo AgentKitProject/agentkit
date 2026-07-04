@@ -317,6 +317,18 @@ export interface ServiceResolvedKit {
   pricing: "free" | "paid";
   downloadable: boolean;
   onlineOnly: boolean;
+  /**
+   * PREMIUM (per-invocation) run-metering context (M6 P5). Populated ONLY when the
+   * Market service returns it for a premium kit (perRunRoyaltyCents > 0). Absent /
+   * undefined for non-premium kits — the run-driver royalty path then stays inert.
+   *   - `perRunRoyaltyCents` — the seller-set gross per-run royalty (US cents).
+   *   - `ownerOrgId` — the SELLING org that earns the royalty.
+   *   - `royaltyCommissionBps` — platform commission (bps) withheld at accrual;
+   *     flows through from the service response, never hardcoded here.
+   */
+  perRunRoyaltyCents?: number;
+  ownerOrgId?: string;
+  royaltyCommissionBps?: number;
 }
 
 export async function resolveProtectedSystemPromptViaService(
@@ -392,7 +404,17 @@ export async function resolveProtectedSystemPromptViaService(
     systemPrompt: trimmed.length > 0 ? trimmed : DEFAULT_PROMPT,
     pricing: licensed.pricing,
     downloadable: licensed.downloadable,
-    onlineOnly: licensed.onlineOnly
+    onlineOnly: licensed.onlineOnly,
+    // PREMIUM run-metering context (M6 P5). The service returns these ONLY for a
+    // premium kit; they're optional in the response schema, so omit (leave
+    // undefined) when absent → a non-premium run threads no royalty and stays inert.
+    ...(licensed.perRunRoyaltyCents !== undefined
+      ? { perRunRoyaltyCents: licensed.perRunRoyaltyCents }
+      : {}),
+    ...(licensed.ownerOrgId !== undefined ? { ownerOrgId: licensed.ownerOrgId } : {}),
+    ...(licensed.royaltyCommissionBps !== undefined
+      ? { royaltyCommissionBps: licensed.royaltyCommissionBps }
+      : {})
   };
 }
 

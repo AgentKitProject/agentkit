@@ -141,6 +141,10 @@ function makeMarketServiceFetch(opts: {
   entitled: boolean;
   pricing?: "free" | "paid";
   onlineOnly?: boolean;
+  /** PREMIUM (per-invocation) run-metering context (M6 P5). When set, the service
+   *  returns these on the licensed-package response so the resolve seam threads the
+   *  royalty into the run driver. Omitted → non-premium (fields absent). */
+  premium?: { perRunRoyaltyCents: number; ownerOrgId: string; royaltyCommissionBps?: number };
   /** Records every URL hit so we can assert no bytes are fetched when refused. */
   hits: string[];
 }): typeof fetch {
@@ -173,6 +177,16 @@ function makeMarketServiceFetch(opts: {
       pricing: opts.pricing ?? "paid",
       downloadable: false,
       onlineOnly: opts.onlineOnly ?? true,
+      // PREMIUM run-metering context — populated only when opts.premium is set.
+      ...(opts.premium
+        ? {
+            perRunRoyaltyCents: opts.premium.perRunRoyaltyCents,
+            ownerOrgId: opts.premium.ownerOrgId,
+            ...(opts.premium.royaltyCommissionBps !== undefined
+              ? { royaltyCommissionBps: opts.premium.royaltyCommissionBps }
+              : {}),
+          }
+        : {}),
     };
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -365,6 +379,17 @@ class FundedLedger implements CreditLedgerRepository {
   }
   async consumeFreeActiveMinutes(_u: string, _ym: string, m: number) {
     return m;
+  }
+  // Seller-earnings (premium royalty) surface — inert by default; the P5 tests
+  // override `accrueRoyalty` per-instance to record accruals.
+  async accrueRoyalty() {
+    /* no-op default */
+  }
+  async getPendingSellerEarnings() {
+    return [];
+  }
+  async markSellerEarningsTransferred() {
+    /* no-op default */
   }
 }
 
@@ -735,6 +760,168 @@ describe("M6 S2 — protected run end-to-end (boundary holds)", () => {
     // Free kit → not protected → default prompt, no redaction binding.
     expect(ctx.protected).toBeUndefined();
     expect(ctx.systemPrompt).not.toContain(SECRET);
+  });
+
+  // =========================================================================
+  // M6 P5 — PREMIUM royalty wiring: the resolve seam populates the run-driver
+  // royalty deps for a PREMIUM kit, and the run charges the buyer + accrues to
+  // the seller. Non-premium stays inert.
+  // =========================================================================
+
+  it("P5: makeResolveKitContext threads perRunRoyaltyCents/ownerOrgId/commission → royalty deps for a premium kit", async () => {
+    const hits: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      makeMarketServiceFetch({
+        zip: zipBytes,
+        entitled: true,
+        premium: { perRunRoyaltyCents: 300, ownerOrgId: "org-seller", royaltyCommissionBps: 600 },
+        hits,
+      }),
+    );
+
+    const auto = await loadAuto();
+    const resolveKitContext = auto.makeResolveKitContext({ serviceUserId: USER });
+    const run: AutoRun = {
+      id: "run-premium",
+      userId: USER,
+      kitRef: PROTECTED_KIT_REF, // marketKitId = KIT_ID
+      status: "running",
+      input: { prompt: "do the task" },
+      budgetCents: 50_000,
+      spentCents: 0,
+      model: "claude-sonnet-4-6",
+      createdAt: NOW,
+      auditLog: [],
+    };
+    const ctx = await resolveKitContext(run, APPROVAL);
+    // Premium context threaded through: royaltyKitId = the run's Market kit id,
+    // royaltyOrgId = ownerOrgId, commission passed through (never hardcoded).
+    expect(ctx.protected).toBe(true);
+    expect(ctx.premiumRoyaltyCents).toBe(300);
+    expect(ctx.royaltyOrgId).toBe("org-seller");
+    expect(ctx.royaltyKitId).toBe(KIT_ID);
+    expect(ctx.royaltyCommissionBps).toBe(600);
+  });
+
+  it("P5: a non-premium protected kit leaves the royalty deps ABSENT (inert)", async () => {
+    const hits: string[] = [];
+    // Protected (paid/online-only) but NO premium royalty context.
+    vi.stubGlobal("fetch", makeMarketServiceFetch({ zip: zipBytes, entitled: true, hits }));
+
+    const auto = await loadAuto();
+    const resolveKitContext = auto.makeResolveKitContext({ serviceUserId: USER });
+    const run: AutoRun = {
+      id: "run-protected-nonpremium",
+      userId: USER,
+      kitRef: PROTECTED_KIT_REF,
+      status: "running",
+      input: { prompt: "do the task" },
+      budgetCents: 50_000,
+      spentCents: 0,
+      model: "claude-sonnet-4-6",
+      createdAt: NOW,
+      auditLog: [],
+    };
+    const ctx = await resolveKitContext(run, APPROVAL);
+    expect(ctx.protected).toBe(true);
+    expect("premiumRoyaltyCents" in ctx).toBe(false);
+    expect("royaltyOrgId" in ctx).toBe(false);
+    expect("royaltyKitId" in ctx).toBe(false);
+  });
+
+  it("P5: a premium run CHARGES the buyer + ACCRUES to the seller through processAutoRun", async () => {
+    const hits: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      makeMarketServiceFetch({
+        zip: zipBytes,
+        entitled: true,
+        premium: { perRunRoyaltyCents: 300, ownerOrgId: "org-seller", royaltyCommissionBps: 600 },
+        hits,
+      }),
+    );
+
+    const auto = await loadAuto();
+    const runs = new InMemoryRunRepo();
+    const run = seedRun(runs, "produce a short report");
+    const storage = buildStorage(runs);
+
+    // Recording ledger to capture the royalty accrual + settle.
+    const accruals: { orgId: string; kitId: string; grossRoyaltyCents: number; commissionBps: number }[] = [];
+    const settled: number[] = [];
+    const ledger = new FundedLedger();
+    (ledger as unknown as { accrueRoyalty: (i: unknown) => Promise<void> }).accrueRoyalty = async (i) => {
+      accruals.push(i as (typeof accruals)[number]);
+    };
+    (ledger as unknown as { settleHold: (h: string, c: number) => Promise<unknown> }).settleHold = async (
+      _h,
+      c,
+    ) => {
+      settled.push(c);
+      return { userId: USER, availableBalanceCents: 1_000_000, heldBalanceCents: 0, lifetimeTopupCents: 0, updatedAt: NOW };
+    };
+
+    const resolveKitContext = auto.makeResolveKitContext({ serviceUserId: USER });
+    const result = await processAutoRun(run.id, {
+      storage,
+      chatProvider: new FakeChatProvider([textResponse("done")]),
+      ledger,
+      inferenceMode: "managed",
+      markupBps: 0,
+      resolveKitContext,
+      now: noopNow,
+      // v2 rates 0 → the ONLY hold/settle is the threaded premium royalty.
+      invocationFeeCents: 0,
+      activeMinuteRateCents: 0,
+    });
+
+    expect(result.status).toBe("succeeded");
+    // The buyer paid the royalty; the run's receipt reflects it.
+    expect(result.spentRoyaltyCents).toBe(300);
+    expect(settled).toContain(300);
+    // The seller org accrued once, with the pass-through commission.
+    expect(accruals).toHaveLength(1);
+    expect(accruals[0]).toMatchObject({
+      orgId: "org-seller",
+      kitId: KIT_ID,
+      grossRoyaltyCents: 300,
+      commissionBps: 600,
+    });
+  });
+
+  it("P5: a non-premium run accrues NOTHING (byte-identical spend to today)", async () => {
+    const hits: string[] = [];
+    // Protected but not premium.
+    vi.stubGlobal("fetch", makeMarketServiceFetch({ zip: zipBytes, entitled: true, hits }));
+
+    const auto = await loadAuto();
+    const runs = new InMemoryRunRepo();
+    const run = seedRun(runs, "produce a short report");
+    const storage = buildStorage(runs);
+
+    const accruals: unknown[] = [];
+    const ledger = new FundedLedger();
+    (ledger as unknown as { accrueRoyalty: (i: unknown) => Promise<void> }).accrueRoyalty = async (i) => {
+      accruals.push(i);
+    };
+
+    const resolveKitContext = auto.makeResolveKitContext({ serviceUserId: USER });
+    const result = await processAutoRun(run.id, {
+      storage,
+      chatProvider: new FakeChatProvider([textResponse("done")]),
+      ledger,
+      inferenceMode: "managed",
+      markupBps: 0,
+      resolveKitContext,
+      now: noopNow,
+      invocationFeeCents: 0,
+      activeMinuteRateCents: 0,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.spentRoyaltyCents).toBe(0);
+    expect(accruals).toEqual([]);
   });
 });
 

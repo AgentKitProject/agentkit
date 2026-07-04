@@ -447,12 +447,32 @@ export function makeResolveKitContext(opts: KitContextOptions): ResolveKitContex
       if (opts.serviceUserId) {
         const resolved = await resolveProtectedSystemPromptViaService(opts.serviceUserId, protectedRef);
         const isProtected = resolved.pricing === "paid" || resolved.onlineOnly === true;
+        // PREMIUM (per-invocation) royalty (M6 P5). Thread the run-metering context
+        // from the service resolve into the run-driver deps ONLY for a PREMIUM kit
+        // (perRunRoyaltyCents > 0 AND a selling org). royaltyKitId = the Market kit
+        // id of this run; royaltyOrgId = the kit's ownerOrgId; commission flows
+        // through from the service response (never hardcoded). Non-premium / free /
+        // local runs leave these undefined → the royalty path stays inert.
+        const premium =
+          isProtected &&
+          (resolved.perRunRoyaltyCents ?? 0) > 0 &&
+          resolved.ownerOrgId !== undefined;
         return {
           systemPrompt: isProtected ? resolved.systemPrompt : DEFAULT_SYSTEM_PROMPT,
           tools,
           toolNames,
           // M6: flag protected kits so the worker redacts the run output / files.
-          ...(isProtected ? { protected: true } : {})
+          ...(isProtected ? { protected: true } : {}),
+          ...(premium
+            ? {
+                premiumRoyaltyCents: resolved.perRunRoyaltyCents,
+                royaltyOrgId: resolved.ownerOrgId,
+                royaltyKitId: protectedRef.kitId ?? "",
+                ...(resolved.royaltyCommissionBps !== undefined
+                  ? { royaltyCommissionBps: resolved.royaltyCommissionBps }
+                  : {})
+              }
+            : {})
         };
       }
 
@@ -1429,6 +1449,18 @@ export interface WorkerContext {
    *  to redact any verbatim leak of `systemPrompt` out of the run output /
    *  workspace files before they reach the buyer. Absent on local / free runs. */
   protected?: boolean;
+  /**
+   * PREMIUM (per-invocation) kit royalty context (M6 P5), serialized to the worker
+   * so a worker-dispatched run meters the seller's per-run royalty exactly like the
+   * in-process path. Present ONLY for a premium kit (premiumRoyaltyCents > 0);
+   * absent on local / free / non-premium runs. Mirrors auto-core's
+   * ResolveContextResponse royalty fields. The commission bps flows through from the
+   * Market service response; never hardcoded.
+   */
+  premiumRoyaltyCents?: number;
+  royaltyOrgId?: string;
+  royaltyKitId?: string;
+  royaltyCommissionBps?: number;
   /** Raw BYO provider config (NOT a ChatProvider) when this run is BYO. The
    *  worker constructs its own provider from this via gateway-core's
    *  buildChatProvider; the apiKey is sensitive and must never be logged.
@@ -1523,6 +1555,17 @@ export async function resolveWorkerContext(runId: string): Promise<WorkerContext
     toolNames: resolved.toolNames,
     // M6: surface protectedness to the worker so it redacts the run output / files.
     ...(resolved.protected ? { protected: true } : {}),
+    // PREMIUM royalty context (M6 P5): forward the per-run royalty fields resolved
+    // by makeResolveKitContext (populated only for a premium kit) so the
+    // worker-dispatched run meters the royalty exactly like the in-process path.
+    ...(resolved.premiumRoyaltyCents !== undefined
+      ? { premiumRoyaltyCents: resolved.premiumRoyaltyCents }
+      : {}),
+    ...(resolved.royaltyOrgId !== undefined ? { royaltyOrgId: resolved.royaltyOrgId } : {}),
+    ...(resolved.royaltyKitId !== undefined ? { royaltyKitId: resolved.royaltyKitId } : {}),
+    ...(resolved.royaltyCommissionBps !== undefined
+      ? { royaltyCommissionBps: resolved.royaltyCommissionBps }
+      : {}),
     inferenceMode,
     ...(byoProvider ? { byoProvider } : {})
   };

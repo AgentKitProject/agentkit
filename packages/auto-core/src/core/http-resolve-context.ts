@@ -42,6 +42,18 @@ export interface ResolveContextResponse {
    * local / free / self-host runs (no redaction).
    */
   protected?: boolean;
+  /**
+   * PREMIUM (per-invocation) kit royalty context (M6 P5), serialized to the worker
+   * so a worker-dispatched run meters the seller's per-run royalty exactly like the
+   * in-process path. Present ONLY for a premium kit (perRunRoyaltyCents > 0); absent
+   * on local / free / non-premium runs (the royalty path stays inert). See the
+   * matching fields on ResolvedKitContext (worker.ts) for semantics. The commission
+   * bps flows through from the Market service response; never hardcoded.
+   */
+  premiumRoyaltyCents?: number;
+  royaltyOrgId?: string;
+  royaltyKitId?: string;
+  royaltyCommissionBps?: number;
 }
 
 export interface FetchResolveContextArgs {
@@ -110,5 +122,16 @@ export function toResolveKitContext(payload: ResolveContextResponse): ResolveKit
     tools: payload.tools,
     toolNames: payload.toolNames,
     ...(payload.protected ? { protected: true } : {}),
+    // PREMIUM royalty context (M6 P5): forward the same per-run royalty fields the
+    // worker's run-driver deps need. Present only for a premium kit; absent
+    // otherwise → the royalty path stays inert.
+    ...(payload.premiumRoyaltyCents !== undefined
+      ? { premiumRoyaltyCents: payload.premiumRoyaltyCents }
+      : {}),
+    ...(payload.royaltyOrgId !== undefined ? { royaltyOrgId: payload.royaltyOrgId } : {}),
+    ...(payload.royaltyKitId !== undefined ? { royaltyKitId: payload.royaltyKitId } : {}),
+    ...(payload.royaltyCommissionBps !== undefined
+      ? { royaltyCommissionBps: payload.royaltyCommissionBps }
+      : {}),
   });
 }
