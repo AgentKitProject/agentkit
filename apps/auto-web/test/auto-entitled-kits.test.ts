@@ -151,6 +151,89 @@ describe("listEntitledKitsViaService — server-to-service entitled-kit listing"
     const { listEntitledKitsViaService } = await import("@/server/core/protected-kits");
     expect(await listEntitledKitsViaService(USER)).toEqual([]);
   });
+
+  it("passes the PREMIUM per-run price (perRunRoyaltyCents) through browser-safe", async () => {
+    const hits = {};
+    vi.stubGlobal(
+      "fetch",
+      makeEntitledKitsFetch({
+        body: {
+          kits: [{ marketKitId: "mk-1", slug: "secret-rubric", name: "Secret Rubric", perRunRoyaltyCents: 30 }]
+        },
+        hits
+      })
+    );
+    const { listEntitledKitsViaService } = await import("@/server/core/protected-kits");
+    expect(await listEntitledKitsViaService(USER)).toEqual([
+      { marketKitId: "mk-1", slug: "secret-rubric", name: "Secret Rubric", perRunRoyaltyCents: 30 }
+    ]);
+  });
+});
+
+describe("resolvePremiumRoyaltyCentsForRun — the affordability-preflight royalty (M6 P4)", () => {
+  it("resolves the per-run royalty for a PREMIUM market kit (matched by marketKitId)", async () => {
+    const hits = {};
+    vi.stubGlobal(
+      "fetch",
+      makeEntitledKitsFetch({
+        body: {
+          kits: [
+            { marketKitId: "mk-1", slug: "secret-rubric", name: "Secret Rubric", perRunRoyaltyCents: 30 },
+            { marketKitId: "mk-2", slug: "pro-pack", name: "Pro Pack" }
+          ]
+        },
+        hits
+      })
+    );
+    const { resolvePremiumRoyaltyCentsForRun } = await import("@/server/core/protected-kits");
+    expect(
+      await resolvePremiumRoyaltyCentsForRun(USER, { source: "market", marketKitId: "mk-1", slug: "secret-rubric" })
+    ).toBe(30);
+  });
+
+  it("returns 0 for a NON-premium protected kit (no per-run price)", async () => {
+    const hits = {};
+    vi.stubGlobal(
+      "fetch",
+      makeEntitledKitsFetch({
+        body: { kits: [{ marketKitId: "mk-2", slug: "pro-pack", name: "Pro Pack" }] },
+        hits
+      })
+    );
+    const { resolvePremiumRoyaltyCentsForRun } = await import("@/server/core/protected-kits");
+    expect(
+      await resolvePremiumRoyaltyCentsForRun(USER, { source: "market", marketKitId: "mk-2", slug: "pro-pack" })
+    ).toBe(0);
+  });
+
+  it("returns 0 for a LOCAL kit without calling out", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { resolvePremiumRoyaltyCentsForRun } = await import("@/server/core/protected-kits");
+    expect(await resolvePremiumRoyaltyCentsForRun(USER, { source: "local" })).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("FAILS OPEN to 0 when Market is disabled (self-host) — never blocks a run", async () => {
+    process.env.SELF_HOST = "true";
+    delete process.env.AGENTKITMARKET_BASE_URL;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { resolvePremiumRoyaltyCentsForRun } = await import("@/server/core/protected-kits");
+    expect(
+      await resolvePremiumRoyaltyCentsForRun(USER, { source: "market", marketKitId: "mk-1", slug: "secret-rubric" })
+    ).toBe(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("FAILS OPEN to 0 on a service error (never block a run on a royalty-lookup hiccup)", async () => {
+    const hits = {};
+    vi.stubGlobal("fetch", makeEntitledKitsFetch({ status: 502, body: { error: "backend_unavailable" }, hits }));
+    const { resolvePremiumRoyaltyCentsForRun } = await import("@/server/core/protected-kits");
+    expect(
+      await resolvePremiumRoyaltyCentsForRun(USER, { source: "market", marketKitId: "mk-1", slug: "secret-rubric" })
+    ).toBe(0);
+  });
 });
 
 describe("GET /api/auto/entitled-kits route", () => {

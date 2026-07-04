@@ -86,6 +86,40 @@ describe("estimateMinRunCostCents — pre-flight minimum cost", () => {
     // Free minutes remain, balance 1 → required 1 (invocation only) → sufficient.
     expect(1 >= estimateMinRunCostCents(rates, 60)).toBe(true);
   });
+
+  // PREMIUM (per_invocation) royalty (M6 P4): startRun's pre-flight now requires
+  //   balance >= estimateMinRunCostCents(rates, free) + premiumRoyaltyCents
+  // so a premium run is refused with a clean 402 BEFORE dispatch. These assert
+  // the exact arithmetic the gate performs (the royalty rides ON TOP of the
+  // compute estimate, and is NOT waived by the free trial).
+  it("royalty-inclusive sufficiency: balance must cover compute + royalty", async () => {
+    const { estimateMinRunCostCents } = await import("@/server/core/auto");
+    const rates = { invocationFeeCents: 1, activeMinuteRateCents: 1, freeActiveMinutesPerMonth: 60 };
+    const royalty = 300;
+
+    // No free minutes: required = (1 + 1) + 300 = 302.
+    const requiredNoFree = estimateMinRunCostCents(rates, 0) + royalty;
+    expect(requiredNoFree).toBe(302);
+    expect(301 >= requiredNoFree).toBe(false); // INSUFFICIENT → 402 pre-flight
+    expect(302 >= requiredNoFree).toBe(true); // exactly enough → ok
+
+    // Free minutes remain: compute is waived (0) but the royalty is NOT →
+    // required = 0 + 300 = 300 (the trial never waives the seller's price).
+    const requiredWithFree = estimateMinRunCostCents(rates, 60) + royalty;
+    expect(requiredWithFree).toBe(300);
+    expect(299 >= requiredWithFree).toBe(false);
+    expect(300 >= requiredWithFree).toBe(true);
+  });
+
+  it("0 royalty is byte-identical to today (non-premium run unchanged)", async () => {
+    const { estimateMinRunCostCents } = await import("@/server/core/auto");
+    const rates = { invocationFeeCents: 1, activeMinuteRateCents: 1, freeActiveMinutesPerMonth: 60 };
+    // required with a 0 royalty === the compute estimate alone.
+    expect(estimateMinRunCostCents(rates, 0) + 0).toBe(estimateMinRunCostCents(rates, 0));
+    // self-host (rates 0) + 0 royalty → still 0 (no gate).
+    const free = { invocationFeeCents: 0, activeMinuteRateCents: 0, freeActiveMinutesPerMonth: 0 };
+    expect(estimateMinRunCostCents(free, 0) + 0).toBe(0);
+  });
 });
 
 describe("autoV2Rates — managed-vs-free gating", () => {

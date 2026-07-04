@@ -477,6 +477,37 @@ export async function listEntitledKitsViaService(
   return parsed.success ? parsed.data.kits : [];
 }
 
+/**
+ * Resolve the PREMIUM (per-invocation) per-run royalty, in US cents, for a run of
+ * the given kitRef — the seller's price the AFFORDABILITY PREFLIGHT must add to
+ * the compute estimate so a premium run is refused with a clean 402 BEFORE
+ * dispatch (never a mid-run failure). Returns 0 for anything that is NOT a
+ * premium Market kit:
+ *   - a local / free / one-time / subscription kit (no per-run royalty);
+ *   - self-host with Market disabled, or MARKET_SERVICE_KEY unconfigured;
+ *   - any service/network error (FAIL OPEN to 0 — the run-driver's up-front hold
+ *     is the hard billing gate; the preflight is a courtesy 402 and must never
+ *     block a run because a cheap royalty lookup hiccuped).
+ *
+ * It reads the SAME entitled-kits service listing the Auto picker uses, matching
+ * the run's kit by marketKitId (else slug), so the preflight estimate lines up
+ * with what the picker shows and with the royalty the run-driver later meters
+ * (resolved authoritatively at run time by resolveProtectedSystemPromptViaService).
+ */
+export async function resolvePremiumRoyaltyCentsForRun(
+  userId: string,
+  kitRef: { source: string; slug?: string; marketKitId?: string },
+  override?: string
+): Promise<number> {
+  if (kitRef.source !== "market") return 0;
+  const entitled = await listEntitledKitsViaService(userId, override);
+  if (entitled.length === 0) return 0;
+  const match = entitled.find((k) =>
+    kitRef.marketKitId ? k.marketKitId === kitRef.marketKitId : k.slug === kitRef.slug
+  );
+  return Math.max(0, match?.perRunRoyaltyCents ?? 0);
+}
+
 // ---------------------------------------------------------------------------
 // Leakage guards (best-effort) — SHARED MECHANISM lives in @agentkitforge/auto-core
 // ---------------------------------------------------------------------------

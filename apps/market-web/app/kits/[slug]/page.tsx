@@ -84,6 +84,10 @@ export default async function KitDetailPage({
   const packageFileName = packageMetadata.fileName ?? fallbackPackageFileName(slug, kit.currentVersion);
 
   const isPaid = kit.pricing === "paid";
+  // PREMIUM (per_invocation): the buyer pays PER RUN, not up front. It's run
+  // server-side on AgentKitAuto (entitlement is a $0 access grant; money is
+  // metered per run from the buyer's prepaid balance) — never downloaded.
+  const isPremium = isPaid && kit.priceModel === "per_invocation";
   // Paid kits are online-only unless explicitly enabled; free kits are downloadable.
   const isDownloadable = isPaid ? kit.downloadable === true : true;
   const price = priceLabel({
@@ -109,7 +113,7 @@ export default async function KitDetailPage({
         <p className="detail-summary">{description}</p>
         <div className="badge-row">
           <Badge tone="teal">{price}</Badge>
-          {isPaid && !isDownloadable ? <Badge>Online-only</Badge> : null}
+          {isPremium ? <Badge>Runs on Auto</Badge> : isPaid && !isDownloadable ? <Badge>Online-only</Badge> : null}
           <Badge>{isCustomLicense ? "Custom license" : "Licensed"}</Badge>
           {kit.trustBadges.map((status) => (
             <TrustBadge key={status} status={status} />
@@ -243,9 +247,11 @@ export default async function KitDetailPage({
             <span className="section-label">{isPaid ? "Pricing" : "Download / Import"}</span>
             <h2>{isPaid ? price : "Download package"}</h2>
             <p className="privacy-note">
-              {isPaid && !isDownloadable
-                ? "This kit is online-only — use it in AgentKitForge after acquiring."
-                : "Downloads require an AgentKitProject account."}
+              {isPremium
+                ? "This kit is priced per run. Acquire it once (no charge), then run it on AgentKitAuto — each run is billed from your prepaid balance. The kit's files are never downloaded to you."
+                : isPaid && !isDownloadable
+                  ? "This kit is online-only — use it in AgentKitForge after acquiring."
+                  : "Downloads require an AgentKitProject account."}
             </p>
           </div>
           <dl className="metadata-list compact-metadata">
@@ -278,7 +284,7 @@ export default async function KitDetailPage({
           </dl>
           {!canDownloadKit(user) ? (
             <Link className="primary-button full-width" href={`/auth/sign-in?returnTo=${encodeURIComponent(`/kits/${slug}`)}`}>
-              {isPaid ? `Sign in to buy ${price}` : "Sign in to download"}
+              {isPremium ? `Sign in to run (${price})` : isPaid ? `Sign in to buy ${price}` : "Sign in to download"}
             </Link>
           ) : isPaid ? (
             <CommercialAcquire

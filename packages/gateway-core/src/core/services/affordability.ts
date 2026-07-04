@@ -102,9 +102,20 @@ export interface CheckAffordabilityInput {
   /**
    * OPTIONAL estimate override in US cents (in-process callers only; the HTTP
    * seam always lets the gateway compose the estimate). When set it replaces
-   * the composed estimate — free-tier and unmetered handling still apply.
+   * the composed COMPUTE estimate — free-tier and unmetered handling still
+   * apply. The premium royalty (below) is ADDED on top of this override too
+   * (the royalty is buyer cost regardless of how compute was estimated).
    */
   estimateCents?: number;
+  /**
+   * OPTIONAL premium (per-invocation) kit royalty for THIS run, in US cents (M6).
+   * ADDED to the compute estimate so a premium run requires balance ≥
+   * (compute + royalty) and is refused with a clean 402 BEFORE dispatch — never
+   * a mid-run failure. Default 0 → byte-identical to a non-premium run. Applies
+   * even when the free trial waives the compute run fees: the royalty is the
+   * seller's price, not a platform run fee, so the trial never waives it.
+   */
+  premiumRoyaltyCents?: number;
   /** ISO timestamp "now" (audit/estimates; the trial read uses the fixed
    *  lifetime key, not a month derived from this). */
   now: string;
@@ -148,27 +159,40 @@ export function utcYearMonth(iso: string): string {
  *   estimate = invocationFeeCents
  *            + (freeMinutesRemaining > 0 ? 0 : activeMinuteRateCents)
  *            + (mode === "managed" ? managedInferenceFloorCents : 0)
+ *            + premiumRoyaltyCents
  *
- * With BOTH run-fee rates 0 (unmetered public/self-host deployment) the
- * estimate is 0 regardless of mode — the inference floor only applies where
- * run metering is active, so a self-host is never gated.
+ * With BOTH run-fee rates 0 (unmetered public/self-host deployment) AND no
+ * premium royalty the estimate is 0 regardless of mode — the inference floor
+ * only applies where run metering is active, so a self-host is never gated.
+ *
+ * PREMIUM ROYALTY (M6): a per-invocation kit's seller price is ADDED to the
+ * estimate — the buyer must be able to afford (compute + royalty) up front, so
+ * the 402 happens BEFORE dispatch, never mid-run. The royalty survives the
+ * free trial (the trial waives platform RUN FEES, not the seller's price) and
+ * applies even on an otherwise-unmetered deployment where a paid kit is run.
+ * Default 0 → this term is inert and the estimate is byte-identical to before.
  */
 export function estimateRunStartCents(
   mode: RunBillingMode,
   pricing: RunStartPricing,
   managedInferenceFloorCents: number = MANAGED_INFERENCE_FLOOR_CENTS,
   freeMinutesRemaining = 0,
+  premiumRoyaltyCents = 0,
 ): number {
+  const royalty = Math.max(0, premiumRoyaltyCents);
   const invocation = Math.max(0, pricing.invocationFeeCents);
   const activeMinute = Math.max(0, pricing.activeMinuteRateCents);
-  if (invocation === 0 && activeMinute === 0) return 0; // unmetered → no gate
+  // Unmetered run fees: only the (possibly 0) royalty remains. A self-host with
+  // no royalty is never gated; a paid kit still owes its seller price.
+  if (invocation === 0 && activeMinute === 0) return royalty;
   // TRULY-FREE TRIAL: remaining free minutes waive the invocation fee too
   // (the run-driver mirrors this — no invocation debit + a grace-shrunk hold).
+  // The royalty is NOT a run fee, so the trial never waives it.
   const graced = freeMinutesRemaining > 0;
   const firstMinute = graced ? 0 : activeMinute;
   const invocationDue = graced ? 0 : invocation;
   const floor = mode === "managed" ? Math.max(0, managedInferenceFloorCents) : 0;
-  return invocationDue + firstMinute + floor;
+  return invocationDue + firstMinute + floor + royalty;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,33 +211,46 @@ export async function checkAffordability(
 ): Promise<AffordabilityVerdict> {
   const { pricing } = deps;
   const floor = deps.managedInferenceFloorCents ?? MANAGED_INFERENCE_FLOOR_CENTS;
+  // PREMIUM royalty (M6): the seller's per-run price, ADDED to whatever compute
+  // estimate we compose. Default 0 → inert (non-premium runs unchanged). The
+  // royalty is NOT a platform run fee: neither the unmetered short-circuit nor
+  // the free-trial waiver may skip it — a premium run always requires balance
+  // ≥ royalty (on top of any compute), so the 402 fires before dispatch.
+  const royalty = Math.max(0, input.premiumRoyaltyCents ?? 0);
 
   const metered =
     Math.max(0, pricing.invocationFeeCents) > 0 ||
     Math.max(0, pricing.activeMinuteRateCents) > 0;
   const override = input.estimateCents !== undefined ? Math.max(0, input.estimateCents) : undefined;
 
-  // Unmetered deployment (self-host / public gateway) with no explicit
-  // estimate: nothing to afford. No ledger reads at all.
-  if (!metered && (override === undefined || override === 0)) {
+  // Unmetered deployment (self-host / public gateway) with no explicit estimate
+  // AND no royalty: nothing to afford. No ledger reads at all. (A paid kit run
+  // still carries a royalty here, so it does NOT short-circuit.)
+  if (!metered && (override === undefined || override === 0) && royalty === 0) {
     return { allowed: true };
   }
 
-  // ONE-TIME FREE TRIAL: remaining lifetime trial minutes count toward
-  // affordability. POLICY: any remaining allowance → allowed, even at zero
-  // balance (the trial must admit new users; the run-level billing gate
-  // still governs actual spend).
+  // ONE-TIME FREE TRIAL: remaining lifetime trial minutes waive the platform
+  // RUN FEES. POLICY: any remaining allowance → the compute run fees are free.
+  // The royalty (seller price) is NOT waived, so a premium run under the trial
+  // still requires balance ≥ royalty.
+  let freeMinutesRemaining = 0;
   const allowance = Math.max(0, pricing.freeActiveMinutesPerMonth);
   if (allowance > 0) {
     const used = await deps.ledger.getFreeMinutesUsed(input.userId, FREE_TRIAL_PERIOD_KEY);
-    const freeMinutesRemaining = Math.max(0, allowance - used);
-    if (freeMinutesRemaining > 0) {
+    freeMinutesRemaining = Math.max(0, allowance - used);
+    // Trial covers the run fees → only the royalty (if any) remains to afford.
+    if (freeMinutesRemaining > 0 && royalty === 0) {
       return { allowed: true };
     }
   }
 
-  const requiredCents =
-    override ?? estimateRunStartCents(input.mode, pricing, floor, 0);
+  // Compute estimate: an explicit override (compute-only) or the composed run
+  // fees + floor (waived per remaining trial minutes). The royalty rides on top
+  // of EITHER via the estimateRunStartCents royalty arg / an explicit add.
+  const computeCents =
+    override ?? estimateRunStartCents(input.mode, pricing, floor, freeMinutesRemaining);
+  const requiredCents = computeCents + royalty;
   if (requiredCents === 0) return { allowed: true };
 
   const account = await deps.ledger.getAccount(input.userId);

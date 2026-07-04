@@ -15,7 +15,43 @@ export type KitRef =
   | { source: "market"; marketKitId: string; slug: string };
 
 /** A browser-safe protected entitled kit (from GET /api/auto/entitled-kits). */
-export type EntitledKit = { marketKitId: string; slug: string; name: string };
+export type EntitledKit = {
+  marketKitId: string;
+  slug: string;
+  name: string;
+  /** PREMIUM (per_invocation) per-run price in US cents. Present only for a
+   *  premium kit; absent/0 for a non-premium protected kit. */
+  perRunRoyaltyCents?: number;
+};
+
+/** The per-run price (US cents) of the entitled kit a selector value addresses,
+ *  or 0 when it isn't a premium Market kit. Pure helper for the run form's
+ *  blended-estimate + spend-cap. */
+export function selectionRoyaltyCents(value: string, entitled: EntitledKit[]): number {
+  if (!isMarketSelection(value)) return 0;
+  const slug = value.slice(MARKET_PREFIX.length);
+  const kit = entitled.find((k) => k.slug === slug);
+  return Math.max(0, kit?.perRunRoyaltyCents ?? 0);
+}
+
+/**
+ * The PREMIUM (per-invocation) per-run royalty portion of a run's spend, DERIVED
+ * from the persisted split. The run-driver records total spend as
+ *   spentCents = inference + platform-compute + royalty
+ * and persists inference/compute separately, so the remainder is the seller's
+ * per-run price. Pure receipt-view derivation (the ledger is authoritative);
+ * clamped ≥ 0. Reads 0 on older records that carry no split (both undefined).
+ */
+export function receiptRoyaltyCents(split: {
+  spentCents: number;
+  spentInferenceCents?: number;
+  spentComputeCents?: number;
+}): number {
+  if (split.spentInferenceCents === undefined && split.spentComputeCents === undefined) return 0;
+  const inference = split.spentInferenceCents ?? 0;
+  const compute = split.spentComputeCents ?? 0;
+  return Math.max(0, split.spentCents - inference - compute);
+}
 
 /** The selector-value prefix that marks a protected Market kit. */
 export const MARKET_PREFIX = "market:";

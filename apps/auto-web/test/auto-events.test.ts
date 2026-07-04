@@ -36,6 +36,9 @@ vi.mock("@/server/core/protected-kits", () => ({
   classifyKit: async () => ({ isProtected: false }),
   resolveProtectedSystemPrompt: async () => "PROTECTED_PROMPT",
   resolveProtectedSystemPromptViaService: async () => ({ systemPrompt: "X", pricing: "free", onlineOnly: false }),
+  // M6 P4: startRun's pre-flight resolves the premium per-run royalty. Local /
+  // free kits (all these tests use) have none → 0 (the royalty path stays inert).
+  resolvePremiumRoyaltyCentsForRun: async () => 0,
   isPromptExtractionAttempt: () => false
 }));
 vi.mock("@/server/core/import-ops", () => ({

@@ -97,6 +97,7 @@ import {
   classifyKit,
   resolveProtectedSystemPrompt,
   resolveProtectedSystemPromptViaService,
+  resolvePremiumRoyaltyCentsForRun,
   isPromptExtractionAttempt,
   ProtectedKitServiceError,
   type ProtectedKitRef
@@ -1327,10 +1328,20 @@ export async function startRun(input: {
   // BYO ACCOUNT AUTO-CREATION: a BYO user may have never topped up, so no ledger
   // account row exists yet. We ensureAccount here (idempotent) so the balance
   // read is well-defined and the driver's later debit has an account to charge.
-  // On a FREE backend (self-host) the rates are 0 → estimate 0 → no gate, and we
-  // skip the ledger entirely (the free ledger ensureAccount is a harmless no-op).
+  // On a FREE backend (self-host) the rates are 0 → compute estimate 0 → no gate,
+  // and we skip the ledger entirely (the free ledger ensureAccount is a harmless
+  // no-op) UNLESS a PREMIUM royalty applies (a paid kit owes its price even on a
+  // self-host with unmetered compute).
+  //
+  // PREMIUM royalty (M6 P4): resolve the per-run seller price for THIS kit (0 for
+  // local/free/non-premium/self-host/errors → the block below stays byte-identical
+  // to a non-premium run) and ADD it to the required balance, so a premium run is
+  // refused with a clean 402 here BEFORE dispatch instead of failing mid-run when
+  // the run-driver's up-front hold can't cover (compute + royalty).
   const rates = await autoV2Rates();
-  if (rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0) {
+  const premiumRoyaltyCents = await resolvePremiumRoyaltyCentsForRun(input.userId, input.kitRef);
+  const metered = rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0;
+  if (metered || premiumRoyaltyCents > 0) {
     const ledger = await selectLedger();
     // Auto-create the account (BYO users have no row until first run) so the
     // balance read + the driver's debit have a target. Idempotent.
@@ -1339,15 +1350,18 @@ export async function startRun(input: {
     const balance = account?.availableBalanceCents ?? 0;
     // Free active-minutes remaining this UTC month (the first active-minute is
     // free while any remain, so it doesn't count toward the minimum estimate).
+    // The premium royalty is the seller's price, NOT a platform run fee, so the
+    // free trial never waives it (it rides on top of estimateMinRunCostCents).
     const freeUsed = await ledger.getFreeMinutesUsed(input.userId, FREE_TRIAL_PERIOD_KEY);
     const freeRemaining = Math.max(0, rates.freeActiveMinutesPerMonth - freeUsed);
-    const requiredCents = estimateMinRunCostCents(rates, freeRemaining);
+    const computeCents = estimateMinRunCostCents(rates, freeRemaining);
+    const requiredCents = computeCents + premiumRoyaltyCents;
     if (requiredCents > 0 && balance < requiredCents) {
-      throw new InsufficientComputeBalanceError(
-        "Web Auto requires a small prepaid balance for the run fee (invocation + active-minutes). Add credits to continue.",
-        requiredCents,
-        balance
-      );
+      const reason =
+        premiumRoyaltyCents > 0
+          ? "This kit is priced per run. Add credits to cover its per-run price plus the small Auto run fee to continue."
+          : "Web Auto requires a small prepaid balance for the run fee (invocation + active-minutes). Add credits to continue.";
+      throw new InsufficientComputeBalanceError(reason, requiredCents, balance);
     }
   }
 

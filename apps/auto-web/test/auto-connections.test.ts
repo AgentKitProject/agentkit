@@ -36,6 +36,7 @@ vi.mock("@/server/core/protected-kits", () => ({
   classifyKit: async () => ({ isProtected: false }),
   resolveProtectedSystemPrompt: async () => "PROTECTED_PROMPT",
   resolveProtectedSystemPromptViaService: async () => ({ systemPrompt: "X", pricing: "free", onlineOnly: false }),
+  resolvePremiumRoyaltyCentsForRun: async () => 0,
   isPromptExtractionAttempt: () => false
 }));
 vi.mock("@/server/core/import-ops", () => ({

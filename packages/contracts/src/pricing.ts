@@ -373,7 +373,16 @@ export const serviceEntitledKitSchema = z.object({
   /** Market slug, the Market service lookup key (→ kitRef.slug). */
   slug: z.string().min(1),
   /** Public display name. */
-  name: z.string().min(1)
+  name: z.string().min(1),
+  /**
+   * PREMIUM (per_invocation) per-run price in US cents (M6 P4) — the seller-set
+   * per-run royalty. Present ONLY for a premium entitled kit; omitted (or 0) for
+   * a non-premium protected kit. The Auto picker renders it as "$X/run", and the
+   * run-start affordability preflight adds it to the compute estimate. Seller-
+   * owned value, safe in the public contract. OPTIONAL so a provider that hasn't
+   * populated it yet (or a self-host) degrades cleanly to "no per-run price".
+   */
+  perRunRoyaltyCents: z.number().int().nonnegative().optional()
 });
 export type ServiceEntitledKit = z.infer<typeof serviceEntitledKitSchema>;
 

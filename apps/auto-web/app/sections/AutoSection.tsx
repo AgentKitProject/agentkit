@@ -34,6 +34,8 @@ import {
   parseKitSelection,
   parseMarketDeepLink,
   creditsDisclosureKind,
+  selectionRoyaltyCents,
+  receiptRoyaltyCents,
   type EntitledKit
 } from "./market-kit-ref";
 
@@ -123,7 +125,12 @@ type Run = {
   status: string;
   input: { prompt: string };
   budgetCents: number;
+  /** TOTAL debited from the buyer = inference + platform-compute + premium royalty. */
   spentCents: number;
+  /** Model-inference spend (managed only; BYO = 0). Absent on pre-billing records. */
+  spentInferenceCents?: number;
+  /** Platform-compute spend (invocation + active-minute). Absent on older records. */
+  spentComputeCents?: number;
   model: string;
   createdAt: string;
   finishedAt?: string;
@@ -132,6 +139,12 @@ type Run = {
   outputFiles?: RunOutputFile[];
   auditLog?: AuditEntry[];
 };
+
+/** The PREMIUM (per-invocation) per-run royalty portion of a run's spend — the
+ *  receipt derivation (see receiptRoyaltyCents). */
+function royaltyCentsOf(run: Run): number {
+  return receiptRoyaltyCents(run);
+}
 
 /** Download URL for one persisted run output (path segments URL-encoded). */
 function runOutputHref(runId: string, path: string): string {
@@ -692,7 +705,11 @@ export function AutoSection({
             .filter((k) => !onlyApproved || approvedSelectionValues.has(marketSelectionValue(k.slug)))
             .map((k) => (
               <option key={k.slug} value={marketSelectionValue(k.slug)}>
+                {/* PREMIUM (per_invocation): show the per-run price inline (M6 P4). */}
                 {k.name}
+                {k.perRunRoyaltyCents && k.perRunRoyaltyCents > 0
+                  ? ` — ${centsToUsd(k.perRunRoyaltyCents)}/run`
+                  : ""}
               </option>
             ))}
         </optgroup>
@@ -1044,6 +1061,22 @@ export function AutoSection({
       {" "}(the per-run cap; Unlimited uses the kit&apos;s approval ceiling). Change it on the <strong>Settings</strong> tab; an org admin can override it.
     </p>
   );
+
+  // PREMIUM (per_invocation) run cost preview (M6 P4). The seller's per-run price
+  // for the CURRENTLY SELECTED run kit, 0 for anything non-premium.
+  const runRoyaltyCents = selectionRoyaltyCents(runKitId, entitled);
+  // A single BLENDED "~$X/run" estimate = a minimal compute estimate (the start
+  // fee + one active minute, when this deployment meters compute) + the seller's
+  // per-run price. Only the seller price is fixed; compute is an estimate.
+  const runComputeEstimateCents = billing?.metered
+    ? billing.invocationFeeCents + billing.activeMinuteRateCents
+    : 0;
+  const blendedEstimateCents = runComputeEstimateCents + runRoyaltyCents;
+  // The GUARANTEED maximum charge for a premium run = the per-run spend cap (which
+  // bounds compute/inference) PLUS the fixed per-run price. When the cap is
+  // Unlimited (0) we can't state a bounded maximum, so we show only the estimate.
+  const runCapCents = runBudget?.effectiveCents ?? 0;
+  const blendedMaxCents = runCapCents > 0 ? runCapCents + runRoyaltyCents : 0;
 
   return (
     <div style={brandVars(AUTO_GREEN, AUTO_GREEN_STRONG)}>
@@ -1419,6 +1452,28 @@ export function AutoSection({
             you receive its output; the kit&apos;s files are never downloaded to you.
           </p>
         )}
+        {/* ---- PREMIUM (per_invocation) blended run price (M6 P4) ----
+            A single "~$X/run" estimate = the seller's per-run price + a minimal
+            compute estimate. The estimate MAY vary with how long the run takes;
+            the spend CAP is the guarantee — the most you can be charged is the
+            per-run cap (bounds compute/inference) PLUS the fixed per-run price. */}
+        {runRoyaltyCents > 0 && (
+          <Card style={{ margin: "0 0 12px", padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: "1.05em" }}>~{centsToUsd(blendedEstimateCents)}/run</strong>
+              <span className="form-copy" style={{ margin: 0 }}>estimated total</span>
+            </div>
+            <p className="form-copy" style={{ margin: "6px 0 0" }}>
+              Includes this kit&apos;s <strong>{centsToUsd(runRoyaltyCents)}</strong> per-run price
+              {runComputeEstimateCents > 0
+                ? <> plus an estimated <strong>{centsToUsd(runComputeEstimateCents)}</strong> of Auto compute</>
+                : null}
+              . {blendedMaxCents > 0
+                ? <>You will never be charged more than <strong>{centsToUsd(blendedMaxCents)}</strong> for this run — the per-run spend cap bounds the compute and the per-run price is fixed.</>
+                : <>Set a per-run budget on the <strong>Settings</strong> tab to cap the compute portion.</>}
+            </p>
+          </Card>
+        )}
         <Field label="Task">
           <Textarea rows={4} value={runPrompt} onChange={(e) => setRunPrompt(e.target.value)} placeholder="What should the kit do, end to end?" />
         </Field>
@@ -1739,6 +1794,27 @@ export function AutoSection({
             <p style={{ fontSize: "0.82em", color: "var(--color-text-secondary)", margin: "6px 0" }}>
               <strong>{openRun.status}</strong> · {centsToUsd(openRun.spentCents)} / {centsToUsd(openRun.budgetCents)} · {openRun.model}
             </p>
+            {/* ---- Receipt itemization (M6 P4) ----
+                Break the total spend into platform-compute vs the seller's per-run
+                price when a PREMIUM (per-invocation) kit was run. The royalty is
+                DERIVED from the persisted split (spentCents − inference − compute);
+                shown only when it's positive, so non-premium runs are unchanged. */}
+            {royaltyCentsOf(openRun) > 0 && (
+              <dl style={{ fontSize: "0.78em", color: "var(--color-text-secondary)", margin: "0 0 6px", display: "grid", gridTemplateColumns: "auto auto", gap: "1px 10px", justifyContent: "start" }}>
+                <dt>Platform compute</dt>
+                <dd style={{ margin: 0, textAlign: "right" }}>{centsToUsd(openRun.spentComputeCents ?? 0)}</dd>
+                {(openRun.spentInferenceCents ?? 0) > 0 && (
+                  <>
+                    <dt>Model inference</dt>
+                    <dd style={{ margin: 0, textAlign: "right" }}>{centsToUsd(openRun.spentInferenceCents ?? 0)}</dd>
+                  </>
+                )}
+                <dt>Kit per-run price</dt>
+                <dd style={{ margin: 0, textAlign: "right" }}>{centsToUsd(royaltyCentsOf(openRun))}</dd>
+                <dt><strong>Total</strong></dt>
+                <dd style={{ margin: 0, textAlign: "right" }}><strong>{centsToUsd(openRun.spentCents)}</strong></dd>
+              </dl>
+            )}
             {openRun.error && <p style={{ color: "var(--color-error)", fontSize: "0.82em" }}>{openRun.error}</p>}
 
             {openRun.result?.output && (
