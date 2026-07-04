@@ -250,7 +250,11 @@ vi.mock("@agentkitforge/gateway-core", async () => {
         return memSessions as unknown as object;
       }
     } as never,
-    createManagedAnthropicProvider: () => scriptedProvider
+    createManagedAnthropicProvider: () => scriptedProvider,
+    // The forge gateway composes createManagedRoutingProvider (routes Anthropic /
+    // OpenAI by model id, since the managed-OpenAI work) — mock it to the SAME
+    // scripted provider so the interactive turn exercises the fake, not a real key.
+    createManagedRoutingProvider: () => scriptedProvider
   };
 });
 
@@ -299,6 +303,21 @@ beforeEach(() => {
   fetchLicensedKitMock.mockReset();
   scriptedProvider = benignProvider();
   capturedRequests.length = 0;
+  // classifyKit → isPremiumKit reads the PUBLIC kit-detail (GET /api/forge/kits/{slug})
+  // to detect the premium price model. This kit is a NON-premium protected (online-
+  // only) kit, so return a record WITHOUT `priceModel` — the interactive protected
+  // run proceeds unchanged. (Offline-safe: no real network call during the e2e.)
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          item: { kitId: KIT_ID, slug: SLUG, name: "Secret Rubric Kit", summary: "s", currentVersion: "1", latestVersion: null }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    )
+  );
 });
 
 afterEach(() => {
@@ -581,5 +600,46 @@ describe("M6 S4 — web-Forge INTERACTIVE protected run end-to-end (boundary hol
     // And no secret/content leaked into the directive.
     expect(JSON.stringify(json)).not.toContain(SECRET);
     expect(JSON.stringify(json)).not.toContain("contentBase64");
+  });
+
+  // =========================================================================
+  // CASE 6 (M6 #9) — a PREMIUM (per_invocation) kit is REFUSED on the
+  // interactive path: classifyWebKit flags it premium and wires NO session, so
+  // the create route returns the run-on-Auto directive. No bytes fetched, no
+  // interactive gateway session, no secret resolved.
+  // =========================================================================
+  it("case 6: a premium (per_invocation) kit is NOT wired for an interactive run (run-on-Auto)", async () => {
+    checkEntitlementMock.mockResolvedValue({
+      slug: SLUG,
+      kitId: KIT_ID,
+      pricing: "paid",
+      downloadable: false,
+      onlineOnly: true,
+      entitled: true
+    });
+    // Same kit, but its PUBLIC record now advertises the premium price model.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            item: { kitId: KIT_ID, slug: SLUG, name: "Secret Rubric Kit", summary: "s", currentVersion: "1", latestVersion: null, priceModel: "per_invocation" }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+    );
+
+    const gateway = await loadGateway();
+    const classified = await gateway.classifyWebKit(REF);
+
+    // Premium → refused: the route returns the directive and never builds a session.
+    expect(classified.isProtected).toBe(true);
+    expect(classified.premium).toBe(true);
+    expect(classified.systemPromptRef).toBeUndefined();
+    expect(classified.entitlementCheck).toBeUndefined();
+
+    // No kit bytes were fetched for an interactive run.
+    expect(fetchLicensedKitMock).not.toHaveBeenCalled();
   });
 });

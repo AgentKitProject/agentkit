@@ -58,6 +58,7 @@ import {
   createBearerTokenStore,
   decodeProtectedRef,
   encodeProtectedRef,
+  PremiumRunOnAutoError,
   redactLeakedPrompt,
   resolveProtectedSystemPrompt,
   type ProtectedKitRef
@@ -341,16 +342,23 @@ export async function createForgeSession(input: {
 
 /**
  * Classifies a Market kit for the forge (bearer) create path using the forwarded
- * WorkOS device-auth token. Returns whether it is PROTECTED. The route uses this
- * to choose between createForgeSession (owned/local) and createProtectedForgeSession.
+ * WorkOS device-auth token. Returns whether it is PROTECTED and whether it is
+ * PREMIUM (per_invocation). The route uses this to:
+ *   - refuse a PREMIUM kit interactively (Auto-run-only; M6 #9), and
+ *   - choose between createForgeSession (owned/local) and createProtectedForgeSession.
  */
 export async function classifyForgeKit(
   bearerToken: string,
   ref: ProtectedKitRef
-): Promise<{ isProtected: boolean; entitled: boolean }> {
+): Promise<{ isProtected: boolean; premium: boolean; entitled: boolean; kitId?: string }> {
   const store = createBearerTokenStore(bearerToken);
   const c = await classifyKit(store, ref);
-  return { isProtected: c.isProtected, entitled: c.entitled };
+  return {
+    isProtected: c.isProtected,
+    premium: c.premium,
+    entitled: c.entitled,
+    ...(c.kitId ? { kitId: c.kitId } : {})
+  };
 }
 
 /**
@@ -367,6 +375,12 @@ export async function createProtectedForgeSession(input: {
 }): Promise<GatewaySession> {
   const store = createBearerTokenStore(input.bearerToken);
   const classification = await classifyKit(store, input.ref);
+  // Defense-in-depth (M6 #9): PREMIUM (per_invocation) kits are Auto-run-only.
+  // Even if a caller reaches this directly, refuse the interactive session — the
+  // per-run royalty is metered only on the Auto path. Content-free directive.
+  if (classification.premium) {
+    throw new PremiumRunOnAutoError(input.ref, classification.kitId);
+  }
   if (!classification.entitled) {
     throw new ForgeNotEntitledError();
   }

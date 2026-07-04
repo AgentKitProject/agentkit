@@ -24,6 +24,7 @@ import {
   handleGatewayRequest,
   type GatewayCreateOpts
 } from "@/server/core/gateway-sessions";
+import { PremiumRunOnAutoError } from "@/server/core/protected-kits";
 import { MANAGED_DEFAULT_MODEL, isManagedModel } from "@/server/core/managed-models";
 import { isManagedInferenceEnabled } from "@/lib/self-host";
 
@@ -72,6 +73,14 @@ export async function POST(request: Request) {
       ...(body.marketBaseUrl ? { marketBaseUrl: body.marketBaseUrl } : {})
     };
     const classified = await classifyWebKit(ref);
+    if (classified.premium) {
+      // PREMIUM (per_invocation) kits are AUTO-RUN-ONLY: the seller's per-run
+      // royalty is metered only on the Auto run path, so an INTERACTIVE web-Forge
+      // run would earn the seller nothing (monetization leak). Refuse server-side
+      // and direct the user to Auto. Content-free (only slug + public Auto URL).
+      const err = new PremiumRunOnAutoError(ref, classified.kitId);
+      return Response.json(err.toResponseBody(), { status: 409 });
+    }
     if (classified.isProtected) {
       // Protected: server owns the prompt + billing. Ignore any client context.
       createBody = {

@@ -28,8 +28,11 @@
 import type { EntitlementCheck } from "@agentkitforge/gateway-core";
 import type { StoredSession, TokenStore } from "@agentkitforge/core/market";
 import {
+  forgeMarketRoutes,
+  isPremiumPriceModel,
   marketServiceRoutes,
   marketServiceAuthHeader,
+  publicKitDetailResponseSchema,
   serviceEntitledKitsResponseSchema,
   type ServiceEntitledKit,
   type ServiceLicensedPackageError,
@@ -38,7 +41,7 @@ import {
 import { loadCoreMarket } from "@/server/core/load-core";
 import { unzipToTree } from "@/server/core/operations";
 import { withEphemeralTree } from "@/server/core/runner";
-import { getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
+import { getEcosystemLinks, getMarketBaseUrl, isMarketEnabled } from "@/lib/self-host";
 
 /** Marker that tags a session's systemPromptRef as a protected Market kit whose
  *  prompt MUST be fetched server-side (never client-trusted) on every turn. */
@@ -132,6 +135,43 @@ export interface KitClassification {
   entitled: boolean;
   /** Canonical kit id from the Market catalog record, if returned. */
   kitId?: string;
+  /**
+   * True for a PREMIUM (per_invocation) kit — the seller earns a per-run royalty
+   * that is ONLY metered on the AUTO run path (M6 P5). Such a kit must therefore
+   * NEVER be run on the interactive web-Forge gateway (which does not meter the
+   * royalty); the interactive create path refuses it and directs the user to Auto.
+   */
+  premium: boolean;
+}
+
+/**
+ * Read the kit's PRICE MODEL from the PUBLIC kit-detail record (`GET
+ * /api/forge/kits/{slug}` — no auth, no bytes, content-free). P3 surfaces
+ * `priceModel`/`perRunRoyaltyCents` on that public record (`toPublicKit`), so this
+ * is the content-free signal for whether a kit is PREMIUM (per_invocation).
+ *
+ * Fails CLOSED-to-NON-PREMIUM: any missing Market URL, network/parse/non-2xx
+ * error, or absent field → `false`. That keeps the gate INERT for non-premium and
+ * for instances without a Market — it never blocks a run on a lookup hiccup; the
+ * downstream entitlement gate still protects protected non-premium kits.
+ */
+export async function isPremiumKit(ref: ProtectedKitRef): Promise<boolean> {
+  const base = marketBaseUrl(ref.marketBaseUrl);
+  if (!base) return false;
+  const endpoint = `${base.replace(/\/+$/, "")}${forgeMarketRoutes.kitDetail(ref.slug)}`;
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { method: "GET", cache: "no-store" });
+  } catch {
+    return false;
+  }
+  if (!response.ok) return false;
+  const body = (await response.json().catch(() => null)) as unknown;
+  const parsed = publicKitDetailResponseSchema.safeParse(body);
+  if (!parsed.success) return false;
+  // `publicKitDetailSchema` is passthrough, so `priceModel` rides along untyped.
+  const priceModel = (parsed.data.item as { priceModel?: string }).priceModel;
+  return isPremiumPriceModel(priceModel as never);
 }
 
 /**
@@ -141,7 +181,11 @@ export interface KitClassification {
  * existing owned/local behavior.
  *
  * Uses the entitlement-status read (no bytes fetched). `store` carries the user's
- * forwarded WorkOS bearer so the per-user `entitled` flag is accurate.
+ * forwarded WorkOS bearer so the per-user `entitled` flag is accurate. A protected
+ * kit is ALSO checked for the PREMIUM (per_invocation) price model via the public
+ * kit-detail record — premium kits are Auto-run-only (metering leak guard, M6 #9);
+ * the create path refuses them interactively. The premium lookup runs ONLY for a
+ * protected kit (free kits are never premium), so it stays inert otherwise.
  */
 export async function classifyKit(store: TokenStore, ref: ProtectedKitRef): Promise<KitClassification> {
   const market = await loadCoreMarket();
@@ -151,14 +195,60 @@ export async function classifyKit(store: TokenStore, ref: ProtectedKitRef): Prom
     clientId: clientId()
   });
   const isProtected = status.pricing === "paid" || status.onlineOnly === true;
+  const premium = isProtected ? await isPremiumKit(ref) : false;
   return {
     isProtected,
     pricing: status.pricing,
     downloadable: status.downloadable,
     onlineOnly: status.onlineOnly,
     entitled: status.entitled === true,
+    premium,
     ...(status.kitId ? { kitId: status.kitId } : {})
   };
+}
+
+/**
+ * Thrown when an interactive web-Forge run is attempted for a PREMIUM
+ * (per_invocation) kit. Premium kits meter the seller's per-run royalty ONLY on
+ * the AUTO run path, so the INTERACTIVE gateway must refuse and redirect to Auto
+ * (M6 #9). Carries NO kit content — only the public slug + the public Auto run URL
+ * (omitted on self-host without a configured Auto). The route maps it to a 409
+ * content-free directive.
+ */
+export class PremiumRunOnAutoError extends Error {
+  readonly code = "run_on_auto_required" as const;
+  readonly slug: string;
+  readonly kitId?: string;
+  /** Public AgentKitAuto run URL, if this instance exposes one (else undefined). */
+  readonly autoUrl?: string;
+  constructor(ref: ProtectedKitRef, kitId?: string) {
+    super(
+      "This is a premium (per-run) kit — run it on AgentKitAuto, where the seller's " +
+        "per-run royalty is metered. Interactive runs on Forge are not available for premium kits."
+    );
+    this.name = "PremiumRunOnAutoError";
+    this.slug = ref.slug;
+    const autoUrl = getEcosystemLinks().autoUrl;
+    if (kitId !== undefined) this.kitId = kitId;
+    if (autoUrl) this.autoUrl = autoUrl;
+  }
+
+  /** The content-free JSON body the create routes return (HTTP 409). */
+  toResponseBody(): {
+    code: "run_on_auto_required";
+    message: string;
+    slug: string;
+    kitId?: string;
+    autoUrl?: string;
+  } {
+    return {
+      code: this.code,
+      message: this.message,
+      slug: this.slug,
+      ...(this.kitId ? { kitId: this.kitId } : {}),
+      ...(this.autoUrl ? { autoUrl: this.autoUrl } : {})
+    };
+  }
 }
 
 /**

@@ -257,9 +257,12 @@ export async function handleGatewayRequest(
 /**
  * Classifies a kit for the web (cookie) create path and returns what the route
  * needs to build the create request:
- *   - PROTECTED (paid / online-only): returns a `protected:` systemPromptRef +
- *     an entitlement check to inject (→ 403 not_entitled when not entitled), and
- *     forces managed billing. Any client-provided context is IGNORED.
+ *   - PREMIUM (per_invocation): returns `premium: true` — the route MUST refuse
+ *     the interactive run and direct the user to Auto (premium royalty is metered
+ *     ONLY on the Auto run path; interactive Forge would leak it). M6 #9.
+ *   - PROTECTED (paid / online-only, non-premium): returns a `protected:`
+ *     systemPromptRef + an entitlement check to inject (→ 403 not_entitled when not
+ *     entitled), and forces managed billing. Any client-provided context is IGNORED.
  *   - OWNED/free: returns nothing extra → existing KitStore behavior.
  *
  * `slug` is required to talk to Market; the web route passes kitId+slug from the
@@ -267,14 +270,27 @@ export async function handleGatewayRequest(
  */
 export async function classifyWebKit(ref: ProtectedKitRef): Promise<{
   isProtected: boolean;
+  premium: boolean;
+  kitId?: string;
   systemPromptRef?: string;
   entitlementCheck?: EntitlementCheck;
 }> {
   const store = await forwardingStore();
   const classification = await classifyKit(store, ref);
-  if (!classification.isProtected) return { isProtected: false };
+  if (!classification.isProtected) return { isProtected: false, premium: false };
+  if (classification.premium) {
+    // Premium kits are AUTO-RUN-ONLY (metering leak guard). Do NOT wire the
+    // interactive session; the route refuses with the run-on-Auto directive.
+    return {
+      isProtected: true,
+      premium: true,
+      ...(classification.kitId ? { kitId: classification.kitId } : {})
+    };
+  }
   return {
     isProtected: true,
+    premium: false,
+    ...(classification.kitId ? { kitId: classification.kitId } : {}),
     systemPromptRef: encodeProtectedRef(ref),
     entitlementCheck: marketEntitlementCheck(() => forwardingStore(), ref)
   };

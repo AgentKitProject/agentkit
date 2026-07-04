@@ -260,6 +260,12 @@ function makeMemoryLedger(
     async consumeFreeActiveMinutes(_uid, _ym, runActiveMinutes) {
       return runActiveMinutes;
     },
+    // M6 seller-earnings ledger (no-ops in this fake — forge doesn't accrue royalties).
+    async accrueRoyalty() {},
+    async getPendingSellerEarnings() {
+      return [];
+    },
+    async markSellerEarningsTransferred() {},
   };
 
   return { ledger, state: { account, holds, transactions } };

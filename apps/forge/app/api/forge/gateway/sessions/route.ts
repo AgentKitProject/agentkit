@@ -22,6 +22,7 @@ import {
   ForgeContextError,
   ForgeNotEntitledError
 } from "@/server/core/forge-gateway-sessions";
+import { PremiumRunOnAutoError } from "@/server/core/protected-kits";
 import { MANAGED_DEFAULT_MODEL, isManagedModel } from "@/server/core/managed-models";
 import { isManagedInferenceEnabled } from "@/lib/self-host";
 
@@ -77,6 +78,14 @@ export async function POST(request: Request) {
       ...(body.marketBaseUrl ? { marketBaseUrl: body.marketBaseUrl } : {})
     };
     const classification = await classifyForgeKit(bearerToken, ref);
+    if (classification.premium) {
+      // PREMIUM (per_invocation) kits are AUTO-RUN-ONLY: the seller's per-run
+      // royalty is metered only on the Auto run path. An INTERACTIVE run here would
+      // earn the seller nothing (monetization leak), so refuse server-side and
+      // direct the user to Auto. Content-free (only slug + public Auto URL).
+      const err = new PremiumRunOnAutoError(ref, classification.kitId);
+      return Response.json(err.toResponseBody(), { status: 409 });
+    }
     if (classification.isProtected) {
       try {
         const session = await createProtectedForgeSession({ userId, bearerToken, ref });
@@ -94,6 +103,10 @@ export async function POST(request: Request) {
           { status: 201 }
         );
       } catch (error) {
+        if (error instanceof PremiumRunOnAutoError) {
+          // Defense-in-depth: createProtectedForgeSession also refuses premium.
+          return Response.json(error.toResponseBody(), { status: 409 });
+        }
         if (error instanceof ForgeNotEntitledError) {
           return Response.json({ code: "not_entitled", message: error.message }, { status: 403 });
         }
