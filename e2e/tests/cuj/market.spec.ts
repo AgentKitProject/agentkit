@@ -252,20 +252,29 @@ test.describe("submit and cancel", () => {
     await ensureProfileDisplayName(page);
     await cancelStaleE2eSubmissions(page.request);
 
-    await page.goto(`${market}/submit`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Submit an Agent Kit" })).toBeVisible();
-
-    await fillAndSubmitKitForm(page);
-    let outcome = await waitForSubmitOutcome(page);
-
-    if (outcome !== "navigated" && /display name|active submission/i.test(outcome)) {
-      // Precondition repair (second chance): display name save may have raced,
-      // or a just-canceled dup needed a moment to leave the active set.
-      await ensureProfileDisplayName(page);
-      await cancelStaleE2eSubmissions(page.request);
+    // Submit with a bounded retry loop. Two transient precondition failures are
+    // repaired-and-retried with backoff rather than failing this gate-blocking
+    // test on a readiness race:
+    //  - the Profile display name not yet visible to the MARKET server (a
+    //    Profile→Market snapshot-propagation lag — pronounced right after a
+    //    deploy while the Profile pod is still becoming ready), and
+    //  - a just-canceled duplicate still leaving the active submission set.
+    // A single second chance proved insufficient during the post-deploy gate
+    // window; loop a few times with increasing backoff.
+    let outcome: "navigated" | string = "";
+    for (let attempt = 1; attempt <= 4; attempt++) {
       await page.goto(`${market}/submit`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { name: "Submit an Agent Kit" })).toBeVisible();
       await fillAndSubmitKitForm(page);
       outcome = await waitForSubmitOutcome(page);
+      if (outcome === "navigated") break;
+      if (attempt < 4 && /display name|active submission/i.test(outcome)) {
+        await ensureProfileDisplayName(page);
+        await cancelStaleE2eSubmissions(page.request);
+        await page.waitForTimeout(2_000 * attempt);
+        continue;
+      }
+      break; // a non-transient error, or attempts exhausted
     }
     expect(outcome, `submit flow error: ${outcome}`).toBe("navigated");
 
@@ -295,9 +304,13 @@ test.describe("submit and cancel", () => {
     page.once("dialog", (dialog) => void dialog.accept());
     await cancelButton.click();
 
-    // The detail view refetches and lands on the canceled terminal state.
+    // The detail view refetches and lands on the canceled terminal state. Use
+    // .first() — the canceled-state copy can render in more than one region
+    // (e.g. a status banner + an inline notice), which would trip strict mode.
     await expect(
-      page.getByText("You canceled this submission. It is no longer in the active review queue.")
+      page
+        .getByText("You canceled this submission. It is no longer in the active review queue.")
+        .first()
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Cancel submission" })).toBeDisabled();
 
