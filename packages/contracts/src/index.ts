@@ -132,6 +132,7 @@ export {
 export {
   kitPricingSchema,
   priceModelSchema,
+  isPremiumPriceModel,
   priceIntervalSchema,
   kitCurrencySchema,
   licenseTypeSchema,

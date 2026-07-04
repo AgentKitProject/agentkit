@@ -47,7 +47,16 @@ export type LicenseType = z.infer<typeof licenseTypeSchema>;
 export const entitlementStatusSchema = z.enum(["active", "revoked", "expired"]);
 export type EntitlementStatus = z.infer<typeof entitlementStatusSchema>;
 
-export const entitlementSourceSchema = z.enum(["purchase", "admin_grant", "free"]);
+/**
+ * How an entitlement was acquired.
+ * - `purchase` — a paid checkout (one_time/subscription).
+ * - `admin_grant` — an admin self-grant / test grant.
+ * - `free` — a free-kit grant (license accepted, no charge).
+ * - `premium_access` — a PREMIUM (per_invocation) kit's $0 ACCESS entitlement:
+ *   the license is accepted once and access is gated, but there is NO up-front
+ *   charge — money is metered per run at run time (D7). No Stripe checkout.
+ */
+export const entitlementSourceSchema = z.enum(["purchase", "admin_grant", "free", "premium_access"]);
 export type EntitlementSource = z.infer<typeof entitlementSourceSchema>;
 
 /** The default platform EULA version id applied when licenseType === 'default'. */
@@ -290,7 +299,25 @@ export const serviceLicensedPackageResponseSchema = licensedPackageResponseSchem
   slug: z.string().min(1),
   pricing: kitPricingSchema,
   downloadable: z.boolean(),
-  onlineOnly: z.boolean()
+  onlineOnly: z.boolean(),
+  /**
+   * PREMIUM (per_invocation) run-metering context — populated ONLY for premium
+   * kits so a downstream run driver (P5) can meter the seller's per-run royalty.
+   * Omitted (or 0) for non-premium kits.
+   *
+   * - `perRunRoyaltyCents` — the seller-set gross per-run royalty in US cents
+   *   (seller-owned value; safe in the public contract).
+   * - `ownerOrgId` — the org that owns the kit (the royalty EARNER). The royalty
+   *   is credited to this org's seller-earnings ledger.
+   * - `royaltyCommissionBps` — the platform commission taken from the royalty, in
+   *   basis points. This is a COMMERCIAL value: the open-core/contracts default is
+   *   0; the real hosted value lives ONLY in agentkit-commercial config. The field
+   *   is declared here so the seam has a stable shape, but public/self-host builds
+   *   always send 0.
+   */
+  perRunRoyaltyCents: z.number().int().nonnegative().optional(),
+  ownerOrgId: z.string().min(1).optional(),
+  royaltyCommissionBps: z.number().int().nonnegative().optional()
 });
 export type ServiceLicensedPackageResponse = z.infer<typeof serviceLicensedPackageResponseSchema>;
 

@@ -63,8 +63,10 @@ export type MarketKitListItem = {
   // Tier-2 paid/licensed metadata (free-safe; all optional).
   kitId?: string;
   pricing?: "free" | "paid";
-  priceModel?: "one_time" | "subscription";
+  priceModel?: "one_time" | "subscription" | "per_invocation";
   priceCents?: number;
+  /** PREMIUM (per_invocation) only: seller-set per-run price in US cents. */
+  perRunRoyaltyCents?: number;
   currency?: string;
   interval?: "month" | "year";
   /** Subscription free-trial days; only meaningful for subscription kits. */
@@ -271,7 +273,13 @@ function normalizePricing(raw: JsonObject): Partial<MarketKitListItem> {
   const pricing = pricingRaw === "paid" ? "paid" : pricingRaw === "free" ? "free" : undefined;
   const priceModelRaw = asOptionalString(raw.priceModel);
   const priceModel =
-    priceModelRaw === "subscription" ? "subscription" : priceModelRaw === "one_time" ? "one_time" : undefined;
+    priceModelRaw === "subscription"
+      ? "subscription"
+      : priceModelRaw === "one_time"
+        ? "one_time"
+        : priceModelRaw === "per_invocation"
+          ? "per_invocation"
+          : undefined;
   const intervalRaw = asOptionalString(raw.interval);
   const interval = intervalRaw === "month" ? "month" : intervalRaw === "year" ? "year" : undefined;
   const licenseTypeRaw = asOptionalString(raw.licenseType);
@@ -282,6 +290,7 @@ function normalizePricing(raw: JsonObject): Partial<MarketKitListItem> {
     pricing,
     priceModel,
     priceCents: asOptionalNumber(raw.priceCents),
+    perRunRoyaltyCents: asOptionalNumber(raw.perRunRoyaltyCents),
     currency: asOptionalString(raw.currency),
     interval,
     trialDays: asOptionalNumber(raw.trialDays),

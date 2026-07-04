@@ -105,9 +105,18 @@ export function toPublicKit(kit: KitRecord, publisher: PublisherRecord | undefin
     pricing: kit.pricing === 'paid' ? 'paid' : 'free',
     priceModel: kit.pricing === 'paid' ? (kit.priceModel ?? null) : null,
     priceCents: kit.pricing === 'paid' && typeof kit.priceCents === 'number' ? kit.priceCents : null,
+    // PREMIUM (per_invocation): surface the seller-set per-run royalty so the
+    // catalog/acquire UI + the run-metering seam can read it. Seller-owned value.
+    perRunRoyaltyCents:
+      kit.pricing === 'paid' && kit.priceModel === 'per_invocation' && typeof kit.perRunRoyaltyCents === 'number'
+        ? kit.perRunRoyaltyCents
+        : null,
     currency: kit.currency ?? 'USD',
     interval: kit.pricing === 'paid' && kit.priceModel === 'subscription' ? (kit.interval ?? null) : null,
     downloadable: kit.pricing === 'paid' ? kit.downloadable === true : true,
+    // Owning org id (public identifier, already exposed by transfer/visibility
+    // flows) — the payout gate + run-royalty seam resolve the royalty EARNER from it.
+    ownerOrgId: kit.ownerOrgId ?? null,
     licenseType: kit.licenseType === 'custom' ? 'custom' : 'default',
     licenseVersion: kit.licenseType === 'custom' ? 'custom' : (kit.licenseVersion ?? null),
   };

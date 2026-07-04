@@ -90,6 +90,7 @@ export default async function KitDetailPage({
     pricing: kit.pricing,
     priceModel: kit.priceModel,
     priceCents: kit.priceCents,
+    perRunRoyaltyCents: kit.perRunRoyaltyCents,
     currency: kit.currency,
     interval: kit.interval
   });

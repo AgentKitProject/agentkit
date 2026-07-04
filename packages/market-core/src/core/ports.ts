@@ -258,6 +258,11 @@ export interface KitPricingUpdate {
   pricing: KitPricing;
   priceModel?: PriceModel;
   priceCents?: number;
+  /**
+   * PREMIUM (per_invocation) only: the seller-set per-run royalty in US cents.
+   * Set only for the premium model; undefined for one_time/subscription/free.
+   */
+  perRunRoyaltyCents?: number;
   currency: string;
   interval?: PriceInterval;
   /** Subscription free-trial days; only set for subscription kits, else undefined/0. */

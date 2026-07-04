@@ -447,6 +447,7 @@ export function createDynamoAdminRepository(config: DynamoAdminConfig): AdminRep
         pricing: existingKit?.pricing,
         priceModel: existingKit?.priceModel,
         priceCents: existingKit?.priceCents,
+        perRunRoyaltyCents: existingKit?.perRunRoyaltyCents,
         currency: existingKit?.currency,
         interval: existingKit?.interval,
         downloadable: existingKit?.downloadable,

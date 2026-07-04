@@ -13,6 +13,7 @@ export function KitCard({ kit }: { kit: MarketKitListItem }) {
     pricing: kit.pricing,
     priceModel: kit.priceModel,
     priceCents: kit.priceCents,
+    perRunRoyaltyCents: kit.perRunRoyaltyCents,
     currency: kit.currency,
     interval: kit.interval
   });

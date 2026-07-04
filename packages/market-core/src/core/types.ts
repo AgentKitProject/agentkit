@@ -23,8 +23,9 @@ export type KitVisibility = 'public' | 'private';
 /** Whether a kit is free or paid (Tier-2). Mirrors `KitPricing` in @agentkitforge/contracts. */
 export type KitPricing = 'free' | 'paid';
 
-/** Pricing model for a paid kit. Mirrors `PriceModel` in @agentkitforge/contracts. */
-export type PriceModel = 'one_time' | 'subscription';
+/** Pricing model for a paid kit. Mirrors `PriceModel` in @agentkitforge/contracts.
+ * `per_invocation` = PREMIUM (protected/run-on-Auto; per-run royalty metered at run time). */
+export type PriceModel = 'one_time' | 'subscription' | 'per_invocation';
 
 /** Billing interval for a subscription kit. Mirrors `PriceInterval` in @agentkitforge/contracts. */
 export type PriceInterval = 'month' | 'year';
@@ -35,8 +36,10 @@ export type LicenseType = 'default' | 'custom';
 /** Entitlement lifecycle. Mirrors `EntitlementStatus` in @agentkitforge/contracts. */
 export type EntitlementStatus = 'active' | 'revoked' | 'expired';
 
-/** How an entitlement was acquired. Mirrors `EntitlementSource` in @agentkitforge/contracts. */
-export type EntitlementSource = 'purchase' | 'admin_grant' | 'free';
+/** How an entitlement was acquired. Mirrors `EntitlementSource` in @agentkitforge/contracts.
+ * `premium_access` = a PREMIUM (per_invocation) kit's $0 access grant (no charge;
+ * money is metered per run). */
+export type EntitlementSource = 'purchase' | 'admin_grant' | 'free' | 'premium_access';
 
 /**
  * A buyer's right to use a specific paid (or free, when explicitly granted) kit.
@@ -287,6 +290,8 @@ export interface KitRecord {
   priceModel?: PriceModel;
   /** USD minor units (cents). */
   priceCents?: number;
+  /** PREMIUM (per_invocation) only: seller-set per-run royalty in US cents. */
+  perRunRoyaltyCents?: number;
   /** v1 is USD-only; the field is still stored. */
   currency?: string;
   interval?: PriceInterval;

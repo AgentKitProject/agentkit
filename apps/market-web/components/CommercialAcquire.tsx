@@ -16,7 +16,7 @@ type AcquireProps = {
   slug: string;
   priceText: string;
   pricing: "paid";
-  priceModel?: "one_time" | "subscription";
+  priceModel?: "one_time" | "subscription" | "per_invocation";
   trialDays?: number;
   downloadable: boolean;
   licenseText: string;

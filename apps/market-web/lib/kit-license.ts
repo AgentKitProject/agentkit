@@ -92,16 +92,22 @@ export function intervalSuffix(interval?: "month" | "year"): string {
   return "";
 }
 
-/** Full human price label, e.g. "Free", "$9.99", "$5.00/mo". */
+/** Full human price label, e.g. "Free", "$9.99", "$5.00/mo", "$0.25/run". */
 export function priceLabel(input: {
   pricing?: "free" | "paid";
-  priceModel?: "one_time" | "subscription";
+  priceModel?: "one_time" | "subscription" | "per_invocation";
   priceCents?: number;
+  /** PREMIUM (per_invocation) only: seller-set per-run price in US cents. */
+  perRunRoyaltyCents?: number;
   currency?: string;
   interval?: "month" | "year";
 }): string {
   if (input.pricing !== "paid") {
     return "Free";
+  }
+  // PREMIUM (per_invocation): the customer-facing price is per RUN, not up front.
+  if (input.priceModel === "per_invocation") {
+    return `${formatPriceCents(input.perRunRoyaltyCents, input.currency ?? "USD")}/run`;
   }
   const base = formatPriceCents(input.priceCents, input.currency ?? "USD");
   if (input.priceModel === "subscription") {
