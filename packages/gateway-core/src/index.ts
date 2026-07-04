@@ -17,6 +17,7 @@
 
 // Core types
 export type {
+  AccrueRoyaltyInput,
   AiProviderType,
   AppendSessionMessagesInput,
   BillingMode,
@@ -31,7 +32,10 @@ export type {
   CreditTransaction,
   CreditTransactionType,
   GatewaySession,
+  PendingSellerEarnings,
   RecordTransactionInput,
+  SellerEarningEvent,
+  SellerEarnings,
   TextBlock,
   TokenUsage,
   ToolDefinition,
@@ -149,6 +153,7 @@ export type { DynamoTableNames } from "./adapters/aws/index.js";
 
 // Postgres self-host adapter (session store only; the managed Postgres credit ledger is commercial)
 export {
+  PostgresSellerEarningsRepository,
   PostgresSessionStore,
 } from "./adapters/selfhost/postgres.js";
 export type { PgPool } from "./adapters/selfhost/postgres.js";

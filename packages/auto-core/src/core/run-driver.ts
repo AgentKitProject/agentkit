@@ -98,6 +98,15 @@ export interface RunAutoRunResult {
   spentInvocationCents: number;
   /** Cents debited for the active-minute fee alone (subset of compute). */
   spentActiveMinuteCents: number;
+  /**
+   * Cents debited from the BUYER for the PREMIUM (per-invocation) kit royalty on
+   * this run (0 unless a premium royalty > 0 and the run reached a BILLABLE
+   * terminal state). This is the same gross the seller accrues against; it is
+   * NOT part of spentComputeCents (compute = invocation + active-minute), it is
+   * a separate line for the receipt. 0 on a FAILED run and on every open-core /
+   * self-host / non-premium run.
+   */
+  spentRoyaltyCents: number;
   /** Number of tool-execution rounds driven. */
   toolRounds: number;
 }
@@ -149,6 +158,29 @@ export interface RunAutoRunDeps {
    * the fixed FREE_TRIAL_PERIOD_KEY ledger row and is idempotent per run.
    */
   freeActiveMinutesPerMonth?: number;
+  /**
+   * PREMIUM (per-invocation) kit royalty for THIS run, in US cents (M6). The
+   * seller-set per-run price, metered from the BUYER's prepaid balance and
+   * accrued to the SELLING org. Default 0 (disabled) — non-zero only for a
+   * premium kit on the hosted managed path where run-task resolves it from the
+   * kit's pricing + the resolve-context seam. 0 → the entire royalty path is
+   * SKIPPED and the run behaves byte-for-byte as today (open-core / self-host /
+   * free / non-premium runs are unaffected).
+   */
+  premiumRoyaltyCents?: number;
+  /** The SELLING org that earns the royalty. Required (non-empty) when
+   *  premiumRoyaltyCents > 0; ignored otherwise. */
+  royaltyOrgId?: string;
+  /** The premium kit that was run. Required (non-empty) when
+   *  premiumRoyaltyCents > 0; ignored otherwise. */
+  royaltyKitId?: string;
+  /**
+   * Platform commission in basis points withheld from the royalty at accrual
+   * (0 → the seller keeps 100%, the self-host default). Non-zero only on the
+   * hosted path via the resolve-context seam. Passed straight to the ledger's
+   * accrueRoyalty; never a hardcoded rate here.
+   */
+  royaltyCommissionBps?: number;
   /**
    * GOVERNANCE ACCOUNTING (org budgets v2) — best-effort, open-core-safe. When
    * provided, called ONCE at run finalize (every terminal status) with the run's
@@ -282,6 +314,7 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   let spentInferenceCents = run.spentCents;
   let spentInvocationCents = 0;
   let spentActiveMinuteCents = 0;
+  let spentRoyaltyCents = 0;
   const budgetCents = run.budgetCents;
 
   // ---- Auto v2 run compute fee (invocation + active-minute) -----------------
@@ -300,7 +333,24 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   // remaining allowance, so a $0-balance user can genuinely consume the trial
   // (aligns with gateway-core checkAffordability's zero-balance admission).
   const freeActiveMinutesPerMonth = Math.max(0, deps.freeActiveMinutesPerMonth ?? 0);
-  const chargeRunFee = invocationFeeCents > 0 || activeMinuteRateCents > 0;
+
+  // ---- PREMIUM (per-invocation) kit royalty (M6) ----------------------------
+  // The seller-set per-run price, metered from the BUYER's balance and accrued to
+  // the SELLING org. Defaults 0 → the whole path is inert (open-core / self-host /
+  // free / non-premium runs behave byte-for-byte as today). Gated additionally on
+  // a resolved org + kit so a misconfigured caller can never accrue to an empty
+  // org — it just falls inert. commissionBps defaults 0 (seller keeps 100%).
+  const premiumRoyaltyCents = Math.max(0, deps.premiumRoyaltyCents ?? 0);
+  const royaltyOrgId = deps.royaltyOrgId ?? "";
+  const royaltyKitId = deps.royaltyKitId ?? "";
+  const royaltyCommissionBps = Math.max(0, deps.royaltyCommissionBps ?? 0);
+  const chargeRoyalty =
+    premiumRoyaltyCents > 0 && royaltyOrgId !== "" && royaltyKitId !== "";
+
+  // The run reserves the v2 hold (invocation + active-minute) AND — when a
+  // premium royalty applies — the royalty on top, since both settle from the SAME
+  // buyer hold. With chargeRoyalty false this is identical to the v2-only path.
+  const chargeRunFee = invocationFeeCents > 0 || activeMinuteRateCents > 0 || chargeRoyalty;
   // Budget-derived cap on active minutes (also caps the run's wall-clock). When
   // the active-minute rate is 0 there is no minute-derived cap (only the
   // invocation fee applies). ceil so a partial budget still funds a whole minute.
@@ -311,12 +361,20 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
   let runFeeHoldCents = 0;
   let runFeeSettled = false;
 
-  /** Settle the v2 ACTIVE-MINUTE fee (idempotent — runs once): the up-front hold
-   *  is settled with ceil(actual active minutes) * rate, capped by the
-   *  budget-derived estimate, releasing the overshoot. The invocation fee is a
-   *  separate up-front debit (see below) and is NOT part of this settle. Folds
-   *  the active-minute fee into the run's persisted total spend. */
-  const settleActiveMinutes = async (): Promise<void> => {
+  /** Settle the v2 ACTIVE-MINUTE fee AND — on a BILLABLE terminal state only —
+   *  the PREMIUM (per-invocation) royalty, from the SAME up-front hold (idempotent
+   *  — runs once): the hold is settled with ceil(actual active minutes) * rate +
+   *  (billable ? royalty : 0), capped by the reserved hold, releasing the
+   *  overshoot. The invocation fee is a separate up-front debit and is NOT part of
+   *  this settle. On a non-billable ('failed') terminal state the royalty is NOT
+   *  settled and NOT accrued — it rides the hold release. Folds the settled fees
+   *  into the run's persisted total spend, and accrues the seller royalty on a
+   *  billable settle.
+   *
+   *  @param billable  true for a BILLABLE terminal state (succeeded |
+   *                   budget_exceeded | canceled); false for 'failed'. Governs
+   *                   whether the royalty is charged + accrued. */
+  const settleActiveMinutes = async (billable: boolean): Promise<void> => {
     // Guarded by a flag, NOT the hold id: with a grace-shrunk (possibly zero)
     // hold the metering below must still run — it is what depletes the monthly
     // free allowance. Skipping it would make the free tier infinite.
@@ -349,17 +407,35 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     }
     const activeMinuteCents =
       activeMinuteRateCents > 0 ? billableMinutes * activeMinuteRateCents : 0;
-    // Settle within the hold (settleHold requires actual <= reserved). With a
-    // grace-shrunk hold, billable cents can exceed it in one rare race: a
-    // CONCURRENT run depleted the allowance after this run's hold was sized.
-    // The excess is debited directly — idempotent via sourceRef, best-effort
-    // (an unpayable excess must not mask the run's terminal status).
-    const settleCents = holdId !== undefined ? Math.min(activeMinuteCents, runFeeHoldCents) : 0;
+    // The premium royalty is charged from the buyer ONLY on a BILLABLE terminal
+    // state. On 'failed' it is 0 → it rides the hold release below (never debited,
+    // never accrued to the seller).
+    const royaltyCharged = chargeRoyalty && billable ? premiumRoyaltyCents : 0;
+
+    // Settle within the hold (settleHold requires actual <= reserved). The hold
+    // covered activeMinute + royalty, so settle the sum (capped at the reserved
+    // hold). Only the ACTIVE-MINUTE overshoot is recovered via a direct debit
+    // (the grace-shrunk-hold concurrent-depletion race); the royalty is NEVER
+    // charged beyond the hold — a run that can't cover its own royalty simply
+    // settles less, it does not get a surprise extra debit.
+    const settleCents =
+      holdId !== undefined
+        ? Math.min(activeMinuteCents + royaltyCharged, runFeeHoldCents)
+        : 0;
     if (holdId !== undefined) {
       await ledger.settleHold(holdId, settleCents, now(), `auto-active-${run.id}`);
     }
-    let chargedCents = settleCents;
-    const excessCents = activeMinuteCents - settleCents;
+    // The royalty portion actually taken from the buyer within this settle. The
+    // hold is always sized to cover the full estimate + royalty (royalty is a
+    // fixed cent amount, not minute-derived), so on the normal path this equals
+    // royaltyCharged; it only shrinks if the hold itself was under-reserved.
+    const royaltyChargedActual = Math.min(royaltyCharged, settleCents);
+    // Active-minute cents settled within the hold (the remainder after royalty).
+    const activeSettledCents = settleCents - royaltyChargedActual;
+    let chargedActiveCents = activeSettledCents;
+    // Active-minute overshoot beyond the hold (grace-shrunk-hold race) — debited
+    // directly, idempotent via sourceRef, best-effort. Royalty is excluded.
+    const excessCents = activeMinuteCents - activeSettledCents;
     if (excessCents > 0) {
       try {
         await ledger.debit(
@@ -369,13 +445,40 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
           "Auto run active-minutes (beyond hold)",
           `auto-active-extra-${run.id}`,
         );
-        chargedCents += excessCents;
+        chargedActiveCents += excessCents;
       } catch {
         /* best-effort — see above */
       }
     }
-    spentActiveMinuteCents = chargedCents;
-    if (chargedCents > 0) await runs.recordSpend(run.id, chargedCents);
+    spentActiveMinuteCents = chargedActiveCents;
+    spentRoyaltyCents = royaltyChargedActual;
+    const totalCharged = chargedActiveCents + royaltyChargedActual;
+    if (totalCharged > 0) await runs.recordSpend(run.id, totalCharged);
+
+    // Accrue the seller royalty ONLY after a billable settle actually charged the
+    // buyer. IDEMPOTENT by runId (source_ref `royalty-${runId}`), so a retried run
+    // accrues once. Best-effort: if accrual throws, catch+log — the buyer settle
+    // above MUST NOT roll back and we do NOT double-charge (a reconciliation job
+    // covers any accrual drift).
+    if (royaltyChargedActual > 0) {
+      try {
+        await ledger.accrueRoyalty({
+          orgId: royaltyOrgId,
+          kitId: royaltyKitId,
+          runId: run.id,
+          grossRoyaltyCents: premiumRoyaltyCents,
+          commissionBps: royaltyCommissionBps,
+          now: now(),
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[auto-core] royalty accrual failed for run ${run.id} (buyer already settled; reconciliation will cover): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   };
 
   // Seed the conversation with the user's task.
@@ -390,11 +493,18 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     status: RunAutoRunResult["status"],
     extra: { error?: string } = {},
   ): Promise<RunAutoRunResult> => {
+    // BILLABLE terminal state: succeeded | budget_exceeded | canceled. 'failed'
+    // is NON-billable — the premium royalty is neither debited from the buyer nor
+    // accrued to the seller on a failed run (it rides the hold release). This is
+    // the single guarantee point for "no royalty on failure".
+    const billable = status !== "failed";
+
     // Settle the v2 active-minute hold on ANY terminal outcome (completion,
     // cancel, failure, budget). Best-effort so a ledger hiccup can't mask the
     // run's real terminal status. (The invocation fee was already debited at run
-    // start.)
-    await settleActiveMinutes().catch(() => {});
+    // start.) The premium royalty is settled + accrued INSIDE this call, but only
+    // when `billable`.
+    await settleActiveMinutes(billable).catch(() => {});
 
     // spentComputeCents = the full v2 run fee (invocation + active-minutes); it
     // is what the run's spent_compute_cents column persists.
@@ -459,11 +569,16 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       status,
       result,
       error: extra.error,
-      spentCents: spentInferenceCents + spentComputeCents,
+      // spentCents is the TOTAL debited from the buyer: inference + the v2 compute
+      // fee (invocation + active-minute) + the premium royalty. The royalty is a
+      // real buyer charge but is NOT part of spentComputeCents (compute is
+      // invocation + active-minute only) — it is a separate receipt line.
+      spentCents: spentInferenceCents + spentComputeCents + spentRoyaltyCents,
       spentInferenceCents,
       spentComputeCents,
       spentInvocationCents,
       spentActiveMinuteCents,
+      spentRoyaltyCents,
       toolRounds,
     };
   };
@@ -537,9 +652,15 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
 
       // 2) Active-minute fee: reserve the up-front hold for the budget-derived
       //    estimated minutes MINUS the remaining free allowance; settled with
-      //    the ACTUAL ceil(minutes) at finalize.
+      //    the ACTUAL ceil(minutes) at finalize. PLUS the PREMIUM royalty (M6):
+      //    grow the SAME hold by premiumRoyaltyCents so the royalty settles from
+      //    it on a billable terminal state (and rides the release on failure).
+      //    The royalty is NOT waived by the free-minutes grace — the free trial
+      //    only covers Auto's own compute fee, never a seller's royalty. With
+      //    chargeRoyalty false this term is 0 → the hold is identical to today.
       const holdCents =
-        Math.max(0, estimatedMin - freeMinutesRemainingAtStart) * activeMinuteRateCents;
+        Math.max(0, estimatedMin - freeMinutesRemainingAtStart) * activeMinuteRateCents +
+        (chargeRoyalty ? premiumRoyaltyCents : 0);
       if (holdCents > 0) {
         runFeeHoldId = await ledger.reserveHold(run.userId, holdCents, now());
         runFeeHoldCents = holdCents;

@@ -149,6 +149,55 @@ describe("HttpLedgerClient request mapping", () => {
   });
 });
 
+describe("HttpLedgerClient seller-earnings (premium royalties)", () => {
+  it("accrueRoyalty → POST /accrue-royalty, no now in body", async () => {
+    const { calls, fetchImpl } = recorder(() => ({ status: 200, body: { ok: true } }));
+    await client(fetchImpl).accrueRoyalty({
+      orgId: "org-1",
+      kitId: "kit-1",
+      runId: "run-1",
+      grossRoyaltyCents: 500,
+      commissionBps: 600,
+      now: NOW,
+    });
+    expect(calls[0]!.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${BASE}/gateway/ledger/accrue-royalty`);
+    expect(calls[0]!.body).toEqual({
+      orgId: "org-1",
+      kitId: "kit-1",
+      runId: "run-1",
+      grossRoyaltyCents: 500,
+      commissionBps: 600,
+    });
+    expect(calls[0]!.body).not.toHaveProperty("now");
+    expect(calls[0]!.headers["x-gateway-service-key"]).toBe(KEY);
+  });
+
+  it("getPendingSellerEarnings → GET /seller-earnings/pending, returns the list", async () => {
+    const { calls, fetchImpl } = recorder(() => ({
+      status: 200,
+      body: { pending: [{ orgId: "org-1", pendingCents: 470 }] },
+    }));
+    const pending = await client(fetchImpl).getPendingSellerEarnings();
+    expect(pending).toEqual([{ orgId: "org-1", pendingCents: 470 }]);
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.url).toBe(`${BASE}/gateway/ledger/seller-earnings/pending`);
+  });
+
+  it("getPendingSellerEarnings → 404 maps to []", async () => {
+    const { fetchImpl } = recorder(() => ({ status: 404, body: {} }));
+    expect(await client(fetchImpl).getPendingSellerEarnings()).toEqual([]);
+  });
+
+  it("markSellerEarningsTransferred → POST /seller-earnings/transferred, no now", async () => {
+    const { calls, fetchImpl } = recorder(() => ({ status: 200, body: { ok: true } }));
+    await client(fetchImpl).markSellerEarningsTransferred("org-1", 200, "xfer-1", NOW);
+    expect(calls[0]!.url).toBe(`${BASE}/gateway/ledger/seller-earnings/transferred`);
+    expect(calls[0]!.body).toEqual({ orgId: "org-1", amountCents: 200, transferRef: "xfer-1" });
+    expect(calls[0]!.body).not.toHaveProperty("now");
+  });
+});
+
 describe("HttpLedgerClient fetchAutoV2Rates", () => {
   it("returns the gateway rates on success", async () => {
     const { fetchImpl } = recorder(() => ({

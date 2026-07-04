@@ -18,9 +18,11 @@
 
 import type { CreditLedgerRepository } from "../../core/ports.js";
 import type {
+  AccrueRoyaltyInput,
   CreditAccount,
   CreditHold,
   CreditTransaction,
+  PendingSellerEarnings,
   RecordTransactionInput,
 } from "../../core/types.js";
 
@@ -38,6 +40,18 @@ export class InMemoryCreditLedgerRepository implements CreditLedgerRepository {
    * replays this value and writes nothing further (no double-deplete).
    */
   private readonly freeMinuteRuns = new Map<string, number>();
+
+  // -------------------------------------------------------------------------
+  // Seller-earnings ledger (premium / per-invocation kit royalties)
+  // -------------------------------------------------------------------------
+  /** Per-org accrued (net) cents from run royalties. */
+  private readonly sellerAccrued = new Map<string, number>();
+  /** Per-org transferred (paid-out) cents. */
+  private readonly sellerTransferred = new Map<string, number>();
+  /** Seen accrual source_refs (`royalty-${runId}`) for idempotency. */
+  private readonly seenRoyaltyRefs = new Set<string>();
+  /** Seen payout transferRefs for idempotency. */
+  private readonly seenTransferRefs = new Set<string>();
 
   async getAccount(userId: string): Promise<CreditAccount | undefined> {
     return this.accounts.get(userId);
@@ -159,5 +173,44 @@ export class InMemoryCreditLedgerRepository implements CreditLedgerRepository {
     this.freeMinuteUsage.set(key, usedThisMonth + minutes);
     this.freeMinuteRuns.set(runId, billableMinutes);
     return billableMinutes;
+  }
+
+  // -------------------------------------------------------------------------
+  // Seller-earnings ledger (premium / per-invocation kit royalties)
+  // -------------------------------------------------------------------------
+
+  async accrueRoyalty(input: AccrueRoyaltyInput): Promise<void> {
+    const { orgId, runId, grossRoyaltyCents, commissionBps } = input;
+    // No-op on a non-positive gross royalty.
+    if (!(grossRoyaltyCents > 0)) return;
+    // Idempotent on source_ref = `royalty-${runId}`: a replay accrues nothing.
+    const sourceRef = `royalty-${runId}`;
+    if (this.seenRoyaltyRefs.has(sourceRef)) return;
+    this.seenRoyaltyRefs.add(sourceRef);
+    const commissionCents = Math.floor((grossRoyaltyCents * Math.max(0, commissionBps)) / 10000);
+    const netCents = grossRoyaltyCents - commissionCents;
+    this.sellerAccrued.set(orgId, (this.sellerAccrued.get(orgId) ?? 0) + netCents);
+  }
+
+  async getPendingSellerEarnings(): Promise<PendingSellerEarnings[]> {
+    const orgs = new Set<string>([...this.sellerAccrued.keys(), ...this.sellerTransferred.keys()]);
+    const pending: PendingSellerEarnings[] = [];
+    for (const orgId of [...orgs].sort()) {
+      const pendingCents = (this.sellerAccrued.get(orgId) ?? 0) - (this.sellerTransferred.get(orgId) ?? 0);
+      if (pendingCents > 0) pending.push({ orgId, pendingCents });
+    }
+    return pending;
+  }
+
+  async markSellerEarningsTransferred(
+    orgId: string,
+    amountCents: number,
+    transferRef: string,
+    _now: string,
+  ): Promise<void> {
+    // Idempotent on transferRef: replaying the same transfer bumps nothing.
+    if (this.seenTransferRefs.has(transferRef)) return;
+    this.seenTransferRefs.add(transferRef);
+    this.sellerTransferred.set(orgId, (this.sellerTransferred.get(orgId) ?? 0) + amountCents);
   }
 }

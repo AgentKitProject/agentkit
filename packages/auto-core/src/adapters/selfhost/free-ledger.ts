@@ -19,10 +19,12 @@
  */
 
 import type {
+  AccrueRoyaltyInput,
   CreditAccount,
   CreditHold,
   CreditLedgerRepository,
   CreditTransaction,
+  PendingSellerEarnings,
   RecordTransactionInput,
 } from "@agentkitforge/gateway-core";
 
@@ -90,6 +92,20 @@ export function makeFreeCreditLedger(): CreditLedgerRepository {
     },
     async consumeFreeActiveMinutes(): Promise<number> {
       return 0;
+    },
+    // Premium (per-invocation) seller-earnings ledger. Self-host free never runs
+    // a premium royalty (premiumRoyaltyCents is 0, so the run-driver's royalty
+    // path is inert and never reaches these). They are read-shaped no-ops — unlike
+    // the spend paths they do NOT throw, so a defensive caller / a P2 payout job
+    // pointed at a free deployment simply sees no earnings rather than crashing.
+    async accrueRoyalty(_input: AccrueRoyaltyInput): Promise<void> {
+      /* no-op: self-host free accrues no royalties */
+    },
+    async getPendingSellerEarnings(): Promise<PendingSellerEarnings[]> {
+      return [];
+    },
+    async markSellerEarningsTransferred(): Promise<void> {
+      /* no-op: self-host free has no earnings to transfer */
     },
   };
 }

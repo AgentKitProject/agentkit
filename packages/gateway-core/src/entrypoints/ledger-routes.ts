@@ -306,6 +306,53 @@ export async function handleLedgerRequest(
       return json(200, { billableMinutes });
     }
 
+    // ---- accrueRoyalty (premium / per-invocation seller earnings) ---------
+    // Idempotent per runId (source_ref = `royalty-${runId}`). netCents is
+    // derived server-side; the request carries the GROSS royalty + commission.
+    if (sub === "/accrue-royalty" && ctx.method === "POST") {
+      const obj = asObject(ctx.body);
+      if (!obj) return json(400, { error: "Request body must be a JSON object." });
+      const orgId = requireString(obj, "orgId");
+      const kitId = requireString(obj, "kitId");
+      const runId = requireString(obj, "runId");
+      const grossRoyaltyCents = requireInt(obj, "grossRoyaltyCents");
+      const commissionBps = requireInt(obj, "commissionBps");
+      if (!orgId) return json(400, { error: "orgId is required." });
+      if (!kitId) return json(400, { error: "kitId is required." });
+      if (!runId) return json(400, { error: "runId is required." });
+      if (grossRoyaltyCents === undefined || grossRoyaltyCents < 0) {
+        return json(400, { error: "grossRoyaltyCents must be a non-negative integer." });
+      }
+      if (commissionBps === undefined || commissionBps < 0) {
+        return json(400, { error: "commissionBps must be a non-negative integer." });
+      }
+      await ledger.accrueRoyalty({ orgId, kitId, runId, grossRoyaltyCents, commissionBps, now });
+      return json(200, { ok: true });
+    }
+
+    // ---- getPendingSellerEarnings (P2 payout job) -------------------------
+    if (sub === "/seller-earnings/pending" && ctx.method === "GET") {
+      const pending = await ledger.getPendingSellerEarnings();
+      return json(200, { pending });
+    }
+
+    // ---- markSellerEarningsTransferred (P2 payout job) --------------------
+    // Idempotent per transferRef.
+    if (sub === "/seller-earnings/transferred" && ctx.method === "POST") {
+      const obj = asObject(ctx.body);
+      if (!obj) return json(400, { error: "Request body must be a JSON object." });
+      const orgId = requireString(obj, "orgId");
+      const amountCents = requireInt(obj, "amountCents");
+      const transferRef = requireString(obj, "transferRef");
+      if (!orgId) return json(400, { error: "orgId is required." });
+      if (amountCents === undefined || amountCents < 0) {
+        return json(400, { error: "amountCents must be a non-negative integer." });
+      }
+      if (!transferRef) return json(400, { error: "transferRef is required." });
+      await ledger.markSellerEarningsTransferred(orgId, amountCents, transferRef, now);
+      return json(200, { ok: true });
+    }
+
     // Unknown ledger sub-route.
     return json(404, { error: "ledger_route_not_found" });
   } catch (error) {

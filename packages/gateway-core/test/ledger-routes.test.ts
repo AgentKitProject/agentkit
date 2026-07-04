@@ -283,6 +283,76 @@ describe("free-minutes", () => {
 });
 
 // ---------------------------------------------------------------------------
+// seller-earnings: accrue / pending / transferred (premium royalties)
+// ---------------------------------------------------------------------------
+
+describe("accrue-royalty + seller-earnings", () => {
+  it("accrues a royalty (net of commission) and lists it as pending", async () => {
+    const d = makeDeps();
+    const res = await call(d, KEY, "/accrue-royalty", "POST", {
+      orgId: "org-1",
+      kitId: "kit-1",
+      runId: "run-1",
+      grossRoyaltyCents: 500,
+      commissionBps: 600, // 6% → net 470
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true });
+    expect(await d.ledger.getPendingSellerEarnings()).toEqual([
+      { orgId: "org-1", pendingCents: 470 },
+    ]);
+  });
+
+  it("is idempotent per runId (a re-accrue accrues once)", async () => {
+    const d = makeDeps();
+    const body = { orgId: "org-1", kitId: "kit-1", runId: "run-1", grossRoyaltyCents: 500, commissionBps: 0 };
+    await call(d, KEY, "/accrue-royalty", "POST", body);
+    await call(d, KEY, "/accrue-royalty", "POST", body);
+    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 500 }]);
+  });
+
+  it("400 on a missing orgId / negative gross / negative commission", async () => {
+    const d = makeDeps();
+    expect((await call(d, KEY, "/accrue-royalty", "POST", { kitId: "k", runId: "r", grossRoyaltyCents: 1, commissionBps: 0 })).status).toBe(400);
+    expect((await call(d, KEY, "/accrue-royalty", "POST", { orgId: "o", kitId: "k", runId: "r", grossRoyaltyCents: -1, commissionBps: 0 })).status).toBe(400);
+    expect((await call(d, KEY, "/accrue-royalty", "POST", { orgId: "o", kitId: "k", runId: "r", grossRoyaltyCents: 1, commissionBps: -1 })).status).toBe(400);
+  });
+
+  it("GET pending returns the pending list", async () => {
+    const d = makeDeps();
+    await d.ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "r1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
+    const res = await call(d, KEY, "/seller-earnings/pending", "GET");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ pending: [{ orgId: "org-1", pendingCents: 500 }] });
+  });
+
+  it("POST transferred reduces the pending balance and is idempotent per transferRef", async () => {
+    const d = makeDeps();
+    await d.ledger.accrueRoyalty({ orgId: "org-1", kitId: "k", runId: "r1", grossRoyaltyCents: 500, commissionBps: 0, now: NOW });
+    const body = { orgId: "org-1", amountCents: 200, transferRef: "xfer-1" };
+    const first = await call(d, KEY, "/seller-earnings/transferred", "POST", body);
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ ok: true });
+    await call(d, KEY, "/seller-earnings/transferred", "POST", body); // replay
+    expect(await d.ledger.getPendingSellerEarnings()).toEqual([{ orgId: "org-1", pendingCents: 300 }]);
+  });
+
+  it("transferred 400 on a missing orgId / transferRef / negative amount", async () => {
+    const d = makeDeps();
+    expect((await call(d, KEY, "/seller-earnings/transferred", "POST", { amountCents: 1, transferRef: "x" })).status).toBe(400);
+    expect((await call(d, KEY, "/seller-earnings/transferred", "POST", { orgId: "o", amountCents: 1 })).status).toBe(400);
+    expect((await call(d, KEY, "/seller-earnings/transferred", "POST", { orgId: "o", amountCents: -1, transferRef: "x" })).status).toBe(400);
+  });
+
+  it("all three still require the service key", async () => {
+    const d = makeDeps();
+    expect((await call(d, "wrong", "/accrue-royalty", "POST", {})).status).toBe(403);
+    expect((await call(d, "wrong", "/seller-earnings/pending", "GET")).status).toBe(403);
+    expect((await call(d, "wrong", "/seller-earnings/transferred", "POST", {})).status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // auto-v2-rates (the moat — injected pricing vs zeros)
 // ---------------------------------------------------------------------------
 

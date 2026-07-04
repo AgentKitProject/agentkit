@@ -339,6 +339,73 @@ export interface CreateSessionInput {
   expiresAt: number;
 }
 
+// ---------------------------------------------------------------------------
+// Seller-earnings ledger (premium / per-invocation kit royalties)
+// ---------------------------------------------------------------------------
+
+/**
+ * Input for `accrueRoyalty`: a premium-kit run's gross royalty accrued to the
+ * SELLING org's earnings, net of the platform commission.
+ *
+ * IDEMPOTENT on source_ref = `royalty-${runId}` — a re-settled / retried run for
+ * the same `runId` accrues exactly once.
+ *
+ *   netCents = grossRoyaltyCents - floor(grossRoyaltyCents * commissionBps / 10000)
+ *
+ * `commissionBps` defaults to 0 at every caller (self-host → the seller keeps
+ * 100%); the hosted composition passes the real commission via the resolve seam.
+ * No-op when grossRoyaltyCents <= 0.
+ */
+export interface AccrueRoyaltyInput {
+  /** The SELLING org that earns this royalty. */
+  orgId: string;
+  /** The premium kit that was run. */
+  kitId: string;
+  /** The run that produced the royalty (idempotency key). */
+  runId: string;
+  /** Gross royalty in US cents (seller-set per-run price, before commission). */
+  grossRoyaltyCents: number;
+  /** Platform commission in basis points (0 → seller keeps 100%). */
+  commissionBps: number;
+  /** ISO 8601 timestamp, server-stamped. */
+  now: string;
+}
+
+/** An append-only seller-earning event row (one per accrued run royalty). */
+export interface SellerEarningEvent {
+  /** Opaque unique event identifier. */
+  eventId: string;
+  /** Idempotency key: `royalty-${runId}`. Unique. */
+  sourceRef: string;
+  orgId: string;
+  kitId: string;
+  runId: string;
+  /** Gross royalty in US cents (before commission). */
+  grossCents: number;
+  /** Platform commission withheld in US cents (floor of gross * bps / 10000). */
+  commissionCents: number;
+  /** Net accrued to the org in US cents (gross - commission). */
+  netCents: number;
+  createdAt: string;
+}
+
+/** A per-org running total of accrued vs. transferred (paid-out) seller earnings. */
+export interface SellerEarnings {
+  orgId: string;
+  /** Lifetime net cents accrued from run royalties. */
+  accruedCents: number;
+  /** Lifetime net cents already transferred (paid out). */
+  transferredCents: number;
+  updatedAt: string;
+}
+
+/** A pending (accrued-minus-transferred) seller-earnings balance for an org. */
+export interface PendingSellerEarnings {
+  orgId: string;
+  /** accruedCents - transferredCents (> 0). */
+  pendingCents: number;
+}
+
 export interface AppendSessionMessagesInput {
   sessionId: string;
   messages: ConversationMessage[];

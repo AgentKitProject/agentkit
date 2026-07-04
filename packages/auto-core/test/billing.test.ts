@@ -16,7 +16,11 @@
 
 import { describe, expect, it } from "vitest";
 import { FREE_TRIAL_PERIOD_KEY } from "@agentkitforge/gateway-core";
-import { computeDebitCents, type CreditLedgerRepository } from "@agentkitforge/gateway-core";
+import {
+  computeDebitCents,
+  type AccrueRoyaltyInput,
+  type CreditLedgerRepository,
+} from "@agentkitforge/gateway-core";
 import { runAutoRun } from "../src/core/run-driver.js";
 import { makeSandboxExecutor } from "../src/core/sandbox-executor.js";
 import type { AutoApproval, AutoRun, InferenceMode } from "../src/core/types.js";
@@ -106,6 +110,24 @@ class TrackingLedger implements CreditLedgerRepository {
   }
   async listTransactions() {
     return [];
+  }
+
+  // Premium (per-invocation) seller-earnings — record every accrual so the split
+  // tests can assert the seller was (or was NOT) accrued, with idempotency.
+  accruals: AccrueRoyaltyInput[] = [];
+  private seenRoyaltyRefs = new Set<string>();
+  async accrueRoyalty(input: AccrueRoyaltyInput) {
+    if (!(input.grossRoyaltyCents > 0)) return;
+    const ref = `royalty-${input.runId}`;
+    if (this.seenRoyaltyRefs.has(ref)) return; // idempotent per runId
+    this.seenRoyaltyRefs.add(ref);
+    this.accruals.push(input);
+  }
+  async getPendingSellerEarnings() {
+    return [];
+  }
+  async markSellerEarningsTransferred() {
+    /* unused in these tests */
   }
 
   // Auto v2 Slice 2: per-(user, month) free-minute usage + per-run idempotency,
@@ -727,5 +749,223 @@ describe("Auto v2 billing: truly-free trial (grace at run start)", () => {
       { cents: 10, description: "Auto run active-minutes (beyond hold)", sourceRef: "auto-active-extra-run-g4" },
     ]);
     expect(out.spentActiveMinuteCents).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M6 P1: PREMIUM (per-invocation) royalty split
+// ---------------------------------------------------------------------------
+//
+// The seller-set per-run royalty is metered from the BUYER's hold and accrued to
+// the SELLING org — but ONLY on a BILLABLE terminal state (succeeded |
+// budget_exceeded | canceled). On 'failed' the royalty rides the hold release:
+// NOT debited from the buyer, NOT accrued to the seller. Everything is inert when
+// premiumRoyaltyCents is 0 (the whole existing suite above proves that).
+
+describe("Auto v2 billing: premium (per-invocation) royalty split", () => {
+  const ROYALTY = 20; // cents, seller-set per-run price
+  const ORG = "seller-org";
+  const KIT = "premium-kit";
+
+  /** Run a premium kit. `provider` scripts the model turns; `fail` uses an empty
+   *  provider so the run FAILS. Returns { out, ledger }. */
+  async function runPremium(opts: {
+    inferenceMode?: InferenceMode;
+    activeMinuteRateCents?: number;
+    commissionBps?: number;
+    fail?: boolean;
+    runId?: string;
+    budgetCents?: number;
+    ledger?: TrackingLedger;
+  }) {
+    const ledger = opts.ledger ?? new TrackingLedger();
+    const { runs, workspace, run } = await setup({
+      budgetCents: opts.budgetCents ?? 100_000,
+      inferenceMode: opts.inferenceMode ?? "byo",
+    });
+    if (opts.runId) run.id = opts.runId;
+    const clock = makeClock();
+    const provider = new FakeChatProvider(opts.fail ? [] : [textResponse("done")]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const out = await runAutoRun({
+      run,
+      approval: APPROVAL,
+      systemPrompt: "sys",
+      tools: [],
+      executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: opts.inferenceMode ?? "byo", maxTokens: 100,
+        invocationFeeCents: 0,
+        activeMinuteRateCents: opts.activeMinuteRateCents ?? 0,
+        premiumRoyaltyCents: ROYALTY,
+        royaltyOrgId: ORG,
+        royaltyKitId: KIT,
+        ...(opts.commissionBps !== undefined ? { royaltyCommissionBps: opts.commissionBps } : {}),
+      },
+    });
+    return { out, ledger };
+  }
+
+  it("BILLABLE (succeeded): buyer settled the royalty AND the seller is accrued", async () => {
+    const { out, ledger } = await runPremium({ runId: "run-p1" });
+    expect(out.status).toBe("succeeded");
+    // Up-front hold covers the royalty (no active-minute fee here).
+    expect(ledger.reserves).toEqual([{ cents: ROYALTY }]);
+    // Settled from the hold with the full royalty.
+    const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-p1")!;
+    expect(settle.cents).toBe(ROYALTY);
+    // Buyer receipt: royalty is its own line, folded into spentCents (NOT compute).
+    expect(out.spentRoyaltyCents).toBe(ROYALTY);
+    expect(out.spentComputeCents).toBe(0);
+    expect(out.spentCents).toBe(ROYALTY);
+    // Seller accrued once, with the gross + commission passed through.
+    expect(ledger.accruals).toHaveLength(1);
+    expect(ledger.accruals[0]).toMatchObject({
+      orgId: ORG, kitId: KIT, runId: "run-p1", grossRoyaltyCents: ROYALTY, commissionBps: 0,
+    });
+  });
+
+  it("FAILED: hold RELEASED, NO royalty debit, NO accrue", async () => {
+    const { out, ledger } = await runPremium({ runId: "run-p2", fail: true });
+    expect(out.status).toBe("failed");
+    // The up-front hold was reserved...
+    expect(ledger.reserves).toEqual([{ cents: ROYALTY }]);
+    // ...and settled with 0 (releasing the whole royalty back to the buyer).
+    const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-p2")!;
+    expect(settle.cents).toBe(0);
+    // No royalty charged to the buyer, no extra debit.
+    expect(out.spentRoyaltyCents).toBe(0);
+    expect(out.spentCents).toBe(0);
+    expect(ledger.debits).toHaveLength(0);
+    // Seller NOT accrued.
+    expect(ledger.accruals).toHaveLength(0);
+  });
+
+  it("BILLABLE (canceled) still charges + accrues the royalty", async () => {
+    // Cancel mid-flight via a tool round; the run ends 'canceled' (billable).
+    // Keep the default run id ("run-1") — the InMemoryRunRepo keys the run at
+    // seed time, so a post-setup id reassignment would break requestCancel.
+    const ledger = new TrackingLedger();
+    const { runs, workspace, run } = await setup({ budgetCents: 100_000, inferenceMode: "byo" });
+    const clock = makeClock();
+    const provider = new FakeChatProvider([
+      toolUseResponse("write_file", { path: "a.txt", content: "x" }),
+      textResponse("unreached"),
+    ]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, resolvedTools: ["write_file"], now: clock.now });
+    const exec2 = async (tu: Parameters<typeof exec>[0]) => {
+      await runs.requestCancel(run.id);
+      return exec(tu);
+    };
+    const out = await runAutoRun({
+      run, approval: APPROVAL, systemPrompt: "sys",
+      tools: [{ name: "write_file", description: "", inputSchema: {} }],
+      executeTool: exec2,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: 0,
+        premiumRoyaltyCents: ROYALTY, royaltyOrgId: ORG, royaltyKitId: KIT,
+      },
+    });
+    expect(out.status).toBe("canceled");
+    expect(out.spentRoyaltyCents).toBe(ROYALTY);
+    expect(ledger.accruals).toHaveLength(1);
+  });
+
+  it("applies the commission: the gross+bps are passed to the seller accrual (net computed by the ledger)", async () => {
+    const { out, ledger } = await runPremium({ runId: "run-p4", commissionBps: 600 });
+    expect(out.status).toBe("succeeded");
+    // The BUYER pays the full gross royalty (commission is withheld at PAYOUT, not
+    // from the buyer).
+    expect(out.spentRoyaltyCents).toBe(ROYALTY);
+    expect(ledger.accruals[0]).toMatchObject({ grossRoyaltyCents: ROYALTY, commissionBps: 600 });
+  });
+
+  it("royalty rides on TOP of the active-minute fee in one hold", async () => {
+    const RATE = 5; // cents/min
+    const ledger = new TrackingLedger();
+    const { runs, workspace, run } = await setup({ budgetCents: 100, inferenceMode: "byo" }); // estMin=ceil(100/5)=20
+    run.id = "run-p5";
+    const clock = makeClock();
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const origSend = provider.sendMessage.bind(provider);
+    provider.sendMessage = async (req) => { clock.advanceMinutes(2); return origSend(req); };
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const out = await runAutoRun({
+      run, approval: APPROVAL, systemPrompt: "sys", tools: [], executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: RATE,
+        premiumRoyaltyCents: ROYALTY, royaltyOrgId: ORG, royaltyKitId: KIT,
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    // Hold = estMin*RATE (100) + royalty (20) = 120.
+    expect(ledger.reserves).toEqual([{ cents: 120 }]);
+    // Settle = ceil(2)*RATE (10) + royalty (20) = 30.
+    const settle = ledger.settles.find((s) => s.sourceRef === "auto-active-run-p5")!;
+    expect(settle.cents).toBe(30);
+    expect(out.spentActiveMinuteCents).toBe(10);
+    expect(out.spentRoyaltyCents).toBe(ROYALTY);
+    expect(out.spentComputeCents).toBe(10); // compute = active-minute only (royalty separate)
+    expect(out.spentCents).toBe(30); // inference 0 (byo) + compute 10 + royalty 20
+    expect(ledger.accruals).toHaveLength(1);
+  });
+
+  it("retry is idempotent: re-accruing the same runId accrues once (ledger-keyed)", async () => {
+    const ledger = new TrackingLedger();
+    await runPremium({ runId: "run-p6", ledger });
+    expect(ledger.accruals).toHaveLength(1);
+    // A worker RETRY re-invokes accrueRoyalty for the same runId.
+    await ledger.accrueRoyalty({ orgId: ORG, kitId: KIT, runId: "run-p6", grossRoyaltyCents: ROYALTY, commissionBps: 0, now: "2026-07-04T00:00:00.000Z" });
+    expect(ledger.accruals).toHaveLength(1); // still one
+  });
+
+  it("premiumRoyaltyCents 0 → byte-identical to a non-premium run (no hold, no settle, no accrue)", async () => {
+    const ledger = new TrackingLedger();
+    const { runs, workspace, run } = await setup({ budgetCents: 1_000_000, inferenceMode: "byo" });
+    const clock = makeClock();
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const out = await runAutoRun({
+      run, approval: APPROVAL, systemPrompt: "sys", tools: [], executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: 0,
+        premiumRoyaltyCents: 0, royaltyOrgId: ORG, royaltyKitId: KIT, // 0 → inert regardless of org/kit
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    expect(ledger.reserves).toHaveLength(0);
+    expect(ledger.settles).toHaveLength(0);
+    expect(ledger.debits).toHaveLength(0);
+    expect(ledger.accruals).toHaveLength(0);
+    expect(out.spentRoyaltyCents).toBe(0);
+    expect(out.spentCents).toBe(0);
+  });
+
+  it("missing royaltyOrgId/kitId with a positive royalty → inert (never accrues to an empty org)", async () => {
+    const ledger = new TrackingLedger();
+    const { runs, workspace, run } = await setup({ budgetCents: 1_000_000, inferenceMode: "byo" });
+    const clock = makeClock();
+    const provider = new FakeChatProvider([textResponse("done")]);
+    const exec = makeSandboxExecutor({ workspace, workspaceId: run.workspaceId!, runId: run.id, approval: APPROVAL, repo: runs, now: clock.now });
+    const out = await runAutoRun({
+      run, approval: APPROVAL, systemPrompt: "sys", tools: [], executeTool: exec,
+      deps: {
+        chatProvider: provider, ledger, runs, workspace, now: clock.now,
+        inferenceMode: "byo", maxTokens: 100,
+        invocationFeeCents: 0, activeMinuteRateCents: 0,
+        premiumRoyaltyCents: ROYALTY, // but no royaltyOrgId / royaltyKitId
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    expect(ledger.reserves).toHaveLength(0);
+    expect(ledger.accruals).toHaveLength(0);
+    expect(out.spentRoyaltyCents).toBe(0);
   });
 });

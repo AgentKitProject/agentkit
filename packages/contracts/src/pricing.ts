@@ -19,8 +19,21 @@ import { z } from "zod";
 export const kitPricingSchema = z.enum(["free", "paid"]);
 export type KitPricing = z.infer<typeof kitPricingSchema>;
 
-export const priceModelSchema = z.enum(["one_time", "subscription"]);
+/**
+ * Paid-kit pricing model.
+ * - `per_invocation` — **PREMIUM** kits (the customer-facing name): protected /
+ *   run-on-Auto, the seller sets a per-run royalty (`perRunRoyaltyCents`) that is
+ *   metered at run time from the buyer's prepaid balance — NOT an up-front charge.
+ *   Requires `!downloadable` and `perRunRoyaltyCents > 0`.
+ * - `one_time` / `subscription` — the legacy DOWNLOADABLE-paid models, being
+ *   migrated to `per_invocation` (see market-core pricing service).
+ */
+export const priceModelSchema = z.enum(["one_time", "subscription", "per_invocation"]);
 export type PriceModel = z.infer<typeof priceModelSchema>;
+
+/** True for the premium (per-invocation, run-on-Auto) pricing model. */
+export const isPremiumPriceModel = (m: PriceModel | undefined): boolean =>
+  m === "per_invocation";
 
 export const priceIntervalSchema = z.enum(["month", "year"]);
 export type PriceInterval = z.infer<typeof priceIntervalSchema>;
@@ -49,6 +62,13 @@ export const kitPricingMetadataSchema = z.object({
   pricing: kitPricingSchema.default("free"),
   priceModel: priceModelSchema.optional(),
   priceCents: z.number().int().nonnegative().optional(),
+  /**
+   * PREMIUM (`per_invocation`) only: the seller-set per-run royalty in US cents
+   * (gross; the platform commission is taken from this at payout). Metered from
+   * the buyer's prepaid balance per run — NOT charged up front. Ignored for
+   * one_time/subscription. Premium requires perRunRoyaltyCents > 0 && !downloadable.
+   */
+  perRunRoyaltyCents: z.number().int().nonnegative().optional(),
   currency: kitCurrencySchema.default("USD"),
   interval: priceIntervalSchema.optional(),
   /**
@@ -94,6 +114,8 @@ export const setKitPricingRequestSchema = z.object({
   pricing: kitPricingSchema,
   priceModel: priceModelSchema.optional(),
   priceCents: z.number().int().nonnegative().optional(),
+  /** PREMIUM (per_invocation) only: seller-set per-run royalty in US cents. */
+  perRunRoyaltyCents: z.number().int().nonnegative().optional(),
   currency: kitCurrencySchema.optional(),
   interval: priceIntervalSchema.optional(),
   /** Subscription free-trial length in days; only meaningful for subscription kits. */

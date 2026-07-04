@@ -15,6 +15,7 @@
  */
 
 import type {
+  AccrueRoyaltyInput,
   AppendSessionMessagesInput,
   ChatRequest,
   ChatResponse,
@@ -24,6 +25,7 @@ import type {
   CreditHold,
   CreditTransaction,
   GatewaySession,
+  PendingSellerEarnings,
   RecordTransactionInput,
   TurnState,
 } from "./types.js";
@@ -270,6 +272,48 @@ export interface CreditLedgerRepository {
     freeAllowance: number,
     runId: string,
   ): Promise<number>;
+
+  // -------------------------------------------------------------------------
+  // Seller-earnings ledger (premium / per-invocation kit royalties)
+  // -------------------------------------------------------------------------
+  //
+  // A payee-accrual concept alongside the buyer credit ledger. When a PREMIUM
+  // (per-invocation) kit run settles as billable, the seller-set per-run royalty
+  // is accrued to the SELLING org's earnings, net of the platform commission. A
+  // P2 payout job reads the pending balances and marks transfers. All three
+  // methods are inert when the royalty is 0 — the premium path only calls them
+  // for premium kits.
+
+  /**
+   * Accrues a run's gross royalty to `orgId`, net of `commissionBps`:
+   *
+   *   netCents = grossRoyaltyCents - floor(grossRoyaltyCents * commissionBps / 10000)
+   *
+   * In ONE transaction it appends a `gateway_seller_earning_events` row AND
+   * increments `gateway_seller_earnings.accrued_cents` for `orgId` by netCents.
+   *
+   * IDEMPOTENT on source_ref = `royalty-${input.runId}`: a re-settled / retried
+   * run for the same runId accrues exactly once (later calls are a no-op).
+   * No-op when `grossRoyaltyCents <= 0`.
+   */
+  accrueRoyalty(input: AccrueRoyaltyInput): Promise<void>;
+
+  /**
+   * Returns every org with a positive pending balance
+   * (accrued_cents - transferred_cents > 0). Used by the P2 payout job.
+   */
+  getPendingSellerEarnings(): Promise<PendingSellerEarnings[]>;
+
+  /**
+   * Records a payout: increments `transferred_cents` for `orgId` by `amountCents`.
+   * IDEMPOTENT on `transferRef` — replaying the same transfer is a no-op.
+   */
+  markSellerEarningsTransferred(
+    orgId: string,
+    amountCents: number,
+    transferRef: string,
+    now: string,
+  ): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

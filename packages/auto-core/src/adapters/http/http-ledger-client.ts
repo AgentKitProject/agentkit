@@ -17,7 +17,9 @@
  * calls at runtime (the union of run-driver's direct calls and the calls inside
  * gateway-core's `runManagedTurn`):
  *   ensureAccount, getAccount, debit, reserveHold, settleHold, releaseHold,
- *   getFreeMinutesUsed, consumeFreeActiveMinutes.
+ *   getFreeMinutesUsed, consumeFreeActiveMinutes, accrueRoyalty (premium seller
+ *   earnings), plus the P2 payout-job reads/writes (getPendingSellerEarnings,
+ *   markSellerEarningsTransferred).
  * The remaining port methods (topup, recordTransaction, getHold,
  * listTransactions) are NEVER called by Auto, so they throw a clear error rather
  * than pretend over HTTP.
@@ -31,10 +33,12 @@
  */
 
 import type {
+  AccrueRoyaltyInput,
   CreditAccount,
   CreditHold,
   CreditLedgerRepository,
   CreditTransaction,
+  PendingSellerEarnings,
   RecordTransactionInput,
 } from "@agentkitforge/gateway-core";
 
@@ -204,6 +208,44 @@ export class HttpLedgerClient implements CreditLedgerRepository {
       runId,
     })) as { billableMinutes: number };
     return body.billableMinutes;
+  }
+
+  // ---- Seller-earnings (premium / per-invocation kit royalties) --------------
+
+  /**
+   * Accrues a premium-kit run's gross royalty (net of the commission) to the
+   * SELLING org. Idempotent per runId (the gateway keys on `royalty-${runId}`);
+   * the gateway server-stamps `now`, so it is NOT sent. Called by the run driver
+   * on a BILLABLE terminal state only.
+   */
+  async accrueRoyalty(input: AccrueRoyaltyInput): Promise<void> {
+    await this.post("/accrue-royalty", {
+      orgId: input.orgId,
+      kitId: input.kitId,
+      runId: input.runId,
+      grossRoyaltyCents: input.grossRoyaltyCents,
+      commissionBps: input.commissionBps,
+    });
+  }
+
+  /** Reads the orgs with a positive pending (accrued − transferred) balance.
+   *  Used by the P2 payout job. */
+  async getPendingSellerEarnings(): Promise<PendingSellerEarnings[]> {
+    const body = (await this.get("/seller-earnings/pending", {})) as
+      | { pending: PendingSellerEarnings[] }
+      | undefined;
+    return body?.pending ?? [];
+  }
+
+  /** Records a payout for `orgId`. Idempotent per `transferRef`; the gateway
+   *  server-stamps `now`, so it is NOT sent. Used by the P2 payout job. */
+  async markSellerEarningsTransferred(
+    orgId: string,
+    amountCents: number,
+    transferRef: string,
+    _now: string,
+  ): Promise<void> {
+    await this.post("/seller-earnings/transferred", { orgId, amountCents, transferRef });
   }
 
   /**
