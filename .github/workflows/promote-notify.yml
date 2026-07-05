@@ -19,7 +19,7 @@ on:
 
 jobs:
   dispatch:
-    runs-on: ubuntu-latest
+    runs-on: homelab-agentkit-linux-general
     steps:
       - name: Dispatch promote to agentkit-hosting
         env:
