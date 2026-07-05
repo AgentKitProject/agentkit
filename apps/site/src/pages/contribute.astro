@@ -1,0 +1,75 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { forgeUrl, githubOrgUrl, marketUrl } from '../data/products';
+---
+<BaseLayout
+  title="Contribute"
+  description="AgentKitProject is open-core. Here's how to contribute code, kits, docs, and feedback."
+>
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow">Open-core</p>
+      <h1>AgentKitProject is open-core — contributions welcome.</h1>
+      <p class="lead">
+        The public monorepo, the core kit engine, and the CLI are open source. The project is
+        built around open ecosystem, local-first, and no-vendor-lock-in principles, with both
+        hosted and self-hosted support — contributions of code, kits, docs, and feedback all help.
+      </p>
+      <div class="button-row">
+        <a class="button" href={githubOrgUrl}>View GitHub organization</a>
+        <a class="button secondary" href={forgeUrl}>Start with Forge</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container grid three">
+      <article class="card">
+        <h3>Code</h3>
+        <p>
+          The public <code>agentkit</code> monorepo holds the web apps (<code>apps/*</code>) and
+          the shared libraries (<code>packages/*</code>), including the
+          <code>@agentkitforge/core</code> kit engine and the <code>agentkitforge</code> CLI.
+          Open an issue or a pull request on GitHub.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Build &amp; share Agent Kits</h3>
+        <p>
+          Create Agent Kits with Forge or the CLI, then publish them to AgentKitMarket so other
+          people can discover and use them.
+        </p>
+        <p><a href={marketUrl}>Open AgentKitMarket</a></p>
+      </article>
+      <article class="card">
+        <h3>Docs &amp; feedback</h3>
+        <p>
+          Improve documentation, report bugs, or request features through GitHub issues on the
+          monorepo.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Self-host &amp; report back</h3>
+        <p>
+          The stack is fully self-hostable and open-core. Run it on your own infrastructure and
+          share feedback or fixes from what you find.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <article class="content-panel">
+        <h2>Get started on GitHub.</h2>
+        <p>
+          Issues, pull requests, and discussion all happen in the open on the AgentKitProject
+          GitHub organization.
+        </p>
+        <div class="button-row">
+          <a class="button" href={githubOrgUrl}>View GitHub organization</a>
+        </div>
+      </article>
+    </div>
+  </section>
+</BaseLayout>

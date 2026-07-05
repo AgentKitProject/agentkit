@@ -7,6 +7,7 @@ import { useConfig } from "../config-context";
 export function AccountSection({ user }: { user: SessionUser }) {
   const { marketEnabled, links } = useConfig();
   const marketBaseUrl = links.marketUrl;
+  const autoBaseUrl = links.autoUrl;
   return (
     <div className="account-screen">
       <div className="account-panel">
@@ -69,12 +70,17 @@ export function AccountSection({ user }: { user: SessionUser }) {
       </div>
       )}
 
-      {/* AgentKitAuto placeholder */}
+      {/* AgentKitAuto connection panel */}
       <div className="account-panel" style={{ marginTop: 20 }}>
-        <h2>AgentKitAuto <Badge tone="neutral" style={{ marginLeft: 6 }}>Coming soon</Badge></h2>
+        <h2>AgentKitAuto <Badge tone="success" style={{ marginLeft: 6 }}>Live</Badge></h2>
         <p className="form-copy">
-          AgentKitAuto enables automated kit workflows. It requires explicit opt-in and will never run background operations without your permission. Full build-out is planned after Market Phase 2.
+          AgentKitAuto runs Agent Kits automatically on schedules, events, and triggers. It requires explicit opt-in and will never run background operations without your permission. Hosted at auto.agentkitproject.com, and self-hostable.
         </p>
+        <div className="button-row" style={{ marginTop: 12 }}>
+          {autoBaseUrl && (
+            <Button variant="secondary" href={autoBaseUrl} target="_blank" rel="noreferrer">Open AgentKitAuto</Button>
+          )}
+        </div>
       </div>
     </div>
   );

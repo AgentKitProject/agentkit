@@ -23,7 +23,7 @@ export type NavItem = {
  * `external: true` is set ONLY on true web-app destinations (Forge, Auto,
  * Account) that the user expects to open as a persistent session in their current
  * tab — launching them in a new tab avoids displacing the marketing page they are
- * on. Static/marketing destinations (Home, Market catalog, Docs, Roadmap) do NOT
+ * on. Static/marketing destinations (Home, Market catalog, Docs) do NOT
  * set `external` so they navigate in the same tab as expected.
  */
 export const DEFAULT_NAV: NavItem[] = [
@@ -36,7 +36,6 @@ export const DEFAULT_NAV: NavItem[] = [
   },
   { label: "Market", href: "https://market.agentkitproject.com" },
   { label: "Docs", href: "https://docs.agentkitproject.com" },
-  { label: "Roadmap", href: "https://agentkitproject.com/roadmap" },
   { label: "Account", href: "https://profile.agentkitproject.com", external: true },
 ];
 

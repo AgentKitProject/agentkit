@@ -1,50 +1,63 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { autoUrl, forgeUrl, marketUrl } from '../data/products';
+import { autoUrl, forgeUrl, marketUrl, profileUrl, githubOrgUrl } from '../data/products';
 ---
 <BaseLayout
   title="Pricing"
-  description="Pricing for the AgentKitProject ecosystem: free to start, optional kit monetization on Market, and pay-as-you-go or bring-your-own-key automation in AgentKitAuto."
+  description="Pricing across the AgentKitProject ecosystem: free to build, publish, and browse; usage billed only at cost; and completely free to self-host."
 >
   <section class="section">
     <div class="container">
       <p class="eyebrow">Pricing</p>
-      <h1>Free to start. Monetize when you choose.</h1>
+      <h1>Free to build. Usage billed at cost.</h1>
       <p class="lead">
-        Building, publishing, and using Agent Kits across the ecosystem is free to get started, and
-        creators can optionally monetize their work. Local-first kit work with the
-        <code>agentkitforge</code> CLI and core — create, validate, package, export, and import
-        local kits — is always free and needs no account. <strong>AgentKitForge itself is free</strong> —
-        building, importing, packaging, exporting, and publishing kits cost nothing; the only usage
-        cost is running or chatting with a kit on managed AI, billed at the underlying Anthropic
-        model price with <strong>no markup</strong> (or bring your own key and pay Anthropic directly).
+        Building, publishing, and browsing Agent Kits is free. You pay only to run kits on managed
+        AI, and only at cost &mdash; no markup &mdash; or bring your own provider key and pay the
+        provider directly. You can also self-host the entire stack and pay us nothing.
       </p>
       <div class="button-row">
         <a class="button" href={marketUrl}>Open AgentKitMarket</a>
-        <a class="button secondary" href={forgeUrl}>Get AgentKitForge</a>
+        <a class="button secondary" href={forgeUrl}>Open AgentKitForge</a>
       </div>
     </div>
   </section>
 
   <section class="section tight">
     <div class="container">
-      <p class="eyebrow">Kits on Market</p>
-      <h2>List each kit the way that fits.</h2>
-      <p class="lead">
-        Kit owners choose how to list each kit on AgentKitMarket — free to download, or
-        <strong>premium</strong>, priced per run.
-      </p>
+      <p class="eyebrow">By app</p>
+      <h2>What each app costs.</h2>
       <div class="grid two" style="margin-top: 2rem;">
         <article class="card">
-          <h3>Free</h3>
-          <p>List a kit at no cost. Anyone can download it.</p>
+          <h3>AgentKitForge &mdash; free</h3>
+          <p>
+            Building, validating, packaging, exporting, importing, and publishing kits cost nothing.
+            Local kit work in the browser or the <code>agentkitforge</code> CLI needs no account. The
+            only usage cost is running or chatting with a kit on managed AI, billed at the underlying
+            model price with no markup &mdash; or bring your own provider key and pay the provider
+            directly.
+          </p>
         </article>
         <article class="card">
-          <h3>Premium</h3>
+          <h3>AgentKitMarket &mdash; free to browse, publish, and download</h3>
           <p>
-            Set a price per run. A premium kit runs on AgentKitAuto — its files are never handed
-            over — and each run charges the buyer your per-run price from their prepaid balance.
-            You earn it every time the kit is used, not just once.
+            Listing and downloading free kits cost nothing. Sellers may instead list a premium kit
+            priced per run: the platform keeps a 6% commission and the seller keeps 94%. A premium
+            kit runs on AgentKitAuto &mdash; its files are never handed to the buyer &mdash; and each
+            run charges the buyer's prepaid balance.
+          </p>
+        </article>
+        <article class="card">
+          <h3>AgentKitAuto &mdash; pay only for compute</h3>
+          <p>
+            $0.01 per run plus $0.01 per active minute. The first 60 active minutes each month are
+            free. Model tokens are billed at cost with no markup, or bring your own provider key and
+            pay the provider directly. Pay via managed credits or your own key; no commitment.
+          </p>
+        </article>
+        <article class="card">
+          <h3>AgentKitProfile &mdash; free</h3>
+          <p>
+            Shared identity, public profile pages, and organizations. No cost.
           </p>
         </article>
       </div>
@@ -54,53 +67,33 @@ import { autoUrl, forgeUrl, marketUrl } from '../data/products';
   <section class="section tight">
     <div class="container">
       <article class="content-panel">
-        <h2>Sellers keep 94%.</h2>
+        <p class="eyebrow">Self-hosting</p>
+        <h2>Self-hosting is completely free.</h2>
         <p>
-          The platform fee is 6% — sellers keep 94% of every run of their premium kits. Earnings
-          accrue per run and are paid out through Stripe using Stripe Connect.
+          Every app is open-core. You can run the entire stack &mdash; Forge, Market, Auto, and
+          Profile &mdash; on your own infrastructure and pay us nothing. You pay only your own AI
+          provider and hosting. Helm charts and a self-hosting guide are published, and versioned
+          container images are released for self-hosters to pin.
         </p>
+        <div class="button-row">
+          <a class="button" href={githubOrgUrl}>View on GitHub</a>
+        </div>
       </article>
-    </div>
-  </section>
-
-  <section class="section tight">
-    <div class="container">
-      <p class="eyebrow">AgentKitAuto</p>
-      <h2>Two ways to pay for runs.</h2>
-      <p class="lead">
-        Automating Agent Kit runs with AgentKitAuto can be paid for with managed credits or by
-        bringing your own Anthropic API key.
-      </p>
-      <div class="grid two" style="margin-top: 2rem;">
-        <article class="card">
-          <h3>Managed credits</h3>
-          <p>
-            Pay only for compute: $0.01 per run plus $0.01 per active minute. Your first 60 active
-            minutes are free. Model tokens are billed at cost — no markup. No commitment.
-          </p>
-        </article>
-        <article class="card">
-          <h3>Bring your own Anthropic key</h3>
-          <p>
-            Connect your own Anthropic API key and pay Anthropic directly for tokens. The same
-            compute fee — $0.01 per run plus $0.01 per active minute — still applies; your key is
-            encrypted at rest.
-          </p>
-        </article>
-      </div>
     </div>
   </section>
 
   <section class="section">
     <div class="container">
       <div class="content-panel">
-        <h2>Ready to publish or automate?</h2>
+        <h2>Start free.</h2>
         <p>
-          Start free, then monetize on Market or run kits with AgentKitAuto whenever you are ready.
+          Build and publish at no cost, run kits at cost when you need to, or self-host the whole
+          stack yourself.
         </p>
         <div class="button-row">
           <a class="button" href={marketUrl}>Explore AgentKitMarket</a>
           <a class="button secondary" href={autoUrl}>See AgentKitAuto</a>
+          <a class="button secondary" href={profileUrl}>See AgentKitProfile</a>
         </div>
       </div>
     </div>

@@ -3,13 +3,8 @@ export const forgeUrl = 'https://forge.agentkitproject.com';
 export const forgeDocsUrl = 'https://docs.agentkitproject.com';
 export const marketUrl = 'https://market.agentkitproject.com';
 export const profileUrl = 'https://profile.agentkitproject.com';
-export const roadmapUrl = '/roadmap';
 export const docsUrl = 'https://docs.agentkitproject.com';
 export const autoUrl = 'https://auto.agentkitproject.com';
-export const autoRoadmapUrl = `${roadmapUrl}#agentkitauto`;
-export const marketRoadmapUrl = `${roadmapUrl}#agentkitmarket`;
-export const profileRoadmapUrl = `${roadmapUrl}#agentkitprofile`;
-export const forgeRoadmapUrl = `${roadmapUrl}#agentkitforge`;
 
 export const products = [
   {

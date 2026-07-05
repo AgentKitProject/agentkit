@@ -1,24 +1,23 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { autoRoadmapUrl, marketRoadmapUrl } from '../data/products';
+import { autoUrl } from '../data/products';
 ---
 <BaseLayout
   title="AgentKitAuto"
-  description="AgentKitAuto is the planned automation layer for running Agent Kits on schedules, events, and workflows."
+  description="AgentKitAuto runs Agent Kits automatically on schedules, events, and triggers — hosted at auto.agentkitproject.com and fully self-hostable."
   theme="auto"
 >
   <section class="section">
     <div class="container">
-      <p class="eyebrow">Planned</p>
-      <h1>AgentKitAuto is the future automation layer for Agent Kits.</h1>
+      <p class="eyebrow">Live</p>
+      <h1>AgentKitAuto runs Agent Kits automatically.</h1>
       <p class="lead">
-        Auto is not available yet. It is planned as the automation layer for running portable
-        Agent Kits on schedules, event triggers, and workflow steps once the ecosystem foundation
-        is ready.
+        Auto runs portable Agent Kits on demand, on a schedule, or from event and webhook triggers.
+        It's hosted at auto.agentkitproject.com and fully self-hostable on your own infrastructure.
       </p>
       <div class="button-row">
-        <a class="button" href={autoRoadmapUrl}>View Auto roadmap</a>
-        <a class="button secondary" href={marketRoadmapUrl}>See Market roadmap</a>
+        <a class="button" href={autoUrl}>Open AgentKitAuto</a>
+        <a class="button secondary" href="/pricing">See pricing</a>
       </div>
     </div>
   </section>
@@ -26,16 +25,19 @@ import { autoRoadmapUrl, marketRoadmapUrl } from '../data/products';
   <section class="section tight">
     <div class="container grid three">
       <article class="card">
-        <h3>Local and free</h3>
-        <p>Run automations on your own machine for personal workflows when local mode exists.</p>
+        <h3>Event-driven</h3>
+        <p>
+          Schedules, webhook and event triggers, external connections, and inbound messages (such as
+          email-in or chat platforms) can start runs, with approvals handled in chat.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Explicit opt-in</h3>
+        <p>Auto never runs background operations without your permission — every automation is something you set up and enable.</p>
       </article>
       <article class="card">
         <h3>Self-hosted</h3>
-        <p>Operate automations in your own environment for controlled infrastructure and data boundaries.</p>
-      </article>
-      <article class="card">
-        <h3>Cloud modes</h3>
-        <p>Future hosted automation can support managed scheduling, events, monitoring, and team operations.</p>
+        <p>Run the same codebase on your own infrastructure for full control over data and execution.</p>
       </article>
     </div>
   </section>
@@ -43,9 +45,9 @@ import { autoRoadmapUrl, marketRoadmapUrl } from '../data/products';
   <section class="section">
     <div class="container content-panel">
       <p>
-        AgentKitAuto will be designed around explicit triggers and portable Agent Kit artifacts.
-        This website does not include automation services, schedulers, queues, worker APIs, or
-        backend execution today.
+        Pricing is pay-for-compute: $0.01 per run plus $0.01 per active minute, with the first 60
+        active minutes each month free. Model tokens are billed at cost, or you can bring your own
+        provider key. See <a href="/pricing">pricing</a> for details.
       </p>
     </div>
   </section>

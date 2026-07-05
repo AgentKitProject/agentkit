@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { forgeUrl, githubOrgUrl, profileUrl, roadmapUrl } from '../data/products';
+import { autoUrl, forgeUrl, githubOrgUrl, marketUrl, profileUrl } from '../data/products';
 ---
 <BaseLayout
   title="About"
@@ -9,39 +9,103 @@ import { forgeUrl, githubOrgUrl, profileUrl, roadmapUrl } from '../data/products
   <section class="section">
     <div class="container">
       <p class="eyebrow">About</p>
-      <h1>AgentKitProject is building open tools for portable Agent Kits.</h1>
+      <h1>Agent Kits are the next step after prompts and skills.</h1>
       <p class="lead">
-        The project exists to make repeatable AI work easier to create, move, inspect, share, and
-        automate. The open-source core and app foundation are centered on portable kit artifacts
-        rather than a single locked-in destination.
+        AgentKitProject builds the open tools for that step: a portable package format for AI
+        instructions, skills, prompts, policies, and context, plus the identity, distribution, and
+        automation layers a package format needs to actually get used. Local-first, open ecosystem,
+        no vendor lock-in, self-hostable.
       </p>
       <div class="button-row">
         <a class="button" href={githubOrgUrl}>View GitHub organization</a>
         <a class="button secondary" href={forgeUrl}>Start with Forge</a>
-        <a class="button secondary" href={roadmapUrl}>View roadmap</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">The next evolution of skills</p>
+      <h2>A prompt in a chat window doesn't travel. A kit does.</h2>
+      <p>
+        Most AI work today lives as one-off prompts or ad-hoc "skills": useful in the moment, but
+        stuck in a single chat, a single tool, a single person's head. They're hard to version,
+        hard to review, hard to hand to a teammate, and impossible to run on their own.
+      </p>
+      <p>
+        An <strong>Agent Kit</strong> is a portable <code>.agentkit.zip</code> package —
+        instructions, guardrails, examples, and expected outputs bundled into one artifact. Because
+        it's a real artifact and not a paste buffer, it can be inspected, versioned, reviewed,
+        shared, sold, and run anywhere — in a browser, from a CLI, or on a schedule. That's the
+        shift: a skill stops being a snippet locked in one conversation and becomes a durable,
+        portable, runnable asset.
+      </p>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="container">
+      <p class="eyebrow">One ecosystem, one lifecycle</p>
+      <h2>Identify, build, share, and automate — as one flow.</h2>
+      <p class="lead">
+        Each product below is independently usable. Together, they cover the full lifecycle of a
+        kit from first draft to unattended execution.
+      </p>
+      <div class="grid two">
+        <article class="content-panel">
+          <h3>AgentKitProfile — identify</h3>
+          <p>
+            Shared identity and organizations across the ecosystem. One account, one profile,
+            one place to manage team membership and roles across Forge, Market, and Auto.
+          </p>
+          <p><a href={profileUrl}>Open AgentKitProfile account</a></p>
+        </article>
+        <article class="content-panel">
+          <h3>AgentKitForge — build</h3>
+          <p>
+            Create, edit, validate, package, export, import, and run Agent Kits, in the browser
+            or from the <code>agentkitforge</code> CLI. Local-first: no account or server required
+            to build and run a kit on your own machine.
+          </p>
+          <p><a href={forgeUrl}>Open AgentKitForge</a></p>
+        </article>
+        <article class="content-panel">
+          <h3>AgentKitMarket — share</h3>
+          <p>
+            Publish, discover, review, and distribute kits through a validated catalog — with
+            organizations, private catalogs, and paid kits for sellers who want to charge for
+            their work.
+          </p>
+          <p><a href={marketUrl}>Browse AgentKitMarket</a></p>
+        </article>
+        <article class="content-panel">
+          <h3>AgentKitAuto — automate</h3>
+          <p>
+            Run trusted kits automatically — on demand, on a schedule, or from events and webhook
+            triggers — instead of kicking them off by hand every time.
+          </p>
+          <p><a href={autoUrl}>Open AgentKitAuto</a></p>
+        </article>
       </div>
     </div>
   </section>
 
   <section class="section tight">
     <div class="container grid two">
-      <article class="content-panel">
-        <h2>Why Agent Kits?</h2>
+      <div>
+        <p class="eyebrow">Open foundation</p>
+        <h2>The core and CLI are open source, and the whole stack is self-hostable.</h2>
+      </div>
+      <div class="content-panel">
         <p>
-          Teams and individuals repeat the same AI workflows every day. Agent Kits package the
-          instructions, inputs, guardrails, examples, and output expectations that make those
-          workflows reusable.
+          Underneath Forge, Market, and Auto is an open-source core engine and CLI
+          (<code>@agentkitforge/core</code>, <code>agentkitforge</code>) that owns the kit spec,
+          validation, and packaging — the same engine every product builds on. Nothing about the
+          format or the local workflow depends on a hosted service, and the ecosystem is designed
+          to run on your own infrastructure if you'd rather not use the hosted version.
         </p>
-      </article>
-      <article class="content-panel">
-        <h2>Why an ecosystem?</h2>
-        <p>
-          Building a kit is only the first step. AgentKitProject separates the lifecycle into clear
-          products: Profile for shared identity, Forge for creation and local runs, Market for
-          distribution, and Auto for future execution.
-        </p>
-        <p><a href={profileUrl}>Open AgentKitProfile account</a></p>
-      </article>
+        <p><a href={githubOrgUrl}>Follow the project on GitHub</a></p>
+      </div>
     </div>
   </section>
 </BaseLayout>

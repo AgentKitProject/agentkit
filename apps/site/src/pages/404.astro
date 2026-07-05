@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { forgeUrl, roadmapUrl } from '../data/products';
+import { forgeUrl } from '../data/products';
 ---
 <BaseLayout title="Page not found">
   <section class="section">
@@ -10,7 +10,6 @@ import { forgeUrl, roadmapUrl } from '../data/products';
       <p class="lead">Try the ecosystem home page or jump into the current Forge product.</p>
       <div class="button-row">
         <a class="button" href="/">Go home</a>
-        <a class="button secondary" href={roadmapUrl}>View roadmap</a>
         <a class="button secondary" href={forgeUrl}>Explore Forge</a>
       </div>
     </div>

@@ -1,7 +1,7 @@
 ---
 import ProductCard from '../components/ProductCard.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { githubOrgUrl, marketUrl, products, profileUrl, roadmapUrl, webForgeUrl } from '../data/products';
+import { githubOrgUrl, marketUrl, products, profileUrl, webForgeUrl } from '../data/products';
 
 const flow = [
   ['Build & Run', 'var(--forge)', 'Create and run portable Agent Kits in AgentKitForge — in your browser or from the CLI — using prompts, skills, policies, templates, examples, and context.'],
@@ -12,7 +12,10 @@ const flow = [
 <BaseLayout title="AgentKitProject">
   <section class="section hero">
     <div class="container hero-inner">
-      <img class="hero-logo" src="/brand/agentkitproject-logo.svg" alt="AgentKitProject" />
+      <div class="hero-logo" aria-label="AgentKitProject">
+        <span class="hero-logo__mark" aria-hidden="true"></span>
+        <span class="hero-logo__word">AgentKitProject</span>
+      </div>
       <p class="eyebrow">Portable Agent Kit ecosystem</p>
       <h1>Create, share, and automate Agent Kits.</h1>
       <p class="lead">
@@ -74,7 +77,6 @@ const flow = [
           Forge, Market, and Auto are separate, independently usable ecosystem
           layers — not hidden backend features — and the core engine and CLI are open source.
         </p>
-        <p><a href={roadmapUrl}>See the ecosystem roadmap</a></p>
         <p><a href={githubOrgUrl}>Follow the project on GitHub</a></p>
       </div>
     </div>
@@ -86,8 +88,8 @@ const flow = [
       <h2 class="self-host-heading">Run AgentKitProject on your own infrastructure.</h2>
       <p class="self-host-body">
         AgentKitProject is designed to be self-hosted: local-first, open ecosystem, no vendor
-        lock-in. AgentKitAuto is available for self-hosting today. Self-hosted AgentKitMarket
-        is on the roadmap — same codebase, your own infrastructure.
+        lock-in. Forge, Market, and Auto can all be self-hosted today — the same open-core
+        codebase, running on your own infrastructure, with no cost to us.
       </p>
       <a class="button self-host-cta" href="/docs/self-hosting/">
         Self-host overview &rarr;
@@ -105,23 +107,53 @@ const flow = [
     min-height: min(720px, calc(100vh - 4.6rem));
   }
 
+  /* Brand lockup: rounded icon chip + text wordmark. The wordmark is real text,
+     so it recolors with the theme (the old wordmark image was a white-background
+     SVG that showed a white box in dark mode). */
   .hero-logo {
-    display: block;
-    height: clamp(4rem, 10vw, 7rem);
+    align-items: center;
+    display: inline-flex;
+    gap: 0.7rem;
     margin-bottom: 1.5rem;
-    object-fit: contain;
-    object-position: left center;
-    width: min(100%, 28rem);
   }
 
+  .hero-logo__mark {
+    background: url('/brand/agentkitproject-badge-light.svg') center / contain no-repeat;
+    border: 1px solid rgba(91, 76, 240, 0.28);
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(9, 18, 39, 0.16);
+    display: block;
+    height: clamp(3rem, 7vw, 4rem);
+    width: clamp(3rem, 7vw, 4rem);
+  }
+
+  /* Dark mode: the dark-native mark sits directly on the dark background — no
+     tile/border/shadow, and a touch larger since it has no badge padding. */
+  :global(html[data-theme="dark"]) .hero-logo__mark {
+    background-image: url('/brand/agentkitproject-mark-dark.svg');
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    height: clamp(3.4rem, 7.6vw, 4.5rem);
+    width: clamp(3.4rem, 7.6vw, 4.5rem);
+  }
+
+  .hero-logo__word {
+    color: var(--text);
+    font-size: clamp(1.9rem, 5vw, 2.75rem);
+    font-weight: 850;
+    letter-spacing: -0.02em;
+  }
+
+  /* Ecosystem flow strip: uses theme surface tokens so it is a LIGHT card in
+     light mode and a dark card in dark mode (previously hard-coded navy, so it
+     stayed dark in light mode). */
   .ecosystem-strip {
     align-items: center;
-    background:
-      linear-gradient(135deg, rgba(9, 18, 39, 0.96), rgba(17, 27, 53, 0.94)),
-      var(--project-navy);
-    border: 1px solid color-mix(in srgb, var(--project-blue) 36%, var(--project-navy));
+    background: var(--muted-surface);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 18px 54px rgba(9, 18, 39, 0.18);
+    box-shadow: var(--shadow);
     display: grid;
     gap: 0.65rem;
     grid-template-columns: repeat(6, auto);
@@ -131,10 +163,10 @@ const flow = [
   }
 
   .ecosystem-strip span {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: white;
+    color: var(--text);
     font-weight: 850;
     padding: 0.85rem 1rem;
   }

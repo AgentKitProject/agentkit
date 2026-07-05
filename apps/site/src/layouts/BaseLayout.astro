@@ -1,11 +1,9 @@
 ---
 import '@agentkitforge/ui/styles.css';
-import { DEFAULT_NAV, navWithActive } from '@agentkitforge/ui';
 import {
   githubOrgUrl,
   marketUrl,
   profileUrl,
-  roadmapUrl,
   webForgeUrl
 } from '../data/products';
 
@@ -28,28 +26,25 @@ const currentPath = Astro.url.pathname;
 const ogKey = theme === 'project' ? 'default' : theme;
 const ogImage = `https://agentkitproject.com/brand/og/${ogKey}.png`;
 
-// Build the nav: canonical items with Home active, plus page-specific About tab.
-const canonicalNav = navWithActive('Home', [
-  ...DEFAULT_NAV,
+// Site nav = the marketing WEBSITE pages only. Every item is an in-site path, so
+// the tab for the current page always highlights (fixes "Home is always active").
+// Links to the actual web APPS (Forge, Auto, Market, Profile) are intentionally
+// NOT tabs — they open a webapp, not a website — so they live in the header's
+// account cluster and as the primary CTA on each product page.
+const siteNav = [
+  { label: 'Home', href: '/' },
+  { label: 'Forge', href: '/forge' },
+  { label: 'Auto', href: '/auto' },
+  { label: 'Market', href: '/market' },
+  { label: 'Pricing', href: '/pricing' },
+  { label: 'Docs', href: '/docs/' },
   { label: 'About', href: '/about' },
-  { label: 'Pricing', href: '/pricing' }
-]);
-
-// Repoint the shared "Docs" tab to the in-site /docs section (the docs now live
-// in this repo). DEFAULT_NAV still points other apps at the external docs domain;
-// this override is scoped to the project site only.
-const withInSiteDocs = canonicalNav.map((item) =>
-  item.label === 'Docs' ? { ...item, href: '/docs/', external: false } : item
-);
-
-// For the About page, override its active state based on the current path.
-const navItems = withInSiteDocs.map((item) => {
-  if (item.href.startsWith('/')) {
-    const active = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href);
-    return { ...item, active };
-  }
-  return item;
-});
+  { label: 'Contribute', href: '/contribute' }
+];
+const navItems = siteNav.map((item) => ({
+  ...item,
+  active: item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)
+}));
 ---
 <!doctype html>
 <html lang="en">
@@ -91,7 +86,7 @@ const navItems = withInSiteDocs.map((item) => {
     <a href="#main-content" class="ak-skip-link">Skip to content</a>
     <header class="ak-header site-header">
       <div class="ak-header__inner">
-        <span class="ak-header__logo"><a href="/" aria-label="AgentKitProject home"><img src="/brand/agentkitproject-wordmark.png" alt="AgentKitProject" height="28" /></a></span>
+        <span class="ak-header__logo"><a class="site-logo" href="/" aria-label="AgentKitProject home"><span class="site-logo__mark" aria-hidden="true"></span><span class="site-logo__word">AgentKitProject</span></a></span>
         <nav class="ak-header__nav" aria-label="Primary navigation">
           {navItems.map((item) => (
             <a
@@ -184,7 +179,7 @@ const navItems = withInSiteDocs.map((item) => {
             <li><a class="ak-footer__link" href={marketUrl}>Market</a></li>
             <li><a class="ak-footer__link" href={webForgeUrl}>Forge</a></li>
             <li><a class="ak-footer__link" href="/docs/">Docs</a></li>
-            <li><a class="ak-footer__link" href={roadmapUrl}>Roadmap</a></li>
+            <li><a class="ak-footer__link" href="/contribute">Contribute</a></li>
             <li><a class="ak-footer__link" href={profileUrl}>Account</a></li>
             <li><a class="ak-footer__link" href={githubOrgUrl} target="_blank" rel="noreferrer noopener">GitHub</a></li>
           </ul>
@@ -415,6 +410,59 @@ const navItems = withInSiteDocs.map((item) => {
   .ak-header__inner {
     min-height: 4.6rem;
     flex-wrap: wrap;
+  }
+
+  /* Site logo: the transparent brand mark + a text wordmark. The wordmark is real
+     text (not a baked image), so it recolors with the theme (dark-mode fix) and
+     scales up cleanly. The mark is background-free so it reads on light AND dark
+     (the old icon had a baked white tile that showed as a box in dark mode). */
+  .ak-header__logo .site-logo {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.55rem;
+    text-decoration: none;
+  }
+
+  .ak-header__logo .site-logo__mark {
+    background: url('/brand/agentkitproject-badge-light.svg') center / contain no-repeat;
+    border: 1px solid rgba(91, 76, 240, 0.28);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(9, 18, 39, 0.16);
+    display: block;
+    flex: 0 0 auto;
+    height: 2.4rem;
+    width: 2.4rem;
+  }
+
+  /* Dark mode uses the dark-native mark (a bright hexagon on transparent) — no
+     tile, border, or shadow, since it is designed to sit directly on the dark bg. */
+  html[data-theme="dark"] .ak-header__logo .site-logo__mark {
+    background-image: url('/brand/agentkitproject-mark-dark.svg');
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .ak-header__logo .site-logo__word {
+    color: var(--text);
+    font-size: 1.35rem;
+    font-weight: 850;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 420px) {
+    .ak-header__logo .site-logo__word {
+      display: none;
+    }
+  }
+
+  /* Give the account cluster (theme toggle · Account · GitHub) real breathing
+     room — the shared default packed them together (image 2). */
+  .ak-header__account {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.6rem;
   }
 
   /* No mobile hamburger (would need JS); keep nav visible + wrapping. */
