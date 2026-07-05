@@ -9,6 +9,10 @@ data:
   S3_REGION: {{ .Values.config.s3Region | quote }}
   S3_FORCE_PATH_STYLE: {{ .Values.config.s3ForcePathStyle | quote }}
   PORT: {{ .Values.config.port | quote }}
+  # PREMIUM (per-invocation) kit pricing server gate. Default OFF (self-host stays
+  # download/free/legacy); the hosted overlay sets it "true" at go-live. The market
+  # backend rejects a per_invocation set-pricing while off.
+  PREMIUM_KITS_ENABLED: {{ .Values.config.premiumKitsEnabled | default "false" | quote }}
   {{- if .Values.postgres.enabled }}
   # Override DATABASE_URL to point at the in-cluster Postgres.
   # (The Secret takes precedence — this provides a discoverable default.)

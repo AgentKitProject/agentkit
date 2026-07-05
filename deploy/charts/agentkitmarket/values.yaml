@@ -189,6 +189,9 @@ config:
   s3ForcePathStyle: "true"
   # HTTP listen port — must match api.port above.
   port: "8080"
+  # PREMIUM (per-invocation) kit pricing. Default OFF — self-host + open-core keep
+  # the download/free/legacy model. The hosted overlay sets "true" at go-live.
+  premiumKitsEnabled: "false"
 
 # ---------------------------------------------------------------------------
 # Secrets (base64-encoded in the generated Secret).
