@@ -1,20 +1,17 @@
 # release-selfhost — cut a versioned self-host release.
 #
-# Self-host operators pin to a RELEASE tag (e.g. v0.1.0), not :latest or a raw sha.
+# Self-host operators should pin to a RELEASE tag (e.g. v0.1.0), not :latest or a
+# raw sha. This workflow retags the already-built+tested self-host images (the
+# per-commit `sha-<sha>` / `latest` builds) to a version tag — no rebuild, so the
+# released artifacts are byte-identical to what was tested.
 #
-# Continuous `sha-<sha>` / `latest` builds are amd64-ONLY (hosted prod + the homelab
-# gamma canary are both amd64 — building arm64 on every push was pure QEMU cost that
-# pressured the single-node runner pool). To keep ARM self-host working, a RELEASE
-# re-uses the already-tested amd64 image and adds a freshly-built arm64 layer,
-# combining them into a multi-arch tag:
-#   - the amd64 layer stays BYTE-IDENTICAL to what was tested (imagetools re-uses it),
-#   - only the arm64 layer is (re)built here, from the SAME git sha as the tested
-#     build (resolved from the image's org.opencontainers.image.revision label).
-# The arm64 build is QEMU-emulated on the amd64 runner, so a release takes a while
-# (~each image sequentially) — that's fine because releases are infrequent.
+# Images are amd64-only: hosted prod (DOKS), the homelab gamma canary, and the CI
+# runners are all amd64, so continuous builds are amd64-only and self-host targets
+# amd64. (To re-add ARM self-host: build the continuous images multi-arch again, or
+# restore the arm64-rebuild-at-release step from git history — commit 9c86e5f.)
 #
 # Usage: Actions → release-selfhost → Run workflow → version=v0.1.0
-#   (optionally source_tag=<sha-... or latest> to pick the exact tested build).
+#   (optionally source_tag=<sha-... or latest> to pick the exact build to release).
 name: release-selfhost
 
 on:
@@ -24,7 +21,7 @@ on:
         description: "Release version tag to publish (e.g. v0.1.0)"
         required: true
       source_tag:
-        description: "Existing (amd64) image tag to release (default: latest)"
+        description: "Existing image tag to promote (default: latest)"
         required: false
         default: latest
 
@@ -32,16 +29,9 @@ permissions:
   packages: write
 
 jobs:
-  release:
+  tag:
     runs-on: homelab-agentkit-linux-docker-build
-    timeout-minutes: 300
     steps:
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -49,49 +39,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release self-host images multi-arch (tested amd64 + fresh arm64) → ${{ inputs.version }}
-        env:
-          SRC: ${{ inputs.source_tag }}
-          VER: ${{ inputs.version }}
+      - name: Promote self-host images to ${{ inputs.version }}
         run: |
           set -euo pipefail
-          REPO=ghcr.io/agentkitproject
-
-          # image  <space>  Dockerfile   (build context is always the monorepo root)
-          IMAGES=(
-            "agentkitforge          apps/forge/Dockerfile"
-            "agentkitmarket-core    packages/market-core/Dockerfile"
-            "agentkitmarket-app     apps/market-web/Dockerfile"
-            "agentkitauto-app       apps/auto-web/Dockerfile"
-            "agentkitauto-worker    packages/auto-core/Dockerfile"
-            "agentkitprofile-app    apps/profile-web/Dockerfile"
-          )
-
-          # Resolve the exact git sha of the tested build so the fresh arm64 layer is
-          # built from the SAME source as the tested amd64.
-          docker pull "$REPO/agentkitforge:$SRC"
-          GITSHA=$(docker inspect "$REPO/agentkitforge:$SRC" \
-            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
-          [ -n "$GITSHA" ] || { echo "::error::no org.opencontainers.image.revision label on $REPO/agentkitforge:$SRC"; exit 1; }
-          echo "Releasing $VER from tested build git sha $GITSHA (source_tag=$SRC)"
-
-          # Fetch just that commit as the build context.
-          rm -rf src && mkdir src
-          ( cd src && git init -q \
-            && git remote add origin https://github.com/AgentKitProject/agentkit.git \
-            && git fetch -q --depth 1 origin "$GITSHA" \
-            && git checkout -q FETCH_HEAD )
-
-          for entry in "${IMAGES[@]}"; do
-            # shellcheck disable=SC2086
-            set -- $entry; img=$1; df=$2
-            amd="$REPO/$img:$SRC"        # existing, TESTED amd64 (re-used as-is)
-            arm="$REPO/$img:$VER-arm64"  # fresh arm64 built now
-            echo "::group::$img → $VER  (amd64=tested $SRC + fresh arm64)"
-            docker buildx build --platform linux/arm64 -f "src/$df" --tag "$arm" --push src
-            docker buildx imagetools create --tag "$REPO/$img:$VER" "$amd" "$arm"
-            echo "  manifest platforms: $(docker buildx imagetools inspect "$REPO/$img:$VER" \
-              --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')"
+          IMAGES="agentkitforge agentkitmarket-core agentkitmarket-app agentkitauto-app agentkitauto-worker agentkitprofile-app"
+          for img in $IMAGES; do
+            src="ghcr.io/agentkitproject/${img}:${{ inputs.source_tag }}"
+            dst="ghcr.io/agentkitproject/${img}:${{ inputs.version }}"
+            echo "::group::${img}: ${{ inputs.source_tag }} -> ${{ inputs.version }}"
+            docker buildx imagetools create --tag "$dst" "$src"
+            docker buildx imagetools inspect "$dst" --format '{{.Manifest.MediaType}}' | head -1
             echo "::endgroup::"
           done
-          echo "Released multi-arch self-host images at $VER (amd64 = tested $SRC, arm64 = rebuilt @ $GITSHA)"
+          echo "Released self-host images at ${{ inputs.version }}: $IMAGES"
