@@ -401,7 +401,7 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
     // partial minute counts as a full one — matches the up-front hold estimate.
     const runActiveMinutes = activeMinuteRateCents > 0 ? Math.ceil(minutes) : 0;
 
-    // Auto v2 Slice 2: apply the per-user monthly FREE active-minute allowance.
+    // Auto v2 Slice 2: apply the per-user one-time FREE active-minute allowance.
     // consumeFreeActiveMinutes atomically computes how many of this run's
     // active-minutes fall OUTSIDE the remaining free allowance (billableMinutes)
     // and depletes the month's usage by runActiveMinutes — IDEMPOTENTLY per
@@ -636,7 +636,7 @@ export async function runAutoRun(args: RunAutoRunArgs): Promise<RunAutoRunResult
       // dispatch for a clean 402, but the worker path is defended here too.)
       await ledger.ensureAccount(run.userId, now());
 
-      // TRULY-FREE TRIAL: remaining free active-minutes this UTC month waive
+      // TRULY-FREE TRIAL: remaining free active-minutes waive
       // the invocation fee and shrink the up-front hold, so a $0-balance user
       // can genuinely use the free tier (matches checkAffordability's
       // zero-balance admission). Metering still depletes the allowance at

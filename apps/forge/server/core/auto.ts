@@ -206,7 +206,7 @@ export function autoMarkupBps(): number {
 
 /**
  * Resolves the Auto v2 run-fee rates (flat invocation fee + per-active-minute
- * rate + monthly free-minute allowance) for THIS deployment, in US cents.
+ * rate + one-time free-minute allowance) for THIS deployment, in US cents.
  *
  * Gated on `!isSelfHost()`: a self-host yields 0/0/0 so it pays nothing and the
  * v2-fee path is never entered; the hosted (Dynamo-managed) path resolves the
@@ -233,7 +233,7 @@ export function resetAutoV2RatesCache(): void {
 
 /**
  * The MINIMUM credit cost (US cents) a run must afford up front, given the
- * resolved v2 rates and the user's REMAINING free active-minutes this month:
+ * resolved v2 rates and the user's REMAINING free active-minutes:
  *
  *   estimate = invocationFeeCents
  *            + (freeMinutesRemaining > 0 ? 0 : activeMinuteRateCents)
@@ -535,7 +535,7 @@ async function buildProcessDeps(
     // set server-side) is honored only on a self-host / when an operator wants a token
     // margin. Mirrors run-task's v2 default so app + worker bill identically.
     markupBps: rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0 ? 0 : autoMarkupBps(),
-    // Auto v2 run fee (invocation + active-minute + monthly free allowance), in
+    // Auto v2 run fee (invocation + active-minute + one-time free allowance), in
     // US cents. 0/0/0 on self-host (no fee). Applies to EVERY metered run
     // (managed AND BYO): BYO inference stays unbilled but BYO DOES incur the v2
     // run fee. The driver skips the fee path entirely when all rates are 0.
@@ -883,7 +883,7 @@ export async function startRun(input: {
   // Every METERED run (managed AND BYO) incurs the v2 run fee: a flat invocation
   // fee at start + a per-active-minute fee. Require enough prepaid balance to
   // cover the MINIMUM (invocation + the first active-minute, the latter waived
-  // while free minutes remain this month) BEFORE starting, so the user gets a
+  // while free minutes remain) BEFORE starting, so the user gets a
   // clean 402 instead of a run that fails on the driver's debit. Gates BYO the
   // SAME as managed (a BYO user pays their provider for tokens but still owes the
   // v2 run fee). BYO ACCOUNT AUTO-CREATION: ensureAccount here (idempotent) so a

@@ -216,7 +216,7 @@ export interface CreditLedgerRepository {
   listTransactions(userId: string, limit?: number): Promise<CreditTransaction[]>;
 
   // -------------------------------------------------------------------------
-  // Auto v2 free active-minute allowance (per user, per calendar-month)
+  // Auto v2 free active-minute allowance (per user, ONE-TIME lifetime trial)
   // -------------------------------------------------------------------------
   //
   // Auto v2 gives every user a ONE-TIME free trial of active-minutes (no
@@ -230,23 +230,25 @@ export interface CreditLedgerRepository {
 
   /**
    * Returns the active-minutes already consumed from this user's free allowance
-   * in the given UTC `yearMonth` ("YYYY-MM"). Returns 0 when no usage has been
-   * recorded for that month (the implicit reset on month rollover). Read-only —
+   * under the given `yearMonth` key. The free trial passes the FIXED lifetime key
+   * FREE_TRIAL_PERIOD_KEY ("trial"), so it never resets. Returns 0 when no usage
+   * has been recorded. Read-only —
    * used for observability/tests and pre-checks; the authoritative depletion is
    * `consumeFreeActiveMinutes` (which reads + writes atomically + idempotently).
    */
   getFreeMinutesUsed(userId: string, yearMonth: string): Promise<number>;
 
   /**
-   * Atomically applies a run's active-minutes against the user's monthly free
-   * allowance and returns how many of those minutes are BILLABLE (i.e. fall
-   * outside the remaining free allowance).
+   * Atomically applies a run's active-minutes against the user's free allowance
+   * (keyed by `yearMonth`; the free trial passes the FIXED lifetime FREE_TRIAL_PERIOD_KEY)
+   * and returns how many of those minutes are BILLABLE (i.e. fall outside the
+   * remaining free allowance).
    *
-   *   freeRemaining   = max(0, freeAllowance - usedThisMonth)
+   *   freeRemaining   = max(0, freeAllowance - usedSoFar)
    *   billableMinutes = max(0, runActiveMinutes - freeRemaining)
    *
-   * then it INCREMENTS the month's usage by `runActiveMinutes` (so the allowance
-   * depletes across runs in the month).
+   * then it INCREMENTS that period's usage by `runActiveMinutes` (so the allowance
+   * depletes across runs; with the lifetime trial key it depletes once, ever).
    *
    * IDEMPOTENT per `runId`: a re-settled / retried run for the same `runId` must
    * NOT double-deplete the allowance NOR change the billable result — the first
@@ -256,10 +258,11 @@ export interface CreditLedgerRepository {
    * idempotent alongside the (separately idempotent) hold settle.
    *
    * @param userId            the user.
-   * @param yearMonth         UTC "YYYY-MM" key for the calendar month.
+   * @param yearMonth         period key; the free trial passes FREE_TRIAL_PERIOD_KEY
+   *                          (a fixed lifetime key — no monthly reset), not a real month.
    * @param runActiveMinutes  whole active-minutes this run consumed (already
    *                          ceil'd by the caller); MUST be a non-negative integer.
-   * @param freeAllowance     the monthly free-minute allowance (e.g. 60). 0 →
+   * @param freeAllowance     the free-minute allowance (e.g. 60). 0 →
    *                          no free tier (every minute billable; still tracked
    *                          idempotently per runId).
    * @param runId             idempotency key (the run's id).

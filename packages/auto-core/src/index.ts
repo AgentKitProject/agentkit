@@ -461,7 +461,7 @@ export type {
 
 // ---- Auto v2 run-fee rate resolution (shared by worker + app) -----------
 // The single source of truth for the v2 invocation + active-minute rates and the
-// monthly free-minute allowance. The worker (run-task) and the app's in-process
+// one-time free-minute allowance. The worker (run-task) and the app's in-process
 // dispatcher BOTH resolve rates through this so the two paths bill identically;
 // `enabled` is the managed-vs-free gate (free / open-core → 0/0/0, no fee).
 export { loadAutoV2Rates } from "./entrypoints/run-task.js";

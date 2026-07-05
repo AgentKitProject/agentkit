@@ -197,7 +197,7 @@ function now(): string {
 
 /**
  * The UTC calendar-month key ("YYYY-MM") for an ISO timestamp — the bucket the
- * ledger keys a user's monthly FREE active-minute allowance by. MUST match
+ * ledger keys a user's one-time FREE active-minute allowance by. MUST match
  * auto-core's run-driver `utcYearMonth` (UTC, same format) so the pre-flight's
  * free-minute read and the driver's depletion address the SAME month row.
  */
@@ -232,7 +232,7 @@ export function autoMarkupBps(): number {
 
 /**
  * Resolves the Auto v2 run-fee rates (flat invocation fee + per-active-minute
- * rate + monthly free-minute allowance) for THIS deployment, in US cents.
+ * rate + one-time free-minute allowance) for THIS deployment, in US cents.
  *
  * The rates are gated on `creditLedgerBackend()`: a "free" backend (open-core /
  * self-host default) yields 0/0/0 so a self-host pays nothing and the v2-fee
@@ -297,7 +297,7 @@ export interface AutoBillingSummary {
   balanceCents: number;
   /** Free active-minutes the user has REMAINING this UTC month. */
   freeMinutesRemaining: number;
-  /** The monthly free active-minute allowance (e.g. 60). */
+  /** The one-time free active-minute allowance (e.g. 60). */
   freeMinutesPerMonth: number;
   /** The flat per-run invocation fee, in US cents (for the UI to explain cost). */
   invocationFeeCents: number;
@@ -904,7 +904,7 @@ async function buildProcessDeps(
     // operator wants a token margin (env override inside autoMarkupBps). Mirrors run-task's v2
     // default (markup 0) so the in-process dispatcher bills like the worker.
     markupBps: rates.invocationFeeCents > 0 || rates.activeMinuteRateCents > 0 ? 0 : autoMarkupBps(),
-    // Auto v2 run fee (invocation + active-minute + monthly free allowance), in
+    // Auto v2 run fee (invocation + active-minute + one-time free allowance), in
     // US cents. Resolved from the commercial seam and gated on the ledger backend
     // (free → 0/0/0, no fee). Applies to EVERY metered run (managed AND BYO):
     // BYO inference stays unbilled (the user pays their provider) but BYO DOES
@@ -1341,7 +1341,7 @@ export async function startRun(input: {
   // Every METERED run (managed AND BYO) incurs the v2 run fee: a flat invocation
   // fee debited at start + a per-active-minute fee. Require enough prepaid
   // balance to cover the MINIMUM (invocation + the first active-minute, the
-  // latter waived while free minutes remain this month) BEFORE starting, so the
+  // latter waived while free minutes remain) BEFORE starting, so the
   // user gets a clean 402 instead of a run that fails on the driver's debit /
   // reserveHold. This gates BYO the SAME as managed — a BYO user pays their own
   // provider for tokens but still owes the v2 run fee, so they need a balance.

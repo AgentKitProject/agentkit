@@ -38,7 +38,7 @@ kit's *ideas* being impossible to infer from its output.
 
 Because you run a protected kit on AgentKitAuto, the run is billed like any other
 managed Auto run — on the standard Auto compute model (a per-invocation fee plus a
-per-active-minute charge, with a free monthly active-minute allowance). Protected
+per-active-minute charge, with a one-time free active-minute allowance). Protected
 kits always run **managed**: they can never run on your own provider key, because
 that would route the seller's instructions through your provider console.
 
