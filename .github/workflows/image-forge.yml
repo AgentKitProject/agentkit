@@ -24,7 +24,7 @@ permissions:
 jobs:
   build-push:
     # GitHub-hosted runner (not the self-hosted homelab runner) for image builds.
-    runs-on: ubuntu-latest
+    runs-on: homelab-agentkit-linux-docker-build
     steps:
       - name: Checkout
         uses: actions/checkout@v4
