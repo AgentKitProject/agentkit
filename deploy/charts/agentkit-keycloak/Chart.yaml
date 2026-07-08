@@ -6,7 +6,7 @@ description: >-
   device-flow client for Forge desktop. Skip this chart entirely to bring your
   own IdP (Authentik / Auth0 / Okta / Dex / any OIDC provider).
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "26.4"
 keywords:
   - agentkit

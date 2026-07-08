@@ -37,6 +37,19 @@ JSON with `toJson` so quoting/escaping is always valid.
           "config" (dict "claim.name" "groups" "full.path" "false"
             "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
     -}}
+    {{- /* Forge-web forwards the user's OWN access token to hosted Market as the
+       bearer; Market verifies it as a Keycloak JWT and requires its client id in
+       `aud`. Stamp the Market clientId into the forge client's access token via an
+       Audience mapper (forge client only). Reference the market clientId from
+       values so a renamed Market client still resolves. */ -}}
+    {{- if eq $key "forgeWeb" -}}
+      {{- $marketClientId := (index $.Values.realm.clients "market").clientId -}}
+      {{- $mappers = append $mappers (dict
+          "name" "market-audience" "protocol" "openid-connect"
+          "protocolMapper" "oidc-audience-mapper"
+          "config" (dict "included.client.audience" $marketClientId
+            "id.token.claim" "false" "access.token.claim" "true")) -}}
+    {{- end -}}
     {{- $client := dict
         "clientId" $c.clientId
         "name" $c.clientId
