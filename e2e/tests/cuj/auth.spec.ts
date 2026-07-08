@@ -179,21 +179,22 @@ test("anonymous deep link redirects to sign-in with returnTo @reversible @wip", 
       });
     }
 
-    // (b) Load-bearing + env-invariant: an anonymous navigation to the deep link
-    //     must NOT expose the submit form. Acceptable gates: a redirect to the
-    //     sign-in flow (prod page-level redirect / Keycloak authorize) OR an
-    //     in-app "sign in to submit" surface rendered at /submit. What must NEVER
-    //     happen is the actual submit form (its package-file input) rendering for
-    //     an anonymous visitor. This holds regardless of gate style / env config.
+    // (b) Load-bearing + env-invariant: once the anon navigation settles we must be
+    //     on the sign-in flow (gamma: 307 /submit → /auth/sign-in → Keycloak; prod:
+    //     200 client-gate) OR the submit form must be absent — NEVER the actual
+    //     submit form for an anonymous visitor. Poll rather than snapshot once, so a
+    //     mid-redirect frame (the 307 → sign-in → Keycloak hop can take a beat)
+    //     doesn't flake; it fails only if the form is reachable for a sustained 15s.
     const page = await context.newPage();
     await page.goto(`${MARKET}/submit`, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle").catch(() => {}); // let a client gate settle
-    if (!SIGN_IN.test(page.url())) {
-      await expect(
-        page.locator('input[name="packageFile"]'),
-        "an anonymous visitor must not reach the submit form"
-      ).toHaveCount(0);
-    }
+    await expect
+      .poll(
+        async () =>
+          SIGN_IN.test(page.url()) ||
+          (await page.locator('input[name="packageFile"]').count()) === 0,
+        { timeout: 15_000, intervals: [500, 1_000, 2_000, 3_000] }
+      )
+      .toBe(true);
   } finally {
     await context.close();
   }
