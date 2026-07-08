@@ -365,6 +365,8 @@ test("org per-run budget: owner sets USD default, persists, clears (gamma only) 
   try {
     await gotoOrgDetail(page, orgId!);
     await expect(page.getByRole("heading", { name: "Organization default run budget" })).toBeVisible();
+    // Wait for loadStatus() to settle so it doesn't wipe our value mid-edit.
+    await expect(page.getByText("No org default set")).toBeVisible();
 
     // Set a $0.50 default and save.
     await orgField(page, /Default run budget/).fill("0.50");
@@ -401,6 +403,10 @@ test("org monthly limits: owner sets pool and member cap, persists (gamma only) 
   try {
     await gotoOrgDetail(page, orgId!);
     await expect(page.getByRole("heading", { name: "Organization monthly limits" })).toBeVisible();
+    // Wait for the async loadStatus() to settle before filling — it repaints the
+    // inputs to the server's empty state, and would otherwise wipe our values
+    // mid-edit (an empty save). "No monthly limits set" only renders post-load.
+    await expect(page.getByText("No monthly limits set")).toBeVisible();
 
     // Set an org-wide pool ($5) + a per-member cap ($2), then save.
     await orgField(page, /pool.*dollars/i).fill("5.00");
