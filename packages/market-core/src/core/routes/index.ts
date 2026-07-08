@@ -604,13 +604,17 @@ async function listAdminSubmissions(
   // Fetch kit download counts in parallel for all submissions that have a kitId.
   const kitIds = [...new Set(page.map((s) => s.kitId).filter(Boolean))] as string[];
   const kitDownloadMap = new Map<string, number>();
+  const kitStatusMap = new Map<string, string>();
   if (kitIds.length > 0) {
     const kits = await Promise.all(kitIds.map((id) => adminRepository.getKit(id).catch(() => undefined)));
     for (let i = 0; i < kitIds.length; i++) {
       const kitId = kitIds[i];
       const kit = kits[i];
-      if (kitId && kit && typeof kit.downloads === 'number') {
-        kitDownloadMap.set(kitId, kit.downloads);
+      if (kitId && kit) {
+        if (typeof kit.downloads === 'number') kitDownloadMap.set(kitId, kit.downloads);
+        // Surface the KIT's own status: hide/remove flip the kit row, not the
+        // submission status, so the admin UI needs this to reflect hidden/removed.
+        if (typeof kit.status === 'string') kitStatusMap.set(kitId, kit.status);
       }
     }
   }
@@ -619,6 +623,7 @@ async function listAdminSubmissions(
     items: page.map((s) => ({
       ...toAdminSubmission(s),
       kitDownloads: kitDownloadMap.get(s.kitId) ?? 0,
+      kitStatus: kitStatusMap.get(s.kitId) ?? null,
     })),
     cursor: nextToken,
     nextToken,
@@ -644,7 +649,9 @@ async function getAdminSubmission(
   const kitDownloads = kit && typeof kit.downloads === 'number' ? kit.downloads : 0;
 
   return json(request, allowedOrigins, 200, {
-    item: { ...toAdminSubmission(submission), kitDownloads },
+    // Surface the KIT's own status (hide/remove flip the kit row, not the
+    // submission status) so the admin UI's Hide/Unhide/Remove state resolves.
+    item: { ...toAdminSubmission(submission), kitDownloads, kitStatus: kit?.status ?? null },
   });
 }
 
