@@ -40,10 +40,11 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 //     Kits + auto-opens the imported kit in the editor ("Kit editor" title).
 //   - toasts: .akf-toast (error variant .akf-toast.err), visible ~4.2s.
 //
-// Validation profile requirements (packages/core validator.ts): a "blank" template kit
-// ships AGENTKIT.md/START_HERE.md/skills/agentkit.yaml but NO README.md/LICENSE, so it
-// FAILS the "publishable" profile deterministically (2 "Missing required file" errors) —
-// that is what journey 2 asserts.
+// Validation profile requirements (packages/core validator.ts): a template kit ships
+// agentkit.yaml/AGENTKIT.md/START_HERE.md/skills/README.md/LICENSE, so it is publishable-
+// VALID out of the box. Journey 2 therefore DELETES a publishable-required file (README.md)
+// via the kit files API first, so the "publishable" profile then fails with a "Missing
+// required file: README.md" error — that is what it asserts.
 
 const FORGE = targets.forge.replace(/\/$/, "");
 
@@ -235,25 +236,35 @@ test.describe("CUJ — Forge web app (extended)", () => {
     await deleteKit(page, kitName);
   });
 
-  // 2. VALIDATION ERRORS surface: a blank-template kit lacks README.md + LICENSE,
-  //    so the "publishable" profile FAILS with "Missing required file" errors.
+  // 2. VALIDATION ERRORS surface: a template kit is publishable-VALID out of the
+  //    box (it ships README.md + LICENSE), so we first DELETE a publishable-required
+  //    file (README.md) via the kit files API — then "publishable" FAILS with a
+  //    "Missing required file: README.md" error the report must render.
   test("validate an incomplete kit at publishable surfaces errors @wip @reversible", async ({
     page
   }) => {
     const kitName = `${RUN_ID}-invalid`;
     await gotoForge(page);
     await removeMatchingKits(page, kitName);
-    await createTemplateKit(page, kitName); // blank template → no README/LICENSE
+    await createTemplateKit(page, kitName); // lands in the editor (kit exists server-side)
+
+    // Make the kit incomplete: remove a publishable-required file server-side.
+    const kitId = await kitIdByName(page.request, kitName);
+    expect(kitId, "resolved the built kit's id").toBeTruthy();
+    const del = await page.request.delete(`${FORGE}/api/kits/${encodeURIComponent(kitId!)}/files`, {
+      data: { path: "README.md" }
+    });
+    expect(del.ok(), `delete README.md → HTTP ${del.status()}`).toBe(true);
 
     await page.locator(".screen-toolbar select").selectOption("publishable");
     await page.getByRole("button", { name: "Validate", exact: true }).click();
 
     const report = page.locator(".validation-report");
     await expect(report).toBeVisible({ timeout: 20_000 });
-    // FAILED banner + at least one Errors group (README.md + LICENSE are missing).
+    // FAILED banner + an Errors group naming the now-missing README.md.
     await expect(report.locator(".status-banner.invalid")).toBeVisible();
     await expect(report.getByText(/Errors \(\d+\)/)).toBeVisible();
-    await expect(report.getByText(/README\.md|LICENSE/).first()).toBeVisible();
+    await expect(report.getByText(/README\.md/).first()).toBeVisible();
 
     await deleteKit(page, kitName);
   });

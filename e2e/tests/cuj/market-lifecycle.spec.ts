@@ -121,15 +121,16 @@ function uniqueFixtureFile(tag: string): FilePayload {
 }
 
 /**
- * A syntactically valid but EMPTY zip (22-byte EOCD, zero entries) + a unique
- * comment — deliberately NOT a valid Agent Kit (no agentkit.yaml / required
- * files), so server validation must fail.
+ * A 0-byte package. market-core's validation worker currently does NOT inspect
+ * package CONTENTS (services/validation.ts: "@agentkitforge/core validation
+ * integration is pending") — so a well-formed but non-kit zip PASSES. The one
+ * content-agnostic failure lever a submittable file can hit is the empty-object
+ * check (packageSizeBytes === 0 → validationStatus "failed"), so a deliberately
+ * empty upload is how we exercise the failed-badge surface today. Revisit to a
+ * real non-kit zip once core content validation is wired into the worker.
  */
 function malformedZip(tag: string): FilePayload {
-  const eocd = Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-  const comment = Buffer.from(`e2e-broken:${tag}`, "utf8");
-  eocd.writeUInt16LE(comment.length, 20);
-  return { name: `${tag}.agentkit.zip`, mimeType: "application/zip", buffer: Buffer.concat([eocd, comment]) };
+  return { name: `${tag}.agentkit.zip`, mimeType: "application/zip", buffer: Buffer.alloc(0) };
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +306,9 @@ async function gotoAdminSubmission(page: Page, submissionId: string): Promise<vo
 }
 
 /** From an open admin submission detail page: Approve, then Publish, then wait
- *  until the server reports the kit published. Returns the published slug. */
+ *  until the server reports the kit published. Returns the published kitId.
+ *  NOTE: the submission endpoint carries `kitId` but NOT a slug (the slug lives
+ *  on the public kit) — resolve the slug separately via `resolveSlugByName`. */
 async function approveThenPublish(page: Page, submissionId: string): Promise<string> {
   const approveBtn = page.getByRole("button", { name: "Approve", exact: true });
   await expect(approveBtn).toBeEnabled({ timeout: 30_000 });
@@ -320,10 +323,32 @@ async function approveThenPublish(page: Page, submissionId: string): Promise<str
   const published = await pollUserSubmission(
     page.request,
     submissionId,
-    (item) => norm(item.status) === "published" && Boolean(item.kitSlug),
+    (item) => norm(item.status) === "published" && Boolean(item.kitId),
     60_000
   );
-  return published.kitSlug!;
+  return published.kitId!;
+}
+
+/** Resolve a freshly-published kit's slug via the authed catalog search (the
+ *  submission API never exposes a slug). The catalog list link href is
+ *  /kits/{slug}; finding the kit here doubles as public-catalog-inclusion proof.
+ *  Must be called while the kit is public (i.e. before any hide). */
+async function resolveSlugByName(page: Page, kitName: string): Promise<string> {
+  const link = page.locator(".kit-grid h3 a", { hasText: kitName }).first();
+  await expect
+    .poll(
+      async () => {
+        await page.goto(`${market}/kits`, { waitUntil: "domcontentloaded" });
+        await page.getByPlaceholder("Search kits, publishers, or tags").fill(kitName);
+        return link.count();
+      },
+      { timeout: 30_000, intervals: [1_000, 2_000, 3_000, 5_000] }
+    )
+    .toBeGreaterThan(0);
+  const href = (await link.getAttribute("href")) ?? "";
+  const slug = href.split("/").filter(Boolean).pop() ?? "";
+  expect(slug, "resolved a slug from the published catalog listing").toBeTruthy();
+  return slug;
 }
 
 /** Best-effort: confirm a slug is downloadable and returns real zip bytes. */
@@ -389,26 +414,18 @@ test("full publish lifecycle: submit, validate, approve, publish, catalog, downl
   expect(validation, "the fixture kit is a valid publishable kit").toBe("passed");
 
   await gotoAdminSubmission(page, submissionId);
-  const slug = await approveThenPublish(page, submissionId);
-  expect(slug).toBeTruthy();
+  const kitId = await approveThenPublish(page, submissionId);
+  expect(kitId).toBeTruthy();
 
-  // Public catalog inclusion: the kit detail page 404s unless the kit is a
-  // public catalog kit, so a rendered listing IS the inclusion proof.
+  // Resolve the published slug via the catalog search — this doubles as the
+  // public-catalog-inclusion proof (the kit surfaces in the SSR list by name).
+  const slug = await resolveSlugByName(page, kitName);
+
+  // Kit detail page: 404s unless the kit is a public catalog kit, so a rendered
+  // listing is a second inclusion proof.
   await page.goto(`${market}/kits/${slug}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Agent Kit listing")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("heading", { level: 1, name: kitName })).toBeVisible();
-
-  // …and it surfaces in the catalog list search (SSR list, so re-fetch to poll).
-  await expect
-    .poll(
-      async () => {
-        await page.goto(`${market}/kits`, { waitUntil: "domcontentloaded" });
-        await page.getByPlaceholder("Search kits, publishers, or tags").fill(kitName);
-        return page.locator(".kit-grid h3 a", { hasText: kitName }).count();
-      },
-      { timeout: 30_000, intervals: [1_000, 2_000, 3_000, 5_000] }
-    )
-    .toBeGreaterThan(0);
 
   // Download the published free package: 200 + real zip bytes.
   await expectDownloadableZip(page.request, slug);
