@@ -50,6 +50,7 @@ export default defineConfig({
       // the CUJ files serially regardless of the global worker count.
       name: "cuj",
       testMatch: /cuj\/.*\.spec\.ts/,
+      grepInvert: /@wip/, // newly-authored CUJs stay dormant until verified
       fullyParallel: false,
       workers: 1,
       timeout: 90_000,
@@ -60,6 +61,7 @@ export default defineConfig({
       name: "prod-cuj",
       testMatch: /cuj\/.*\.spec\.ts/,
       grep: /@reversible/,
+      grepInvert: /@wip/, // exclude unverified WIP tests from the prod gate
       fullyParallel: false,
       workers: 1,
       timeout: 90_000,
@@ -72,7 +74,21 @@ export default defineConfig({
       // via test.use, so its @canary tests still run authenticated.
       name: "canary",
       grep: /@canary/,
+      grepInvert: /@wip/,
       use: chrome,
+    },
+    {
+      // WIP staging lane: newly-authored CUJs are tagged @wip so they do NOT
+      // gate deploys (cuj/prod-cuj/canary all exclude @wip) until shaken out.
+      // Run explicitly with `--project=wip` against a deployed env; drop the
+      // @wip tag from a test once it's green to promote it into cuj / prod-cuj.
+      name: "wip",
+      testMatch: /cuj\/.*\.spec\.ts/,
+      grep: /@wip/,
+      fullyParallel: false,
+      workers: 1,
+      timeout: 90_000,
+      use: { ...chrome, storageState: STORAGE_STATE_PATH },
     },
   ],
 });
