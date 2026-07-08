@@ -38,6 +38,8 @@ export type ValidationReport = {
   profile?: ValidationProfile;
   errors?: Array<{ message: string; [k: string]: unknown } | string>;
   warnings?: Array<{ message: string; [k: string]: unknown } | string>;
+  // Core `validateAgentKit` report shape: a single severity-tagged issues list.
+  issues?: Array<{ severity?: string; code?: string; message?: string; path?: string }>;
   [k: string]: unknown;
 };
 export type AgentKitSummary = Record<string, unknown>;

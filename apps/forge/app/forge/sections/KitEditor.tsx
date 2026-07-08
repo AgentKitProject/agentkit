@@ -239,10 +239,15 @@ function ValidationReportPanel({
 }) {
   const isValid = !!(report.valid ?? report.ok);
 
-  const rawIssues: ValidationIssue[] = [
-    ...((report.errors ?? []) as ValidationIssue[]),
-    ...((report.warnings ?? []) as ValidationIssue[])
-  ];
+  // The core `validateAgentKit` report is shaped { valid, profile, rootPath,
+  // issues: ValidationIssue[] } — there are no `errors`/`warnings` arrays. Source
+  // from `issues`, keeping the legacy arrays as a defensive fallback.
+  const rawIssues: ValidationIssue[] = Array.isArray(report.issues)
+    ? (report.issues as ValidationIssue[])
+    : [
+        ...((report.errors ?? []) as ValidationIssue[]),
+        ...((report.warnings ?? []) as ValidationIssue[])
+      ];
 
   // Normalize issues — the core returns different shapes depending on version
   const issues = rawIssues.map((issue) => {
@@ -254,9 +259,14 @@ function ValidationReportPanel({
     if (typeof issue === "string") {
       msg = issue;
     } else {
-      // Check if it's in the warnings list
-      const inWarnings = (report.warnings ?? []).includes(issue as never);
-      severity = inWarnings ? "warning" : "error";
+      // Prefer the issue's own severity (core `issues[]` carry it); fall back to
+      // legacy warnings-array membership for the older report shape.
+      severity =
+        issue.severity === "warning" || issue.severity === "error"
+          ? issue.severity
+          : (report.warnings ?? []).includes(issue as never)
+            ? "warning"
+            : "error";
       const rawMsg = issue.message;
       msg = typeof rawMsg === "string" ? rawMsg : (rawMsg as { message?: string } | undefined)?.message ?? JSON.stringify(issue);
       code = typeof issue.code === "string" ? issue.code : undefined;
