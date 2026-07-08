@@ -2,15 +2,19 @@
 // client's TokenStore-based auth.
 //
 // The hosted-Market submit/download flows authenticate to Market's
-// `/api/forge/*` routes with a BEARER access token (see CLAUDE.md cross-repo
+// `/api/forge/*` routes with a BEARER token (see CLAUDE.md cross-repo
 // contract #2/#5). The web user does NOT have a device-auth session; they have a
-// browser cookie session. Under both providers we forward the user's own access
-// token from that session as the Market bearer:
+// browser cookie session. Under both providers we forward a token from that
+// session as the Market bearer:
 //   - WorkOS: `withAuth()` exposes the WorkOS ACCESS TOKEN.
-//   - OIDC (Keycloak): the OIDC iron-session holds the Keycloak access token,
-//     which Market's `requireForgeUser` verifies as a Keycloak JWT (issuer +
-//     aud). The realm must stamp Market's client id into `aud` via an Audience
-//     mapper on the forge client, else Market returns 401.
+//   - OIDC (Keycloak): the OIDC iron-session holds the Keycloak ID TOKEN (we do
+//     NOT store the access token — that bloated the sealed cookie past the ~4KB
+//     limit and broke login; see oidc-config.ts). Market's `requireForgeUser`
+//     verifies the forwarded token as a Keycloak JWT purely on signature +
+//     issuer + audience + `sub` — it does NOT check the `typ` claim — so an ID
+//     token is accepted identically to an access token. The realm must stamp
+//     Market's client id into the ID token's `aud` via an Audience mapper on the
+//     forge client (`id.token.claim=true`), else Market returns 401.
 //
 // We wrap that access token in a read-only TokenStore so the core market client
 // (`submitKit`, `downloadKit`, `fetchLicensedKit`) can consume it unchanged.
@@ -32,20 +36,24 @@ function isOidc(): boolean {
  * bearer, or null when there is no signed-in session / no token.
  *
  * Under AUTH_PROVIDER=oidc this reads the OIDC iron-session and returns the
- * user's own Keycloak access token; otherwise it returns the WorkOS access token
+ * user's own Keycloak ID token; otherwise it returns the WorkOS access token
  * from the AuthKit cookie session. Callers that gate on a null token degrade
  * gracefully; submit-only paths throw a clean error below. (Name kept as
  * `getWorkosAccessToken` for its many callers; it is provider-agnostic now.)
  */
 export async function getWorkosAccessToken(): Promise<string | null> {
   if (isOidc()) {
-    // Under OIDC (Keycloak), forward the user's own access token from the Forge
-    // iron-session as the Market bearer. Market's requireForgeUser verifies it as
-    // a Keycloak JWT (issuer + aud); the realm must stamp Market's client id into
-    // `aud` via an Audience mapper on the forge client, else Market returns 401.
+    // Under OIDC (Keycloak), forward the user's ID token from the Forge
+    // iron-session as the Market bearer. We use the ID token (not the access
+    // token) because it is already in the session — forwarding it adds ZERO
+    // cookie bytes, whereas persisting the access token too overflowed the ~4KB
+    // sealed cookie and broke login. Market's requireForgeUser verifies it as a
+    // Keycloak JWT (issuer + aud) and does not check `typ`; the realm must stamp
+    // Market's client id into the ID token's `aud` via an Audience mapper on the
+    // forge client (id.token.claim=true), else Market returns 401.
     try {
       const session = await getOidcSession();
-      return session?.accessToken ?? null;
+      return session?.idToken ?? null;
     } catch {
       return null;
     }

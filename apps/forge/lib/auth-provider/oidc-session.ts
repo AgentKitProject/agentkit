@@ -12,7 +12,11 @@ export const OIDC_SESSION_COOKIE = "akf-oidc-session";
 
 export type OidcSessionData = {
   user?: CurrentUser;
-  accessToken?: string;
+  // NOTE: the access token is intentionally NOT stored. This sealed cookie
+  // already holds user + refreshToken + idToken; adding the (~1.5KB) Keycloak
+  // access token pushed the sealed cookie past the ~4KB browser limit and broke
+  // login. The hosted-Market bearer is sourced from `idToken` instead (see
+  // server/core/market-auth.ts). Do not re-add an `accessToken` field here.
   refreshToken?: string;
   idToken?: string;
   // Absolute expiry (epoch ms) of the access token, for proactive refresh.

@@ -75,9 +75,15 @@ export function buildSessionFromTokens(
   tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers
 ): OidcSessionData {
   const expiresIn = tokens.expiresIn();
+  // NOTE: deliberately do NOT persist the access token here. The sealed
+  // iron-session cookie already carries user + refreshToken + idToken; adding
+  // the (~1.5KB) Keycloak access token as well pushes the sealed cookie past the
+  // ~4KB browser limit, so Set-Cookie is silently dropped and login fails. The
+  // hosted-Market bearer is sourced from the ID token instead (already stored),
+  // which carries `aud: <market clientId>` via the forge client's audience
+  // mapper — see apps/forge/server/core/market-auth.ts.
   return {
     user,
-    accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
     expiresAt: typeof expiresIn === "number" ? Date.now() + expiresIn * 1000 : undefined
