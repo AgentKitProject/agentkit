@@ -264,7 +264,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
     // FAILED banner + an Errors group naming the now-missing README.md.
     await expect(report.locator(".status-banner.invalid")).toBeVisible();
     await expect(report.getByText(/Errors \(\d+\)/)).toBeVisible();
-    await expect(report.getByText(/README\.md/).first()).toBeVisible();
+    await expect(report.getByText(/Missing required file: README\.md/).first()).toBeVisible();
 
     await deleteKit(page, kitName);
   });

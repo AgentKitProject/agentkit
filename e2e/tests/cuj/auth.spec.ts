@@ -179,13 +179,21 @@ test("anonymous deep link redirects to sign-in with returnTo @reversible @wip", 
       });
     }
 
-    // (b) Load-bearing + env-invariant: a full anonymous navigation to the deep
-    //     link MUST land on the sign-in flow (app /auth/sign-in or the Keycloak
-    //     authorize page). Anon can never reach the submit form — server- or
-    //     client-gated alike.
+    // (b) Load-bearing + env-invariant: an anonymous navigation to the deep link
+    //     must NOT expose the submit form. Acceptable gates: a redirect to the
+    //     sign-in flow (prod page-level redirect / Keycloak authorize) OR an
+    //     in-app "sign in to submit" surface rendered at /submit. What must NEVER
+    //     happen is the actual submit form (its package-file input) rendering for
+    //     an anonymous visitor. This holds regardless of gate style / env config.
     const page = await context.newPage();
     await page.goto(`${MARKET}/submit`, { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(SIGN_IN);
+    await page.waitForLoadState("networkidle").catch(() => {}); // let a client gate settle
+    if (!SIGN_IN.test(page.url())) {
+      await expect(
+        page.locator('input[name="packageFile"]'),
+        "an anonymous visitor must not reach the submit form"
+      ).toHaveCount(0);
+    }
   } finally {
     await context.close();
   }

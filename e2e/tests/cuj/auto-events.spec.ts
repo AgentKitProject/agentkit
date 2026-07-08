@@ -648,10 +648,15 @@ test("managed run: dispatch cheapest model → terminal state, metered debit + o
     });
   }
 
-  // The run + its state surface gracefully in the History UI regardless.
+  // The run console surfaces gracefully in the History UI regardless. The run
+  // card's label is kitRefLabel(kitRef), which for a local ref may be the kitId
+  // (not p.kitName) — so assert the console rendered a coherent state rather than
+  // filtering by name. Authoritative run assertions are done via the API above.
   await gotoSection(page, "runs");
-  const card = page.locator(".provider-card").filter({ hasText: p!.kitName }).first();
-  await expect(card.or(page.getByText("No runs yet.")).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Runs", exact: true })).toBeVisible();
+  await expect(
+    page.locator(".provider-card").first().or(page.getByText("No runs yet.")).first()
+  ).toBeVisible();
 });
 
 // ===========================================================================

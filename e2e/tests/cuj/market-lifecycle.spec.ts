@@ -516,19 +516,39 @@ test("admin hides then unhides a published kit @wip", async ({ page }) => {
   await expect(hideBtn).toBeEnabled({ timeout: 20_000 });
   page.once("dialog", (dialog) => void dialog.accept()); // Hide confirms
   await hideBtn.click();
+  // Confirm the POST resolved before reading the (async-propagated) new state.
+  await expect(page.getByText("Action status")).toBeVisible({ timeout: 20_000 });
 
-  // Once hidden, Unhide flips on (isHiddenKit → true) and Hide flips off.
-  const unhideBtn = page.getByRole("button", { name: "Unhide kit", exact: true });
-  await expect(unhideBtn).toBeEnabled({ timeout: 30_000 });
-  await expect(hideBtn).toBeDisabled();
+  // Once hidden, Unhide flips on (isHiddenKit → true) and Hide flips off. The
+  // admin UI does a SINGLE in-place refetch that races gamma's async hidden-status
+  // propagation, so poll a FRESH server read (re-navigate) until it reflects.
+  await expect
+    .poll(
+      async () => {
+        await gotoAdminSubmission(page, submissionId);
+        return page.getByRole("button", { name: "Unhide kit", exact: true }).isEnabled();
+      },
+      { timeout: 30_000, intervals: [1_000, 2_000, 3_000, 5_000] }
+    )
+    .toBe(true);
+  await expect(page.getByRole("button", { name: "Hide kit", exact: true })).toBeDisabled();
 
   // Unhide: restore to the public catalog.
   page.once("dialog", (dialog) => void dialog.accept()); // Unhide confirms
-  await unhideBtn.click();
+  await page.getByRole("button", { name: "Unhide kit", exact: true }).click();
+  await expect(page.getByText("Action status")).toBeVisible({ timeout: 20_000 });
 
-  // Back to published: Hide flips on again, Unhide off.
-  await expect(hideBtn).toBeEnabled({ timeout: 30_000 });
-  await expect(unhideBtn).toBeDisabled();
+  // Back to published: Hide flips on again, Unhide off — poll a fresh server read.
+  await expect
+    .poll(
+      async () => {
+        await gotoAdminSubmission(page, submissionId);
+        return page.getByRole("button", { name: "Hide kit", exact: true }).isEnabled();
+      },
+      { timeout: 30_000, intervals: [1_000, 2_000, 3_000, 5_000] }
+    )
+    .toBe(true);
+  await expect(page.getByRole("button", { name: "Unhide kit", exact: true })).toBeDisabled();
 });
 
 // ---------------------------------------------------------------------------
