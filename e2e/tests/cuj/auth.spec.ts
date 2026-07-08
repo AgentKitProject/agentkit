@@ -159,42 +159,35 @@ test("authed session survives a page reload @reversible @wip", async ({ page }) 
 test("anonymous deep link redirects to sign-in with returnTo @reversible @wip", async ({
   browser
 }) => {
-  const context = await browser.newContext(); // anonymous (no storageState)
+  // EXPLICIT empty storageState → a GUARANTEED-anonymous context. A bare
+  // browser.newContext() in the shake-out carries the E2E user's session (the
+  // authed browser SSOs a new context straight back in — verified: the "anon"
+  // /submit rendered the real form with the E2E user signed in), so we must
+  // start from a truly cookie-less state to exercise the anon gate.
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   try {
-    // (a) Creds-free: read the raw response WITHOUT following redirects. The gate
-    //     is a server 3xx (page-level redirect() / require-login middleware) on
-    //     hosted prod; a deployed self-host/gamma image may instead answer 200 and
-    //     gate via a client navigation. When it IS a 3xx, assert it targets sign-in
-    //     and carries returnTo=/submit; the env-invariant check is (b) below.
+    // Assert on the RAW server response (maxRedirects:0). An API request never
+    // participates in browser SSO, so this is the reliable anon-gate probe, and
+    // it covers both gate styles: gamma server-redirects (307 → sign-in), prod
+    // returns a 200 client-gate whose HTML must not carry the submit form.
     const res = await context.request.get(`${MARKET}/submit`, { maxRedirects: 0 });
-    if (res.status() >= 300 && res.status() < 400) {
+    const status = res.status();
+    if (status >= 300 && status < 400) {
+      // Server-redirect gate (gamma page-level redirect / require-login middleware).
       const location = res.headers()["location"] ?? "";
       expect(location, "redirect Location targets the sign-in route").toContain("/auth/sign-in");
-      const returnTo = new URL(location, MARKET).searchParams.get("returnTo");
-      expect(returnTo, "sign-in carries a returnTo for the requested deep link").toBe("/submit");
+      expect(
+        new URL(location, MARKET).searchParams.get("returnTo"),
+        "sign-in carries a returnTo for the requested deep link"
+      ).toBe("/submit");
     } else {
-      test.info().annotations.push({
-        type: "note",
-        description: `anon GET /submit returned ${res.status()} (client-side gate on this env) — asserting the navigation gate in (b)`
-      });
+      // Client-gate (prod): 200, but the anonymous HTML must NOT expose the form.
+      expect(status, "anon /submit is either a redirect or a client-gated 200").toBe(200);
+      const body = await res.text();
+      expect(body, "an anonymous /submit response must not contain the submit form").not.toMatch(
+        /name=["']packageFile["']/
+      );
     }
-
-    // (b) Load-bearing + env-invariant: once the anon navigation settles we must be
-    //     on the sign-in flow (gamma: 307 /submit → /auth/sign-in → Keycloak; prod:
-    //     200 client-gate) OR the submit form must be absent — NEVER the actual
-    //     submit form for an anonymous visitor. Poll rather than snapshot once, so a
-    //     mid-redirect frame (the 307 → sign-in → Keycloak hop can take a beat)
-    //     doesn't flake; it fails only if the form is reachable for a sustained 15s.
-    const page = await context.newPage();
-    await page.goto(`${MARKET}/submit`, { waitUntil: "domcontentloaded" });
-    await expect
-      .poll(
-        async () =>
-          SIGN_IN.test(page.url()) ||
-          (await page.locator('input[name="packageFile"]').count()) === 0,
-        { timeout: 15_000, intervals: [500, 1_000, 2_000, 3_000] }
-      )
-      .toBe(true);
   } finally {
     await context.close();
   }
