@@ -320,8 +320,11 @@ export class PostgresOrgStore implements OrgStore {
   }
 
   async listMembers(orgId: string): Promise<OrgMembership[]> {
+    // Exclude soft-deleted rows: removeMember sets status='removed' (it does not
+    // DELETE the row), so an unfiltered list would keep surfacing removed members
+    // in the org's member panel. Mirrors listOrgsForUser's `status <> 'removed'`.
     const result = await this.pool.query(
-      `SELECT * FROM org_memberships WHERE org_id = $1 ORDER BY created_at`,
+      `SELECT * FROM org_memberships WHERE org_id = $1 AND status <> 'removed' ORDER BY created_at`,
       [orgId],
     );
     return result.rows.map(rowToMembership);
