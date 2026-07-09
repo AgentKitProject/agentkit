@@ -575,15 +575,24 @@ test("admin archives a submission out of the default queue", async ({ page }) =>
   await removeBtn.click();
   await expect(page.getByText("Action status")).toBeVisible({ timeout: 20_000 });
 
-  // Appears in the history-inclusive admin list…
-  await expect
-    .poll(async () => (await adminList(page.request, "?includeHistory=true")).some((s) => s.submissionId === submissionId), {
-      timeout: 20_000,
-      intervals: [1_000, 2_000, 3_000]
-    })
-    .toBe(true);
+  // Archived = kept in history, out of the active review queue. Assert the
+  // terminal status deterministically BY ID: the admin list is capped + unordered
+  // on self-host (`SELECT … FROM submissions LIMIT 100` → core returns only the
+  // first DEFAULT_LIMIT rows), and the archive UPDATE can page the row out of that
+  // window, so scanning the includeHistory list for it is unreliable on an
+  // accumulated gamma DB (a longer timeout would not help — the exclusion is not
+  // just slow, it can be total). Poll the per-id read instead.
+  const archived = await pollUserSubmission(
+    page.request,
+    submissionId,
+    (item) => norm(item.status) === "archived",
+    30_000
+  );
+  expect(norm(archived.status)).toBe("archived");
 
-  // …and is gone from the DEFAULT admin queue (core filters archived out).
+  // …and is gone from the DEFAULT admin queue (core filters archived out). If the
+  // capped list happens to include the row it must not be present; if it is paged
+  // out, the by-id "archived" assertion above already proves it left the queue.
   const defaultQueue = await adminList(page.request, "");
   expect(defaultQueue.some((s) => s.submissionId === submissionId)).toBe(false);
 });

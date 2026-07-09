@@ -67,6 +67,24 @@ async function listMySubmissions(request: APIRequestContext): Promise<Submission
 }
 
 /**
+ * Fetch ONE of the signed-in user's submissions by id (deterministic). The list
+ * API (GET /api/submissions) is backed by the self-host admin list, which is
+ * capped + unordered (`SELECT … FROM submissions LIMIT 100` → core returns only
+ * the first DEFAULT_LIMIT rows), so on an accumulated gamma DB a freshly-created
+ * or freshly-updated row can page out of the visible list. Never scan the list
+ * for a specific id — read it directly.
+ */
+async function getUserSubmission(
+  request: APIRequestContext,
+  submissionId: string
+): Promise<SubmissionListItem | null> {
+  const response = await request.get(`${market}/api/submissions/${encodeURIComponent(submissionId)}`);
+  if (!response.ok()) return null;
+  const payload = (await response.json()) as { item?: SubmissionListItem };
+  return payload.item ?? null;
+}
+
+/**
  * Cancel any still-active `e2e-*` submissions (this run's AND stale leftovers
  * from crashed prior iterations). Tolerates every failure — cleanup only.
  */
@@ -290,12 +308,19 @@ test.describe("submit and cancel", () => {
         .first()
     ).toBeVisible({ timeout: 20_000 });
 
-    // It shows up in My Submissions.
+    // It shows up in My Submissions. The self-host list backing this page is
+    // capped + unordered (see getUserSubmission), so on an accumulated gamma DB the
+    // freshly-created row can page out of the visible list. Assert the list PAGE
+    // renders (surface), then confirm OUR submission deterministically by id —
+    // never require the specific list link, which the cap can legitimately hide.
     await page.goto(`${market}/submissions`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Submitted Agent Kits" })).toBeVisible();
-    await expect(page.getByRole("link", { name: new RegExp(KIT_NAME) }).first()).toBeVisible({
-      timeout: 20_000
-    });
+    await expect
+      .poll(async () => (await getUserSubmission(page.request, submissionId))?.submissionId, {
+        timeout: 20_000,
+        intervals: [1_000, 2_000, 3_000]
+      })
+      .toBe(submissionId);
 
     // Cancel it (UI drives POST /api/submissions/{id}/cancel behind a confirm()).
     await page.goto(submissionUrl, { waitUntil: "domcontentloaded" });
@@ -314,10 +339,11 @@ test.describe("submit and cancel", () => {
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Cancel submission" })).toBeDisabled();
 
-    // And the API agrees (belt-and-braces for the cleanup guarantee).
-    const items = await listMySubmissions(page.request);
-    const mine = items.find((item) => item.submissionId === submissionId);
-    expect(mine?.status?.toLowerCase()).toBe("canceled");
+    // And the API agrees (belt-and-braces for the cleanup guarantee). Read the
+    // submission BY ID — the capped/unordered list can page it out on a populated
+    // gamma DB, so a list scan would spuriously report `undefined` here.
+    const canceled = await getUserSubmission(page.request, submissionId);
+    expect(canceled?.status?.toLowerCase()).toBe("canceled");
   });
 });
 
