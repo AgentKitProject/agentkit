@@ -176,10 +176,10 @@ export function getEcosystemLinks(env: Env = process.env): EcosystemLinks {
       // marketUrl is a BROWSER-facing ecosystem link (App switcher, "Open
       // AgentKitMarket", import-from-Market kit links) — distinct from the
       // SERVER-side API base (getMarketBaseUrl / AGENTKITMARKET_BASE_URL, which
-      // on self-host is the in-cluster Service URL and NOT browser-reachable).
-      // Prefer an explicit browser URL; fall back to the API base on hosted.
-      marketUrl:
-        trimmed(env.NEXT_PUBLIC_MARKET_URL) ?? getMarketBaseUrl(env) ?? "https://market.agentkitproject.com",
+      // on hosted prod is the in-cluster Service URL and NOT browser-reachable).
+      // Use an explicit browser URL when set, else the public hosted Market —
+      // NEVER the API base (getMarketBaseUrl), which a browser can't reach.
+      marketUrl: trimmed(env.NEXT_PUBLIC_MARKET_URL) ?? HOSTED_MARKET_BASE_URL,
       forgeUrl: trimmed(env.NEXT_PUBLIC_FORGE_URL) ?? "https://forge.agentkitproject.com",
       profileUrl: trimmed(env.NEXT_PUBLIC_PROFILE_URL) ?? "https://profile.agentkitproject.com",
       autoUrl: trimmed(env.NEXT_PUBLIC_AUTO_URL) ?? "https://auto.agentkitproject.com",

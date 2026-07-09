@@ -42,6 +42,46 @@ describe("forge account resolution", () => {
     }
   });
 
+  it("under AUTH_PROVIDER=oidc trusts the bearer email claim without calling WorkOS", async () => {
+    let fetched = false;
+    const restore = mockFetch(async () => {
+      fetched = true;
+      return jsonResponse({});
+    });
+    const previousProvider = process.env.AUTH_PROVIDER;
+    const previousApiKey = process.env.WORKOS_API_KEY;
+    process.env.AUTH_PROVIDER = "oidc";
+    delete process.env.WORKOS_API_KEY; // no WorkOS config needed under OIDC
+
+    try {
+      const account = await resolveForgeSubmissionAccount({
+        id: "user_forge",
+        email: "forge@example.com"
+      });
+
+      assert.deepEqual(account, { id: "user_forge", email: "forge@example.com" });
+      assert.equal(fetched, false); // WorkOS was NOT called
+    } finally {
+      restore();
+      restoreEnv("AUTH_PROVIDER", previousProvider);
+      restoreEnv("WORKOS_API_KEY", previousApiKey);
+    }
+  });
+
+  it("under AUTH_PROVIDER=oidc requires the bearer to carry an email", async () => {
+    const previousProvider = process.env.AUTH_PROVIDER;
+    process.env.AUTH_PROVIDER = "oidc";
+
+    try {
+      await assert.rejects(
+        () => resolveForgeSubmissionAccount({ id: "user_forge" }),
+        (error) => error instanceof ForgeAccountError && error.code === "ACCOUNT_EMAIL_MISSING"
+      );
+    } finally {
+      restoreEnv("AUTH_PROVIDER", previousProvider);
+    }
+  });
+
   it("fails closed when WorkOS API key is not configured", async () => {
     const previousApiKey = process.env.WORKOS_API_KEY;
     delete process.env.WORKOS_API_KEY;

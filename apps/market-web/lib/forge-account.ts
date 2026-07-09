@@ -18,8 +18,14 @@ export class ForgeAccountError extends Error {
 }
 
 export async function resolveForgeSubmissionAccount(user: ForgeAuthenticatedUser): Promise<ForgeSubmissionAccount> {
-  const workOsUser = await getWorkOsUser(user.id);
-  const email = optionalString(workOsUser.email);
+  // Under AUTH_PROVIDER=oidc (self-host + Keycloak-migrated hosted) there is no
+  // WorkOS user-management API (WORKOS_API_KEY is gone). The OIDC bearer already
+  // carries the verified `email` claim (requireForgeOidcUser sets user.email), so
+  // trust it directly — same as the browser submit path. Only the hosted WorkOS
+  // token (no email claim on the bearer) re-fetches the account from WorkOS.
+  const email = isForgeOidcProvider()
+    ? optionalString(user.email)
+    : optionalString((await getWorkOsUser(user.id)).email);
 
   if (!email) {
     throw new ForgeAccountError(
@@ -33,6 +39,13 @@ export async function resolveForgeSubmissionAccount(user: ForgeAuthenticatedUser
     id: user.id,
     email
   };
+}
+
+// Mirrors lib/forge-auth.ts:isForgeOidcProvider (AUTH_PROVIDER=oidc, case/space-
+// insensitive). Inlined here so this WorkOS-bound module never transitively loads
+// the OIDC provider deps.
+function isForgeOidcProvider(): boolean {
+  return (process.env.AUTH_PROVIDER ?? "").trim().toLowerCase() === "oidc";
 }
 
 async function getWorkOsUser(userId: string) {

@@ -85,6 +85,18 @@ JSON with `toJson` so quoting/escaping is always valid.
         "config" (dict "claim.name" "groups" "full.path" "false"
           "id.token.claim" "true" "access.token.claim" "true" "userinfo.token.claim" "true"))
   -}}
+  {{- /* The Forge desktop/CLI device token is ALSO used as a bearer to hosted
+     Market (Forge → Market submit). Market verifies it as a Keycloak JWT and
+     requires its client id in `aud`. Stamp the Market clientId into BOTH the
+     device client's ID token and access token via an Audience mapper (device
+     client only). Reference the market clientId from values so a renamed Market
+     client still resolves. Mirrors the forge-web `market-audience` mapper above. */ -}}
+  {{- $desktopMarketClientId := (index $.Values.realm.clients "market").clientId -}}
+  {{- $desktopMappers = append $desktopMappers (dict
+      "name" "market-audience" "protocol" "openid-connect"
+      "protocolMapper" "oidc-audience-mapper"
+      "config" (dict "included.client.audience" $desktopMarketClientId
+        "id.token.claim" "true" "access.token.claim" "true")) -}}
   {{- $desktop := dict
       "clientId" .Values.realm.desktopClient.clientId
       "name" .Values.realm.desktopClient.clientId

@@ -89,6 +89,16 @@ describe("ecosystem links", () => {
     expect(links.autoUrl).toBe("https://auto.agentkitproject.com");
   });
 
+  it("HOSTED marketUrl is the PUBLIC Market, never the in-cluster API base", () => {
+    // On hosted prod AGENTKITMARKET_BASE_URL is the in-cluster Service URL
+    // (browser-unreachable). The browser-facing marketUrl must NOT fall back to
+    // it — it stays the public Market — while the server-side API base is still
+    // that in-cluster URL. (Regression: forge nav "Market" link 404'd on prod.)
+    const env = { AGENTKITMARKET_BASE_URL: "http://agentkitmarket-web" };
+    expect(getEcosystemLinks(env).marketUrl).toBe(HOSTED_MARKET);
+    expect(getMarketBaseUrl(env)).toBe("http://agentkitmarket-web");
+  });
+
   it("SELF-HOST omits unconfigured links (no link back into our ecosystem)", () => {
     const links = getEcosystemLinks({ SELF_HOST: "true" });
     expect(links.projectUrl).toBeUndefined();
