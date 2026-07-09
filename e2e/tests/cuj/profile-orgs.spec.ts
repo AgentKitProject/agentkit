@@ -441,10 +441,14 @@ test("org monthly limits: owner sets pool and member cap, persists (gamma only) 
 test("handle conflict: unavailable handle rejected, a free handle saves @wip @reversible", async ({ page }, testInfo) => {
   await page.goto(`${PROFILE}/account/profile`, { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/auth\/sign-in|\/realms\//);
+  // Wait for the profile form to hydrate — prod renders it slower than the 10s default.
+  await expect(page.getByRole("heading", { name: "Your AgentKitProject profile" })).toBeVisible({
+    timeout: 20_000
+  });
   const displayNameInput = page.locator('input[name="displayName"]');
   const handleInput = page.locator('input[name="handle"]');
-  await expect(displayNameInput).toBeVisible();
-  await expect(handleInput).toBeVisible();
+  await expect(displayNameInput).toBeVisible({ timeout: 20_000 });
+  await expect(handleInput).toBeVisible({ timeout: 20_000 });
 
   // Capture the current handle so we can restore it (afterAll re-restores too).
   capturedOriginalHandle = (await handleInput.inputValue()).trim();

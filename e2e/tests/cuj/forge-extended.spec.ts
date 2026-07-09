@@ -217,10 +217,14 @@ test.describe("CUJ — Forge web app (extended)", () => {
     await removeMatchingKits(page, kitName); // retry-safe pre-clean
     await createTemplateKit(page, kitName); // lands in the editor
 
-    // Open AGENTKIT.md, modify it, and save.
-    await page.locator(".file-tree button", { hasText: "AGENTKIT.md" }).click();
+    // Open AGENTKIT.md, modify it, and save. Wait for the file tree to hydrate
+    // before clicking — on slower (prod) backends the entry appears just past the
+    // 10s implicit-click default, which timed the click out.
+    const agentkitFile = page.locator(".file-tree button", { hasText: "AGENTKIT.md" });
+    await expect(agentkitFile).toBeVisible({ timeout: 20_000 });
+    await agentkitFile.click();
     const editor = page.locator("textarea.code-area");
-    await expect(editor).toBeVisible();
+    await expect(editor).toBeVisible({ timeout: 20_000 });
     await editor.fill((await editor.inputValue()) + `\n\nE2E edit marker ${RUN_ID}.\n`);
     await page.getByRole("button", { name: "Save file", exact: true }).click();
     await expect(page.locator(".akf-toast", { hasText: "Saved" })).toBeVisible({ timeout: 15_000 });
