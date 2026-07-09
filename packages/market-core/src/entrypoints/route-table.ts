@@ -49,6 +49,9 @@ export const ROUTES: RoutePattern[] = [
   { method: 'POST', template: '/admin/orgs/{orgId}/invites/{userId}/accept' },
   { method: 'POST', template: '/admin/kits/{kitId}/transfer' },
   { method: 'POST', template: '/admin/kits/{kitId}/visibility' },
+  // by-slug variants (browser UI holds only the slug; resolved server-side).
+  { method: 'POST', template: '/admin/kits/by-slug/{slug}/transfer' },
+  { method: 'POST', template: '/admin/kits/by-slug/{slug}/visibility' },
   // Org shared LLM API key (open-core; encrypted at rest, Seam B).
   { method: 'POST', template: '/admin/orgs/{orgId}/api-key' },
   { method: 'DELETE', template: '/admin/orgs/{orgId}/api-key' },

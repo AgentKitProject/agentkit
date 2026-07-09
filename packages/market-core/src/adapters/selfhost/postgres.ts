@@ -453,7 +453,17 @@ export function createPostgresAdminRepository(pool: PgPool): AdminRepository {
     },
 
     async listSubmissions(): Promise<SubmissionRecord[]> {
-      const result = await pool.query(`SELECT * FROM submissions LIMIT 100`);
+      // ORDER BY created_at DESC so the LIMIT window always contains the NEWEST
+      // rows. Without it, Postgres returns heap order (and UPDATEs relocate rows
+      // to the physical tail), so a newly created/archived submission can page
+      // out of the window — hiding it from the admin review queue and the user's
+      // "My Submissions". submission_id DESC is a stable tiebreaker for rows that
+      // share a created_at (same-millisecond inserts). created_at is NOT NULL.
+      const result = await pool.query(
+        `SELECT * FROM submissions
+           ORDER BY created_at DESC, submission_id DESC
+           LIMIT 100`,
+      );
       return result.rows.map(rowToSubmission);
     },
 

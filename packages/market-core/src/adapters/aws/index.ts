@@ -276,7 +276,18 @@ export function createDynamoAdminRepository(config: DynamoAdminConfig): AdminRep
         Limit: 100,
       }));
 
-      return (result.Items ?? []).filter(isSubmissionRecord);
+      // A Scan returns items in internal hash order, not creation order, so sort
+      // newest-first client-side (createdAt DESC, submissionId DESC tiebreaker)
+      // to match the Postgres adapter's ORDER BY created_at DESC and keep the
+      // review queue / "My Submissions" ordered.
+      // RESIDUAL: the Scan window itself is still hash-ordered, so on a table with
+      // >100 submissions the newest rows are not guaranteed to be scanned. A full
+      // fix needs a createdAt-keyed GSI (or a full paginated scan) — see the
+      // pagination follow-up note.
+      return (result.Items ?? [])
+        .filter(isSubmissionRecord)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)
+          || b.submissionId.localeCompare(a.submissionId));
     },
 
     async createValidationJob(submission: SubmissionRecord): Promise<ValidationJobRecord> {

@@ -315,9 +315,15 @@ export async function browserAcceptOrgInvite(request: Request, orgId: string) {
 // These are kit mutations owned by market-core (NOT Profile org entities), so they
 // keep proxying to the market backend. market-core enforces authz via its
 // Profile-backed OrgLookupClient (fail-closed) server-side.
+//
+// The browser routes carry the kit's URL SLUG (`/api/kits/[slug]/{transfer,
+// visibility}`), not its kit_id, and can't resolve a PRIVATE kit's kit_id via the
+// public catalog. So they proxy to the backend `by-slug` variants, which resolve
+// slug→kit server-side (mirroring the download-by-slug route). The body's `kitId`
+// field is ignored by the backend (it uses the resolved kit).
 // ---------------------------------------------------------------------------
 
-export async function browserTransferKit(request: Request, kitId: string) {
+export async function browserTransferKit(request: Request, slug: string) {
   try {
     const user = await requireUserForApi();
     const body = (await request.json()) as unknown;
@@ -328,13 +334,13 @@ export async function browserTransferKit(request: Request, kitId: string) {
     }
 
     const backendBody = { ...parsed.data, actorUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminTransferKit(kitId), "POST", backendBody);
+    return proxyToBackend(marketBackendOrgRoutes.adminTransferKitBySlug(slug), "POST", backendBody);
   } catch (error) {
     return handleBrowserOrgException(error);
   }
 }
 
-export async function browserSetKitVisibility(request: Request, kitId: string) {
+export async function browserSetKitVisibility(request: Request, slug: string) {
   try {
     const user = await requireUserForApi();
     const body = (await request.json()) as unknown;
@@ -345,7 +351,7 @@ export async function browserSetKitVisibility(request: Request, kitId: string) {
     }
 
     const backendBody = { ...parsed.data, actorUserId: user.id };
-    return proxyToBackend(marketBackendOrgRoutes.adminSetKitVisibility(kitId), "POST", backendBody);
+    return proxyToBackend(marketBackendOrgRoutes.adminSetKitVisibilityBySlug(slug), "POST", backendBody);
   } catch (error) {
     return handleBrowserOrgException(error);
   }

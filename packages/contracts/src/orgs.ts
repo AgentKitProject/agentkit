@@ -270,6 +270,16 @@ export const marketBackendOrgRoutes = {
   /** POST /admin/kits/{kitId}/visibility */
   adminSetKitVisibility: (kitId: string) =>
     `/admin/kits/${encodeURIComponent(kitId)}/visibility`,
+  /**
+   * POST /admin/kits/by-slug/{slug}/transfer — slug variant for the browser UI,
+   * which holds only the URL slug (a PRIVATE kit's kit_id can't be resolved via
+   * the public catalog). The backend resolves slug→kit server-side.
+   */
+  adminTransferKitBySlug: (slug: string) =>
+    `/admin/kits/by-slug/${encodeURIComponent(slug)}/transfer`,
+  /** POST /admin/kits/by-slug/{slug}/visibility — slug variant (see adminTransferKitBySlug). */
+  adminSetKitVisibilityBySlug: (slug: string) =>
+    `/admin/kits/by-slug/${encodeURIComponent(slug)}/visibility`,
   /** POST /admin/orgs/{orgId}/stripe-account — persist Stripe payout fields on an org. */
   adminSetOrgStripeAccount: (orgId: string) =>
     `/admin/orgs/${encodeURIComponent(orgId)}/stripe-account`,

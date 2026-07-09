@@ -341,6 +341,32 @@ export async function routeRequest(request: CoreRequest, deps: RouterDeps): Prom
           });
       }
 
+      // by-slug variants: same handlers, but the kit is resolved from the URL
+      // slug (the browser UI holds only the slug and can't resolve a PRIVATE
+      // kit's kit_id via the public catalog). The kit_id routes above are
+      // unchanged. Audit reads the resolved kit_id from the response body.
+      if (request.method === 'POST' && request.resource === '/admin/kits/by-slug/{slug}/transfer') {
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => transferKitHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins)),
+          (responseBody) => {
+            const item = (responseBody as { item?: { kitId?: string } })?.item;
+            const b = auditBody();
+            const targetOrgId = typeof b?.targetOrgId === 'string' ? (b.targetOrgId as string) : null;
+            return item?.kitId
+              ? { action: 'kit.transferred', targetType: 'kit', targetId: item.kitId, orgId: targetOrgId ?? undefined, metadata: { targetOrgId } }
+              : undefined;
+          });
+      }
+
+      if (request.method === 'POST' && request.resource === '/admin/kits/by-slug/{slug}/visibility') {
+        return withAudit(deps, request, () => withOrgRepo(request, allowedOrigins, orgRepository, (repo) => setKitVisibilityHandler(request, adminRepository, repo, orgLookup as OrgLookupClient, allowedOrigins, deps.userPrivateKitLimit ?? null)),
+          (responseBody) => {
+            const item = (responseBody as { item?: { kitId?: string; visibility?: string } })?.item;
+            return item?.kitId
+              ? { action: 'kit.visibility_set', targetType: 'kit', targetId: item.kitId, metadata: { visibility: item.visibility ?? null } }
+              : undefined;
+          });
+      }
+
       // --- Org shared LLM API key (open-core; encrypted at rest) ---
       if (request.resource === '/admin/orgs/{orgId}/api-key') {
         if (request.method === 'POST') {
@@ -1485,6 +1511,29 @@ async function claimInvitesHandler(
   return json(request, allowedOrigins, 200, { items: memberships });
 }
 
+/**
+ * Resolves the target kit for a kit-mutation route from EITHER a `kitId` OR a
+ * `slug` path parameter. The `by-slug` variants let the market-web browser UI —
+ * which only holds the URL slug — drive these mutations without first resolving
+ * the kit_id itself (the public catalog lookup 404s on PRIVATE kits, so the
+ * browser can't do it). Mirrors `createKitDownloadUrlBySlug`; the backend stays
+ * kit_id-based downstream (`kit.kitId`).
+ */
+async function resolveKitFromPath(
+  request: CoreRequest,
+  adminRepository: AdminRepository,
+): Promise<KitRecord | undefined> {
+  const kitId = request.pathParameters?.kitId;
+  if (kitId) {
+    return adminRepository.getKit(kitId);
+  }
+  const slug = request.pathParameters?.slug;
+  if (slug) {
+    return adminRepository.getKitBySlug(slug);
+  }
+  return undefined;
+}
+
 async function transferKitHandler(
   request: CoreRequest,
   adminRepository: AdminRepository,
@@ -1492,23 +1541,21 @@ async function transferKitHandler(
   orgLookup: OrgLookupClient,
   allowedOrigins: string[],
 ): Promise<CoreResponse> {
-  const kitId = request.pathParameters?.kitId;
-  if (!kitId) {
-    return json(request, allowedOrigins, 400, { message: 'Missing kitId' });
-  }
   const body = parseJsonBody(request) as Record<string, unknown> | undefined;
   const actorUserId = typeof body?.actorUserId === 'string' ? body.actorUserId : undefined;
   if (!actorUserId) {
     return json(request, allowedOrigins, 400, { message: 'actorUserId is required' });
   }
+
+  const kit = await resolveKitFromPath(request, adminRepository);
+  if (!kit) {
+    return json(request, allowedOrigins, 404, { message: 'Kit not found' });
+  }
+  const kitId = kit.kitId;
+
   const parsed = transferKitRequestSchema.safeParse({ kitId, targetOrgId: body?.targetOrgId });
   if (!parsed.success) {
     return json(request, allowedOrigins, 400, { message: 'Invalid transfer payload' });
-  }
-
-  const kit = await adminRepository.getKit(kitId);
-  if (!kit) {
-    return json(request, allowedOrigins, 404, { message: 'Kit not found' });
   }
 
   // Actor must manage the kit's current owning org (owner/admin). Membership/org
@@ -1547,23 +1594,21 @@ async function setKitVisibilityHandler(
    */
   privateKitLimit: number | null,
 ): Promise<CoreResponse> {
-  const kitId = request.pathParameters?.kitId;
-  if (!kitId) {
-    return json(request, allowedOrigins, 400, { message: 'Missing kitId' });
-  }
   const body = parseJsonBody(request) as Record<string, unknown> | undefined;
   const actorUserId = typeof body?.actorUserId === 'string' ? body.actorUserId : undefined;
   if (!actorUserId) {
     return json(request, allowedOrigins, 400, { message: 'actorUserId is required' });
   }
+
+  const kit = await resolveKitFromPath(request, adminRepository);
+  if (!kit) {
+    return json(request, allowedOrigins, 404, { message: 'Kit not found' });
+  }
+  const kitId = kit.kitId;
+
   const parsed = setKitVisibilityRequestSchema.safeParse({ kitId, visibility: body?.visibility });
   if (!parsed.success) {
     return json(request, allowedOrigins, 400, { message: 'Invalid visibility payload' });
-  }
-
-  const kit = await adminRepository.getKit(kitId);
-  if (!kit) {
-    return json(request, allowedOrigins, 404, { message: 'Kit not found' });
   }
   // Membership lookup from Profile (fail-closed: a rejection surfaces as 500).
   const membership = await resolveKitMembership(orgLookup, kit, actorUserId);

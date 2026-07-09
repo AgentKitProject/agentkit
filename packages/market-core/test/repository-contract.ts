@@ -15,7 +15,7 @@
  *   });
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AdminRepository, AuditRepository, CatalogRepository, FavoritesRepository, OrgRepository } from '../src/core/ports.js';
 import type {
   CreateSubmissionInput,
@@ -123,6 +123,42 @@ export function runRepositoryContract(name: string, makeRepos: MakeRepos): void 
 
       it('returns undefined for an unknown submission', async () => {
         expect(await repos.admin.getSubmission('submission_nope')).toBeUndefined();
+      });
+    });
+
+    describe('listSubmissions', () => {
+      it('returns submissions newest-first by createdAt', async () => {
+        // createSubmission stamps createdAt from the wall clock, so fake ONLY
+        // Date (leaving real timers for the AWS SDK) to control each row's
+        // createdAt. Create OUT of insertion order — middle, newest, oldest —
+        // so neither Postgres heap order nor DynamoDB hash order can coincide
+        // with the expected newest-first result.
+        vi.useFakeTimers({ toFake: ['Date'] });
+        let middle: SubmissionRecord;
+        let newest: SubmissionRecord;
+        let oldest: SubmissionRecord;
+        try {
+          vi.setSystemTime(new Date('2020-01-01T00:00:02.000Z'));
+          middle = (await repos.admin.createSubmission(baseInput())).submission;
+          vi.setSystemTime(new Date('2020-01-01T00:00:03.000Z'));
+          newest = (await repos.admin.createSubmission(baseInput())).submission;
+          vi.setSystemTime(new Date('2020-01-01T00:00:01.000Z'));
+          oldest = (await repos.admin.createSubmission(baseInput())).submission;
+        } finally {
+          vi.useRealTimers();
+        }
+
+        const listed = await repos.admin.listSubmissions();
+        expect(listed.map((s) => s.submissionId)).toEqual([
+          newest.submissionId,
+          middle.submissionId,
+          oldest.submissionId,
+        ]);
+        expect(listed.map((s) => s.createdAt)).toEqual([
+          '2020-01-01T00:00:03.000Z',
+          '2020-01-01T00:00:02.000Z',
+          '2020-01-01T00:00:01.000Z',
+        ]);
       });
     });
 
