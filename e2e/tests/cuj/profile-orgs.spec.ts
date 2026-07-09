@@ -9,8 +9,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 // monthly limits, plus handle-uniqueness and the Connected Apps page.
 //
 // Tag rules (see playwright.config.ts):
-//   - @wip on EVERY test → runs ONLY in the `wip` project; excluded from
-//     cuj / prod-cuj / canary, so these NEVER gate a deploy until promoted.
+//   - PROMOTED → the cuj project runs every test on gamma and they now gate
+//     deploys; the @reversible subset also runs on prod via prod-cuj.
 //   - @reversible → also prod-safe (creates+deletes its own RUN_ID artifacts,
 //     no money, no LLM/compute spend, no irreversible writes).
 //   - Untagged-reversible + `test.skip(envName !== "gamma", …)` → gamma-only.
@@ -209,7 +209,7 @@ test.afterAll(async () => {
 // 1. Role ASSIGNMENT — add an admin and a viewer; both roles render in the table
 // ---------------------------------------------------------------------------
 
-test("member role assignment renders admin and viewer roles @wip @reversible", async ({ page }, testInfo) => {
+test("member role assignment renders admin and viewer roles @reversible", async ({ page }, testInfo) => {
   const name = `${RUN_ID}-roles`;
   const adminUser = `${RUN_ID}-usr-a`;
   const viewerUser = `${RUN_ID}-usr-v`;
@@ -252,7 +252,7 @@ test("member role assignment renders admin and viewer roles @wip @reversible", a
 // 2. Permission ENFORCEMENT — a plain member is denied management (gamma-only).
 // ---------------------------------------------------------------------------
 
-test("plain member cannot manage members, keys, or budget @wip", async () => {
+test("plain member cannot manage members, keys, or budget", async () => {
   test.skip(envName !== "gamma", "permission enforcement is gamma-only (needs a second seeded identity)");
   // Even on gamma this cannot run with the current single-credential suite:
   test.skip(
@@ -270,7 +270,7 @@ test("plain member cannot manage members, keys, or budget @wip", async () => {
 // 3. Member REMOVAL — owner removes one of several members; row + count update
 // ---------------------------------------------------------------------------
 
-test("owner removes a member: row disappears and count decrements @wip @reversible", async ({ page }, testInfo) => {
+test("owner removes a member: row disappears and count decrements @reversible", async ({ page }, testInfo) => {
   const name = `${RUN_ID}-remove`;
   const member1 = `${RUN_ID}-usr-1`;
   const member2 = `${RUN_ID}-usr-2`;
@@ -310,7 +310,7 @@ test("owner removes a member: row disappears and count decrements @wip @reversib
 //    Reversible in itself, but scoped gamma-only per the suite's org-write policy.
 // ---------------------------------------------------------------------------
 
-test("org shared API key: save persists masked, then clears (gamma only) @wip", async ({ page }) => {
+test("org shared API key: save persists masked, then clears (gamma only)", async ({ page }) => {
   test.skip(envName !== "gamma", "org API-key writes are gamma-only in this suite");
   const name = `${RUN_ID}-apikey`;
   await preCleanOrgsByName(page.request, name);
@@ -354,7 +354,7 @@ test("org shared API key: save persists masked, then clears (gamma only) @wip", 
 // 5. Org per-run BUDGET (gamma-only): set USD default → persists → clear.
 // ---------------------------------------------------------------------------
 
-test("org per-run budget: owner sets USD default, persists, clears (gamma only) @wip", async ({ page }) => {
+test("org per-run budget: owner sets USD default, persists, clears (gamma only)", async ({ page }) => {
   test.skip(envName !== "gamma", "org budget writes are gamma-only in this suite");
   const name = `${RUN_ID}-budget`;
   await preCleanOrgsByName(page.request, name);
@@ -392,7 +392,7 @@ test("org per-run budget: owner sets USD default, persists, clears (gamma only) 
 // 6. Org MONTHLY LIMITS / pool (gamma-only): set pool + member cap → persists.
 // ---------------------------------------------------------------------------
 
-test("org monthly limits: owner sets pool and member cap, persists (gamma only) @wip", async ({ page }) => {
+test("org monthly limits: owner sets pool and member cap, persists (gamma only)", async ({ page }) => {
   test.skip(envName !== "gamma", "org monthly-limit writes are gamma-only in this suite");
   const name = `${RUN_ID}-limits`;
   await preCleanOrgsByName(page.request, name);
@@ -438,7 +438,7 @@ test("org monthly limits: owner sets pool and member cap, persists (gamma only) 
 //    journey and same server-side uniqueness/availability guard.
 // ---------------------------------------------------------------------------
 
-test("handle conflict: unavailable handle rejected, a free handle saves @wip @reversible", async ({ page }, testInfo) => {
+test("handle conflict: unavailable handle rejected, a free handle saves @reversible", async ({ page }, testInfo) => {
   await page.goto(`${PROFILE}/account/profile`, { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/auth\/sign-in|\/realms\//);
   // Wait for the profile form to hydrate — prod renders it slower than the 10s default.
@@ -487,7 +487,7 @@ test("handle conflict: unavailable handle rejected, a free handle saves @wip @re
 // 8. Connected Apps page: lists ecosystem apps with working Open links.
 // ---------------------------------------------------------------------------
 
-test("connected apps page lists ecosystem apps with working Open links @wip @reversible", async ({ page }, testInfo) => {
+test("connected apps page lists ecosystem apps with working Open links @reversible", async ({ page }, testInfo) => {
   await page.goto(`${PROFILE}/account/products`, { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/auth\/sign-in|\/realms\//);
   await expect(page.getByRole("heading", { name: "Connected apps" })).toBeVisible();

@@ -12,8 +12,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 //   - The managed inference floor (GATEWAY_MANAGED_INFERENCE_FLOOR_CENTS) only
 //     bites on a METERED gateway; a self-host/unmetered deployment is never gated,
 //     so the floor is inert and the test self-skips (the correct outcome).
-// Therefore NO test here is @reversible (none is prod-safe): each is tagged @wip
-// (runs only in the `wip` project — never gates a deploy) and guarded with
+// Therefore NO test here is @reversible (none is prod-safe): each now runs in the
+// gamma cuj gate (promoted from the `@wip` staging lane) and is guarded with
 // `test.skip(envName !== "gamma", …)`.
 //
 // The seller-PAYOUTS UI (`OrgPayoutsPanel`) lives in the PRIVATE optional package
@@ -185,7 +185,7 @@ test.describe("CUJ — Seller payouts + managed inference floor", () => {
   //    Stripe onboarding account-link URL. The Stripe-hosted onboarding page is
   //    external and cannot be automated — we stop at the link (do NOT follow it).
   // -------------------------------------------------------------------------
-  test("seller Connect onboarding: initiate returns a Stripe onboarding link @wip", async ({ page }, testInfo) => {
+  test("seller Connect onboarding: initiate returns a Stripe onboarding link", async ({ page }, testInfo) => {
     test.skip(envName !== "gamma", "gamma-only: real Stripe Connect — TEST MODE lives on gamma, never prod");
 
     const name = `${RUN_ID}-payouts`;
@@ -279,7 +279,7 @@ test.describe("CUJ — Seller payouts + managed inference floor", () => {
   //    or 503 when commerce is off — never a 200 batch anonymously); document the
   //    fixture the full transfer + idempotency check needs.
   // -------------------------------------------------------------------------
-  test("seller payout batch: admin run endpoint is mounted and gated; transfer needs a fixture @wip", async ({ browser }, testInfo) => {
+  test("seller payout batch: admin run endpoint is mounted and gated; transfer needs a fixture", async ({ browser }, testInfo) => {
     test.skip(envName !== "gamma", "gamma-only: the payout batch performs real (test-mode) Stripe Transfers");
 
     // Anonymous context (no storageState) — proves the route exists + is gated
@@ -322,7 +322,7 @@ test.describe("CUJ — Seller payouts + managed inference floor", () => {
   //    off (billing snapshot + the run/settings inference selectors), then document
   //    the curated balance fixture the floor's 402 delta needs.
   // -------------------------------------------------------------------------
-  test("managed inference floor applies to managed runs, not BYO @wip", async ({ page }, testInfo) => {
+  test("managed inference floor applies to managed runs, not BYO", async ({ page }, testInfo) => {
     test.skip(envName !== "gamma", "gamma-only: the floor only bites on a metered gateway (compute-billed)");
 
     const billing = await getAutoBilling(page.request);

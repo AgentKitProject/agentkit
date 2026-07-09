@@ -6,9 +6,9 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 // (Header/AppShell active-tab highlighting + the built-in ThemeToggle theme
 // persistence) and the Keycloak Google identity-broker sign-in surface.
 //
-// NEWLY AUTHORED → every test is tagged @wip so it runs ONLY in the `wip`
-// project (playwright.config.ts) and never gates a deploy (cuj / prod-cuj /
-// canary all grepInvert @wip). Drop @wip once a test is shaken out on a live env.
+// PROMOTED (shaken out on a live env) → these tests now gate deploys: the cuj
+// project runs them on gamma and the @reversible subset runs on prod (prod-cuj).
+// (The `@wip` staging lane — cuj/prod-cuj/canary grepInvert @wip — is empty here.)
 //
 // Tag rules honored:
 //   - @reversible (prod-safe): the nav ACTIVE-TAB and THEME-persistence journeys
@@ -25,7 +25,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 //     it), and gamma-guarding a prod-only, read-only surface would make the test
 //     assert nothing on either env. It self-skips where the broker isn't mounted.
 //     The un-automatable external Google consent hop is always stubbed with a
-//     reason (see the test). Being @wip, it never gates a deploy regardless.
+//     reason (see the test). It now runs in the cuj (gamma) gate, self-skipping
+//     where the broker isn't mounted.
 //
 // No RUN_ID-named artifacts are minted here — the journeys OBSERVE existing UI
 // (nav/login chrome) or toggle ephemeral client theme, so there is nothing to
@@ -125,7 +126,7 @@ test.afterAll(async () => {
 //    hop is un-automatable and is deliberately stubbed with a reason.
 // ---------------------------------------------------------------------------
 
-test("Google identity-broker button targets the Keycloak broker endpoint (consent hop stubbed) @wip", async ({
+test("Google identity-broker button targets the Keycloak broker endpoint (consent hop stubbed)", async ({
   browser
 }, testInfo) => {
   // Fresh anonymous context (no storageState) so the Keycloak login page renders
@@ -198,7 +199,7 @@ test("Google identity-broker button targets the Keycloak broker endpoint (consen
 //    not. Read-only → @reversible.
 // ---------------------------------------------------------------------------
 
-test("shared nav highlights the active tab on Market, Forge, and Auto @wip @reversible", async ({
+test("shared nav highlights the active tab on Market, Forge, and Auto @reversible", async ({
   page
 }, testInfo) => {
   testInfo.annotations.push({
@@ -229,7 +230,7 @@ test("shared nav highlights the active tab on Market, Forge, and Auto @wip @reve
 //    (Forge → Market). Client-localStorage only → @reversible.
 // ---------------------------------------------------------------------------
 
-test("theme toggle persists across a reload and the shared akf-theme key drives a second app @wip @reversible", async ({
+test("theme toggle persists across a reload and the shared akf-theme key drives a second app @reversible", async ({
   page
 }, testInfo) => {
   // --- Forge: toggle → data-theme flips + persists to the shared key. ---

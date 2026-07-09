@@ -7,10 +7,10 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 // AgentKitMarket publish + moderation LIFECYCLE CUJs (the irreversible-heavy
 // journeys the read-only market.spec.ts deliberately leaves out).
 //
-// EVERY test here is tagged @wip → it runs ONLY in the `wip` project until a
-// human verifies it; the cuj / prod-cuj / canary gates all exclude @wip, so
-// these never gate a deploy. Drop the @wip tag from a test once it is green to
-// promote it.
+// These tests are PROMOTED (human-verified) → the cuj project runs them on gamma
+// and they now gate deploys; the @reversible subset (journey 2) also runs on prod
+// via prod-cuj. The `@wip` staging lane (cuj / prod-cuj / canary grepInvert) is
+// now empty here.
 //
 // Tag rules honored below:
 //   - @reversible (also runs in prod-cuj): journey 2 only — a read-only download
@@ -400,7 +400,7 @@ test.afterAll(async ({ browser }) => {
 //    → publish → public catalog inclusion → download the .agentkit.zip.
 // ---------------------------------------------------------------------------
 
-test("full publish lifecycle: submit, validate, approve, publish, catalog, download @wip", async ({ page }) => {
+test("full publish lifecycle: submit, validate, approve, publish, catalog, download", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: approve/publish are irreversible admin actions");
   const kitName = `${RUN_ID}-pub`;
 
@@ -436,7 +436,7 @@ test("full publish lifecycle: submit, validate, approve, publish, catalog, downl
 //    downloads an already-published FREE catalog kit. Read-only, prod-safe.
 // ---------------------------------------------------------------------------
 
-test("signed-in user downloads a free published catalog kit @reversible @wip", async ({ page }) => {
+test("signed-in user downloads a free published catalog kit @reversible", async ({ page }) => {
   await page.goto(`${market}/kits`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Published Agent Kits" })).toBeVisible();
   const cards = page.locator(".kit-grid .kit-card");
@@ -459,7 +459,7 @@ test("signed-in user downloads a free published catalog kit @reversible @wip", a
 // 3. Admin REJECT a submission with review notes (gamma-only, terminal).
 // ---------------------------------------------------------------------------
 
-test("admin rejects a submission with review notes @wip", async ({ page }) => {
+test("admin rejects a submission with review notes", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: reject is a terminal admin action");
   const kitName = `${RUN_ID}-reject`;
 
@@ -496,7 +496,7 @@ test("admin rejects a submission with review notes @wip", async ({ page }) => {
 //    uniquely-hashed fixture, then round-trips catalog visibility.
 // ---------------------------------------------------------------------------
 
-test("admin hides then unhides a published kit @wip", async ({ page }) => {
+test("admin hides then unhides a published kit", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: publish/hide/unhide are irreversible admin actions");
   const kitName = `${RUN_ID}-hide`;
 
@@ -558,7 +558,7 @@ test("admin hides then unhides a published kit @wip", async ({ page }) => {
 //    archiveAdminSubmission → status "archived").
 // ---------------------------------------------------------------------------
 
-test("admin archives a submission out of the default queue @wip", async ({ page }) => {
+test("admin archives a submission out of the default queue", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: archiving a submission is a terminal admin action");
   const kitName = `${RUN_ID}-arch`;
 
@@ -593,7 +593,7 @@ test("admin archives a submission out of the default queue @wip", async ({ page 
 //    zip → the 'failed' badge + error detail render on the submission page.
 // ---------------------------------------------------------------------------
 
-test("validation failure surfaces a failed badge and error detail @wip", async ({ page }) => {
+test("validation failure surfaces a failed badge and error detail", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: creates a failed submission in the review queue");
   const kitName = `${RUN_ID}-bad`;
 

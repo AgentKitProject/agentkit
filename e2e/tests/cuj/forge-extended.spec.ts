@@ -3,9 +3,9 @@ import { targets, envName, RUN_ID } from "../../lib/targets";
 import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 
 // Forge web-app EXTENDED CUJs (apps/forge) — editor / validate / export / use /
-// import-from-market journeys. Every test here is @wip: it runs ONLY in the
-// `wip` Playwright project (playwright.config.ts) and is excluded from the
-// cuj/prod-cuj/canary gates until promoted. Every journey is also @reversible —
+// import-from-market journeys. These tests are PROMOTED: they now gate deploys —
+// the cuj project runs them on gamma and, since every journey is @reversible, the
+// prod-cuj project runs them on prod too. Every journey is also @reversible —
 // it creates + deletes only the signed-in user's own server-side kits (KitStore),
 // with ZERO LLM/compute spend and no purchases (prepared-prompt render is a pure
 // server-side template substitution, and export/package/validate are local ops).
@@ -209,7 +209,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
   });
 
   // 1. EDIT kit contents → save → validate at publishable → report renders.
-  test("edit a kit file, save, then validate renders a report @wip @reversible", async ({
+  test("edit a kit file, save, then validate renders a report @reversible", async ({
     page
   }) => {
     const kitName = `${RUN_ID}-edit`;
@@ -244,7 +244,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
   //    box (it ships README.md + LICENSE), so we first DELETE a publishable-required
   //    file (README.md) via the kit files API — then "publishable" FAILS with a
   //    "Missing required file: README.md" error the report must render.
-  test("validate an incomplete kit at publishable surfaces errors @wip @reversible", async ({
+  test("validate an incomplete kit at publishable surfaces errors @reversible", async ({
     page
   }) => {
     const kitName = `${RUN_ID}-invalid`;
@@ -274,7 +274,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
   });
 
   // 3. Export to CLAUDE CODE → browser download (.zip) + success toast.
-  test("export a kit to Claude Code downloads a .zip @wip @reversible", async ({ page }) => {
+  test("export a kit to Claude Code downloads a .zip @reversible", async ({ page }) => {
     const kitName = `${RUN_ID}-cc`;
     await gotoForge(page);
     await removeMatchingKits(page, kitName);
@@ -294,7 +294,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
   });
 
   // 4. Export to CODEX → browser download + success toast.
-  test("export a kit to Codex downloads a package @wip @reversible", async ({ page }) => {
+  test("export a kit to Codex downloads a package @reversible", async ({ page }) => {
     const kitName = `${RUN_ID}-codex`;
     await gotoForge(page);
     await removeMatchingKits(page, kitName);
@@ -315,7 +315,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
 
   // 5. PREPARED PROMPTS: seed a prompt into a fresh kit, then drive the Use section
   //    (list → select → fill inputs → render → output). Pure template render, no LLM.
-  test("render a prepared prompt with inputs @wip @reversible", async ({ page }, testInfo) => {
+  test("render a prepared prompt with inputs @reversible", async ({ page }, testInfo) => {
     const kitName = `${RUN_ID}-prompt`;
     await gotoForge(page);
     await removeMatchingKits(page, kitName);
@@ -364,7 +364,7 @@ test.describe("CUJ — Forge web app (extended)", () => {
 
   // 6. Import a kit FROM MARKET by slug → appears in My Kits + editable.
   //    Reversible (import a copy, then delete it); import never charges money.
-  test("import a kit from Market by slug @wip @reversible", async ({ page }, testInfo) => {
+  test("import a kit from Market by slug @reversible", async ({ page }, testInfo) => {
     await gotoForge(page); // establishes the authed session for the catalog probe
 
     // Discover a published slug via Forge's own catalog proxy (authed cookies).

@@ -12,7 +12,7 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 //
 // This is IRREVERSIBLE (an admin publish to the catalog) and touches the run
 // surface, so it is:
-//   • tagged @wip           → runs ONLY in the `wip` project; never gates deploys.
+//   • PROMOTED              → runs in the cuj gate on gamma; now gates deploys.
 //   • NOT tagged @reversible → excluded from the prod gate.
 //   • hard-guarded gamma-only via test.skip(envName !== "gamma") → publish only
 //     ever happens against gamma's private self-host catalog, and the E2E user
@@ -271,7 +271,7 @@ test.afterAll(async ({ browser }) => {
 // ---------------------------------------------------------------------------
 
 test.describe("CUJ — headline cross-app lifecycle", () => {
-  test("build in Forge → submit → admin publish → discoverable → open in Run/Chat @wip", async ({
+  test("build in Forge → submit → admin publish → discoverable → open in Run/Chat", async ({
     page
   }, testInfo) => {
     // Gamma-only: an admin PUBLISH is irreversible, and the E2E user is a Market

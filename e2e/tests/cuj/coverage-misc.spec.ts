@@ -15,9 +15,9 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 //      reachable (the sweep-driven real chained-run dispatch is not
 //      browser-drivable — documented).
 //
-// TAGGING (see playwright.config.ts): EVERY test is `@wip` → it runs ONLY in the
-// `wip` project and never gates a deploy (cuj / prod-cuj / canary all exclude
-// @wip) until a human promotes it. A test is ALSO `@reversible` (→ prod-cuj)
+// TAGGING (see playwright.config.ts): these tests are PROMOTED — the cuj project
+// runs them on gamma and they gate deploys (the `@wip` staging lane that
+// cuj / prod-cuj / canary exclude is now empty here). A test is ALSO `@reversible` (→ prod-cuj)
 // only when fully prod-safe: read-only, no writes, no money, no compute, no
 // artifacts. Journeys 2 + 3 are read-only renders → @reversible. Journeys 1 + 4
 // are GAMMA-ONLY (`test.skip(envName !== "gamma", …)`): the E2E user is a Market
@@ -223,7 +223,7 @@ test.afterAll(async () => {
 //    actor/action columns; empty/failed states are tolerated with a reason.
 // ===========================================================================
 
-test("admin audit log renders append-only entries with actor + action columns @wip", async ({ page }, testInfo) => {
+test("admin audit log renders append-only entries with actor + action columns", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: the E2E user is a Market admin only on gamma (audit log is admin-gated)");
 
   // (a) The append-only log is queryable by an admin (contract smoke). A
@@ -296,7 +296,7 @@ test("admin audit log renders append-only entries with actor + action columns @w
 //    kit's content. Read-only render of a public listing → prod-safe.
 // ===========================================================================
 
-test("kit detail page renders its full section set @wip @reversible", async ({ page }, testInfo) => {
+test("kit detail page renders its full section set @reversible", async ({ page }, testInfo) => {
   // Discover a published kit slug from the catalog.
   await page.goto(`${MARKET}/kits`, { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/auth\/sign-in|\/realms\//);
@@ -360,7 +360,7 @@ test("kit detail page renders its full section set @wip @reversible", async ({ p
 //    user is verified (else annotated). Read-only → prod-safe.
 // ===========================================================================
 
-test("public profile shows avatar initials and (when verified) the Verified badge @wip @reversible", async ({ page }, testInfo) => {
+test("public profile shows avatar initials and (when verified) the Verified badge @reversible", async ({ page }, testInfo) => {
   const me = await getJson<PrivateProfile>(page.request, `${PROFILE}/api/profile/me`).catch(() => null);
   test.skip(!me, "GET /api/profile/me unreachable — cannot resolve the signed-in user's public handle");
   const handle = (me!.handle ?? "").trim();
@@ -418,7 +418,7 @@ test("public profile shows avatar initials and (when verified) the Verified badg
 //    Gamma-only: needs a kit + approval (self-host isolated Auto store).
 // ===========================================================================
 
-test("run_completed trigger: persists chaining config + event wiring is reachable (chained dispatch is sweep-driven) @wip", async ({ page }, testInfo) => {
+test("run_completed trigger: persists chaining config + event wiring is reachable (chained dispatch is sweep-driven)", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: needs a kit + approval (self-host isolated Auto store); real chaining runs in the sweep");
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available for this user");

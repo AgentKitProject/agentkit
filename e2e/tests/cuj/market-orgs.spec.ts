@@ -4,8 +4,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 
 // AgentKitMarket orgs / visibility / consumer-surface CUJs.
 //
-// Every test is tagged @wip → runs ONLY in the `wip` project (never gates a
-// deploy). Tests also tagged @reversible are prod-safe (read-only, or a fully
+// These tests are PROMOTED → the cuj project runs them on gamma and they now gate
+// deploys. Tests also tagged @reversible are prod-safe (read-only, or a fully
 // restored round-trip; no money / compute / irreversible writes). The one
 // transfer-MUTATION test is gamma-only: kit transfer is a KIT-ownership change
 // whose "transfer back to the personal org" reversal is supported but not
@@ -210,7 +210,7 @@ async function listOrgs(page: Page): Promise<Org[]> {
 // 1. Kit visibility toggle — private excludes from the catalog, public restores.
 // ===========================================================================
 
-test("kit visibility: controls render; owned kit private→hidden→public @reversible @wip", async ({
+test("kit visibility: controls render; owned kit private→hidden→public @reversible", async ({
   page
 }) => {
   // Surface assertion (always safe/reversible): the visibility controls render.
@@ -248,7 +248,7 @@ test("kit visibility: controls render; owned kit private→hidden→public @reve
 // 2a. Kit org-transfer controls render (surface only — no mutation).
 // ===========================================================================
 
-test("kit transfer: controls render (transfer target or no-orgs state) @reversible @wip", async ({
+test("kit transfer: controls render (transfer target or no-orgs state) @reversible", async ({
   page
 }) => {
   await gotoManage(page, PLACEHOLDER_SLUG);
@@ -281,7 +281,7 @@ test("kit transfer: controls render (transfer target or no-orgs state) @reversib
 //     team org, then restores ownership to the personal org.
 // ===========================================================================
 
-test("kit transfer: move owned kit to a team org then restore (gamma only) @wip", async ({
+test("kit transfer: move owned kit to a team org then restore (gamma only)", async ({
   page
 }) => {
   test.skip(envName !== "gamma", "gamma-only: kit-ownership transfer is not a clean prod-safe reversal");
@@ -322,7 +322,7 @@ test("kit transfer: move owned kit to a team org then restore (gamma only) @wip"
 //    on the free build). Read-only.
 // ===========================================================================
 
-test("my purchases page renders (entitlements list or free-build stub) @reversible @wip", async ({
+test("my purchases page renders (entitlements list or free-build stub) @reversible", async ({
   page
 }) => {
   await page.goto(`${market}/purchases`, { waitUntil: "domcontentloaded" });
@@ -342,7 +342,7 @@ test("my purchases page renders (entitlements list or free-build stub) @reversib
 //    specialized badge on the detail page.
 // ===========================================================================
 
-test("catalog + detail badges render (price / licensed / premium) @reversible @wip", async ({
+test("catalog + detail badges render (price / licensed / premium) @reversible", async ({
   page
 }) => {
   const { cards, count } = await openCatalog(page);
@@ -404,7 +404,7 @@ test("catalog + detail badges render (price / licensed / premium) @reversible @w
 // 5. Publisher profile page lists a seller's published kits. Read-only.
 // ===========================================================================
 
-test("publisher profile lists that seller's published kits @reversible @wip", async ({ page }) => {
+test("publisher profile lists that seller's published kits @reversible", async ({ page }) => {
   const first = await firstCatalogCard(page);
   test.skip(!first, "catalog is empty — no publisher to open");
 

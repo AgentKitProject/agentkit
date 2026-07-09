@@ -8,8 +8,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 // (`billing.metered === false`) — the tests below then self-skip with a precise
 // reason, which is the correct outcome, not a failure.
 //
-// TAGGING: every test is @wip (runs only in the `wip` project; never gates a
-// deploy). Nothing here creates a RUN_ID-named, API-revocable artifact — the
+// TAGGING: these tests are PROMOTED — the cuj project runs them on gamma and they
+// now gate deploys. Nothing here creates a RUN_ID-named, API-revocable artifact — the
 // journeys ACQUIRE/OBSERVE existing catalog + ledger state rather than mint named
 // objects, so there is no RUN_ID prefix to apply. The one prod-safe, read-only
 // journey (receipt/history render) is additionally @reversible. Everything that
@@ -162,7 +162,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   //    Driveable extent: the redirect to checkout.stripe.com. Submitting the
   //    test card + the webbook credit are a separate (stubbed) test below.
   // -------------------------------------------------------------------------
-  test("credit top-up: buy-credits opens Stripe test-mode checkout @wip", async ({ page }) => {
+  test("credit top-up: buy-credits opens Stripe test-mode checkout", async ({ page }) => {
     test.skip(envName !== "gamma", "gamma-only: real Stripe checkout — TEST MODE lives on gamma, never prod");
 
     const { commerceDisabled, packs } = await listCreditPacks(page.request);
@@ -203,7 +203,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   // 1b. Credit top-up → balance reflects the purchase. STUB: the paying half is
   //     undrivable from a browser context.
   // -------------------------------------------------------------------------
-  test("credit top-up: webhook credits the account balance @wip", async () => {
+  test("credit top-up: webhook credits the account balance", async () => {
     test.skip(envName !== "gamma", "gamma-only: real Stripe test-mode purchase");
     test.skip(
       true,
@@ -221,7 +221,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   //    acquire → entitlement created → 'Use in Forge' / 'Run on Auto' deep-link
   //    enabled (gated on the entitlement).
   // -------------------------------------------------------------------------
-  test("premium kit acquire → entitlement created → run deep-link enabled @wip", async ({ page }) => {
+  test("premium kit acquire → entitlement created → run deep-link enabled", async ({ page }) => {
     test.skip(envName !== "gamma", "gamma-only: grants a real (persistent) entitlement — kept off prod");
 
     const slug = await discoverPremiumKitSlug(page);
@@ -280,7 +280,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   //    insufficient_balance BEFORE any compute is dispatched). Forcing that state
   //    deterministically needs a curated fixture — documented below.
   // -------------------------------------------------------------------------
-  test("affordability: run start is denied with 402 when balance < run cost @wip", async ({ page }) => {
+  test("affordability: run start is denied with 402 when balance < run cost", async ({ page }) => {
     test.skip(envName !== "gamma", "gamma-only: would start real (billed) compute on prod");
 
     const billing = await getAutoBilling(page.request);
@@ -307,7 +307,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   //    (gross − commission), idempotent per run. STUB: requires a COMPLETED
   //    premium run (real compute) + the service-key-gated seller ledger.
   // -------------------------------------------------------------------------
-  test("premium royalty accrual: a paid-kit run accrues seller net earnings @wip", async () => {
+  test("premium royalty accrual: a paid-kit run accrues seller net earnings", async () => {
     test.skip(envName !== "gamma", "gamma-only: requires a real, billed premium run");
     test.skip(
       true,
@@ -326,7 +326,7 @@ test.describe("CUJ — Billing (the money path)", () => {
   //    and prod-safe, so @reversible. (Credit-PURCHASE history has no dedicated
   //    list UI — see the annotation; the ?topup=success banner is the only cue.)
   // -------------------------------------------------------------------------
-  test("receipt history: run-usage debits render in Auto run history @wip @reversible", async ({ page }, testInfo) => {
+  test("receipt history: run-usage debits render in Auto run history @reversible", async ({ page }, testInfo) => {
     await page.goto(`${auto}/?section=runs`, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/auth\/sign-in|\/realms\//);
     await expect(page.getByRole("heading", { name: "Runs", exact: true, level: 3 })).toBeVisible();

@@ -6,9 +6,10 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 // managed runs, org-key precedence, buy-credits). Mirrors the schedule/webhook
 // patterns in cuj/auto.spec.ts + cuj/automations.spec.ts.
 //
-// TAGGING (see playwright.config.ts): EVERY test is `@wip` — they run ONLY in
-// the `wip` project (all other projects grepInvert /@wip/), so they never gate a
-// deploy until promoted. A test is ALSO `@reversible` only when it is fully
+// TAGGING (see playwright.config.ts): these tests are PROMOTED (verified on a
+// live env) — the cuj project runs them all on gamma and they gate deploys; the
+// `@wip` staging lane (cuj/prod-cuj/canary grepInvert /@wip/) is now empty here.
+// A test is ALSO `@reversible` only when it is fully
 // prod-safe (creates+deletes its own artifacts, no money, no LLM/compute spend);
 // everything else hard-guards `test.skip(envName !== "gamma", …)` because it
 // spends real compute (a managed run), touches live Stripe, or exercises OAuth
@@ -266,7 +267,7 @@ test.afterAll(async () => {
 //    persisted (all three creates throw before any write). Gamma-only: OAuth.
 // ===========================================================================
 
-test("OAuth connection: direct-create rejects gdrive/dropbox/imap; OAuth start redirects or 501 @wip", async ({ page }, testInfo) => {
+test("OAuth connection: direct-create rejects gdrive/dropbox/imap; OAuth start redirects or 501", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: OAuth connection flow (consent is external, credentials are gamma-config)");
 
   // Direct POST is a dead end for the OAuth/imap types — each 501s BEFORE any
@@ -307,7 +308,7 @@ test("OAuth connection: direct-create rejects gdrive/dropbox/imap; OAuth start r
 //    Gamma-only: needs a kit (self-host isolated store).
 // ===========================================================================
 
-test("message trigger (Slack) + chat-approval gate holds the fire without dispatching a run @wip", async ({ page }, testInfo) => {
+test("message trigger (Slack) + chat-approval gate holds the fire without dispatching a run", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: needs a kit + approval (self-host isolated Auto store)");
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available for this user");
@@ -398,7 +399,7 @@ test("message trigger (Slack) + chat-approval gate holds the fire without dispat
 //     in the UI → delete. Gamma-only: needs a kit.
 // ===========================================================================
 
-test("RSS trigger: create → test-fire filtered (no run) → listed → delete @wip", async ({ page }) => {
+test("RSS trigger: create → test-fire filtered (no run) → listed → delete", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: needs a kit + approval (self-host isolated Auto store)");
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available for this user");
@@ -447,7 +448,7 @@ test("RSS trigger: create → test-fire filtered (no run) → listed → delete 
 //     → delete. Gamma-only: needs a kit.
 // ===========================================================================
 
-test("email-in trigger: create (server-minted address) → test-fire filtered → delete @wip", async ({ page }, testInfo) => {
+test("email-in trigger: create (server-minted address) → test-fire filtered → delete", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: needs a kit + approval (self-host isolated Auto store)");
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available for this user");
@@ -503,7 +504,7 @@ test("email-in trigger: create (server-minted address) → test-fire filtered �
 //     fine.) Gamma-only: needs a kit.
 // ===========================================================================
 
-test("watch trigger: connect a folder + create watch trigger → test-fire filtered → delete @wip", async ({ page }) => {
+test("watch trigger: connect a folder + create watch trigger → test-fire filtered → delete", async ({ page }) => {
   test.skip(envName !== "gamma", "gamma-only: needs a kit + approval (self-host isolated Auto store)");
   const p = await ensureKitAndApproval(page.request);
   test.skip(!p, "no kit/approval available for this user");
@@ -567,7 +568,7 @@ test("watch trigger: connect a folder + create watch trigger → test-fire filte
 //    Gamma-only + untagged (real compute) — NEVER on prod.
 // ===========================================================================
 
-test("managed run: dispatch cheapest model → terminal state, metered debit + output download reachable @wip", async ({ page }, testInfo) => {
+test("managed run: dispatch cheapest model → terminal state, metered debit + output download reachable", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: a real run spends real compute — never on prod");
   const CHEAPEST_MODEL = "claude-haiku-4-5";
   const p = await ensureKitAndApproval(page.request);
@@ -669,7 +670,7 @@ test("managed run: dispatch cheapest model → terminal state, metered debit + o
 //    falls back FROM) and document the unobservable step. Read-only. Gamma-only.
 // ===========================================================================
 
-test("org shared key precedence: BYO/provider precondition surfaces are reachable (org-key selection is server-internal) @wip", async ({ page }, testInfo) => {
+test("org shared key precedence: BYO/provider precondition surfaces are reachable (org-key selection is server-internal)", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: org shared keys are a hosted/org feature (Profile is system of record)");
 
   // The user's OWN key state — the org key only applies when this has NO key.
@@ -701,7 +702,7 @@ test("org shared key precedence: BYO/provider precondition surfaces are reachabl
 //    prod-safe (no money, no LLM, own artifact) → @reversible.
 // ===========================================================================
 
-test("connection verify probe: create webhook_out → verify stamps status → delete @wip @reversible", async ({ page }, testInfo) => {
+test("connection verify probe: create webhook_out → verify stamps status → delete @reversible", async ({ page }, testInfo) => {
   await precleanByPrefix(page.request);
   const name = `${RUN_ID}-verify`;
 
@@ -742,7 +743,7 @@ test("connection verify probe: create webhook_out → verify stamps status → d
 //    purchase needs a Stripe TEST-MODE card (gamma). Gamma-only: live Stripe.
 // ===========================================================================
 
-test("buy-credits: Settings surfaces a Buy-credits link to the Market credits checkout @wip", async ({ page }, testInfo) => {
+test("buy-credits: Settings surfaces a Buy-credits link to the Market credits checkout", async ({ page }, testInfo) => {
   test.skip(envName !== "gamma", "gamma-only: leads to live Stripe checkout (gamma uses Stripe TEST MODE)");
 
   await gotoSection(page, "settings");

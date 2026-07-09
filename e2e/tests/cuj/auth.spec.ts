@@ -4,8 +4,8 @@ import { STORAGE_STATE_PATH, hasRealSession } from "../../global-setup";
 import { kcLogin, loginAllApps } from "../../lib/auth";
 
 // Cross-cutting AUTH critical-user-journeys (Keycloak OIDC + iron-session).
-// NEWLY AUTHORED → every test is tagged @wip so it runs ONLY in the `wip`
-// project and never gates a deploy until it's been shaken out on a live env.
+// PROMOTED (shaken out on a live env) → these tests now gate deploys: the cuj
+// project runs them on gamma, and the @reversible subset runs on prod (prod-cuj).
 // Tests additionally tagged @reversible are prod-safe (read-only session
 // checks — no writes, no money, no artifacts); the SIGN-OUT journey is
 // gamma-guarded because it performs an RP-initiated Keycloak logout that
@@ -98,7 +98,7 @@ test.afterAll(async ({ browser }) => {
 // so this asserts the whole authorize → form → OIDC callback → app-content path.
 // ---------------------------------------------------------------------------
 
-test("real Keycloak form sign-in lands on authed app content @reversible @wip", async ({
+test("real Keycloak form sign-in lands on authed app content @reversible", async ({
   browser
 }) => {
   // Fresh context = NO storageState = genuinely anonymous → the Keycloak form
@@ -122,7 +122,7 @@ test("real Keycloak form sign-in lands on authed app content @reversible @wip", 
 // loginAllApps, where apps 2..n are silent SSO off the Keycloak cookie.)
 // ---------------------------------------------------------------------------
 
-test("cross-app silent SSO: Forge → Auto → Market, no re-challenge @reversible @wip", async ({
+test("cross-app silent SSO: Forge → Auto → Market, no re-challenge @reversible", async ({
   page
 }) => {
   await forgeAdmitted(page);
@@ -134,7 +134,7 @@ test("cross-app silent SSO: Forge → Auto → Market, no re-challenge @reversib
 // 3. Session persistence across a full page reload.
 // ---------------------------------------------------------------------------
 
-test("authed session survives a page reload @reversible @wip", async ({ page }) => {
+test("authed session survives a page reload @reversible", async ({ page }) => {
   await forgeAdmitted(page);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(SIGN_IN);
@@ -156,7 +156,7 @@ test("authed session survives a page reload @reversible @wip", async ({ page }) 
 // carried-returnTo hop is the strongest cross-app assertion available here.
 // ---------------------------------------------------------------------------
 
-test("anonymous deep link redirects to sign-in with returnTo @reversible @wip", async ({
+test("anonymous deep link redirects to sign-in with returnTo @reversible", async ({
   browser
 }) => {
   // EXPLICIT empty storageState → a GUARANTEED-anonymous context. A bare
@@ -203,7 +203,7 @@ test("anonymous deep link redirects to sign-in with returnTo @reversible @wip", 
 // can still SSO. NOT @reversible — never let this touch prod.
 // ---------------------------------------------------------------------------
 
-test("sign-out destroys the session and re-challenges (gamma only) @wip", async ({ browser }) => {
+test("sign-out destroys the session and re-challenges (gamma only)", async ({ browser }) => {
   test.skip(
     envName !== "gamma",
     "gamma-only: sign-out RP-invalidates the shared Keycloak SSO session — never on prod"
