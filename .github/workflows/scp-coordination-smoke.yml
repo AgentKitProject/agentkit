@@ -1,0 +1,25 @@
+name: SCP Coordination Smoke
+# Dispatched by CommanderSCP's GitHub executor as a SAFE, side-effect-free control signal for the
+# gamma→prod coordination trial. It does NO build and NO deploy — it exists purely to prove the
+# executor's trigger → status → gate path end-to-end against the real repo + App.
+#
+# The CommanderSCP github plugin dispatches this via the Actions API as
+#   POST /actions/workflows/scp-coordination-smoke.yml/dispatches  { ref: "main", inputs: {} }
+# so it must (a) live on the default branch to be workflow_dispatch-able and (b) declare no
+# REQUIRED inputs (an empty inputs object is sent).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: homelab-agentkit-linux-general
+    steps:
+      - name: Report coordination context
+        run: |
+          echo "CommanderSCP coordination smoke"
+          echo "  run_id : $GITHUB_RUN_ID"
+          echo "  ref    : $GITHUB_REF_NAME"
+          echo "  sha    : $GITHUB_SHA"
+          echo "  actor  : $GITHUB_ACTOR"
+      - name: Succeed
+        run: echo "ok"
