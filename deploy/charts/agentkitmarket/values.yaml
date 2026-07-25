@@ -299,6 +299,9 @@ minio:
     host: ""
     annotations: {}
     tls: []
+  # Name of a pre-provisioned PVC to use instead of creating one. Leave empty
+  # to create a new PVC as before (default, backward-compatible).
+  existingClaim: ""
   storage:
     size: 10Gi
     # storageClassName: ""
@@ -310,6 +313,9 @@ minio:
 redis:
   enabled: true
   image: redis:7.4.9-alpine
+  # Name of a pre-provisioned PVC to use instead of creating one. Leave empty
+  # to create a new PVC as before (default, backward-compatible).
+  existingClaim: ""
   storage:
     size: 1Gi
     # storageClassName: ""

@@ -1,5 +1,6 @@
 {{- if .Values.minio.enabled -}}
 {{- $secretName := include "agentkitforge.webEffectiveSecretName" . -}}
+{{- if not .Values.minio.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -17,6 +18,7 @@ spec:
   {{- if .Values.minio.storage.storageClassName }}
   storageClassName: {{ .Values.minio.storage.storageClassName }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,7 +70,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "agentkitforge.fullname" . }}-minio-data
+            claimName: {{ .Values.minio.existingClaim | default (printf "%s-minio-data" (include "agentkitforge.fullname" .)) }}
 ---
 apiVersion: v1
 kind: Service

@@ -1,4 +1,5 @@
 {{- if .Values.redis.enabled -}}
+{{- if not .Values.redis.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -16,6 +17,7 @@ spec:
   {{- if .Values.redis.storage.storageClassName }}
   storageClassName: {{ .Values.redis.storage.storageClassName }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -58,7 +60,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "agentkitmarket.fullname" . }}-redis-data
+            claimName: {{ .Values.redis.existingClaim | default (printf "%s-redis-data" (include "agentkitmarket.fullname" .)) }}
 ---
 apiVersion: v1
 kind: Service
