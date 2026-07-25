@@ -120,6 +120,9 @@ postgres:
   user: keycloak
   # Leave empty to let the chart generate + persist a strong password.
   password: ""
+  # Name of a pre-provisioned PVC to use instead of creating one. Leave empty
+  # to create a new PVC as before (default, backward-compatible).
+  existingClaim: ""
   storage:
     size: 5Gi
     # storageClassName: ""

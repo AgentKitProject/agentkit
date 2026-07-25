@@ -1,5 +1,6 @@
 {{- if .Values.postgres.enabled -}}
 {{- $secretName := include "agentkitauto.webEffectiveSecretName" . -}}
+{{- if not .Values.postgres.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -17,6 +18,7 @@ spec:
   {{- if .Values.postgres.storage.storageClassName }}
   storageClassName: {{ .Values.postgres.storage.storageClassName }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,7 +71,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "agentkitauto.fullname" . }}-postgres-data
+            claimName: {{ .Values.postgres.existingClaim | default (printf "%s-postgres-data" (include "agentkitauto.fullname" .)) }}
 ---
 apiVersion: v1
 kind: Service

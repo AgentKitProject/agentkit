@@ -1,4 +1,5 @@
 {{- if .Values.postgres.enabled -}}
+{{- if not .Values.postgres.existingClaim }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -16,6 +17,7 @@ spec:
   {{- if .Values.postgres.storage.storageClassName }}
   storageClassName: {{ .Values.postgres.storage.storageClassName }}
   {{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -67,7 +69,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "agentkit-keycloak.fullname" . }}-postgres-data
+            claimName: {{ .Values.postgres.existingClaim | default (printf "%s-postgres-data" (include "agentkit-keycloak.fullname" .)) }}
 ---
 apiVersion: v1
 kind: Service

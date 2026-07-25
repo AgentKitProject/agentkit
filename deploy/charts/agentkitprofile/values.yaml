@@ -179,6 +179,9 @@ postgres:
   # GENERATED + preserved across upgrades when empty (never "changeme"). Set only
   # to pin a specific password.
   password: ""
+  # Name of a pre-provisioned PVC to use instead of creating one. Leave empty
+  # to create a new PVC as before (default, backward-compatible).
+  existingClaim: ""
   storage:
     size: 5Gi
     storageClassName: local-path
