@@ -18,7 +18,32 @@
  * holds. The explicit URNs below were read out of `objects.urn` verbatim, so `scp plan` ADOPTS
  * the existing objects instead of creating duplicates.
  *
+ * =============================================================================================
+ * DO NOT APPLY THIS STACK YET — IT IS STALE AGAINST THE ADR-0026 MIGRATION (2026-08-02)
+ * =============================================================================================
+ * This manifest was generated from the estate BEFORE the placement migration
+ * (docs/proposals/post-import-configuration.md §6) began. It still declares all FIVE env-suffixed
+ * prod components that migration exists to merge away:
+ *
+ *     agentkit-keycloak-prod, agentkitmarket-prod, agentkitprofile-prod,
+ *     agentkitauto-prod, agentkitforge-web-prod
+ *
+ * `agentkit-keycloak-prod` has ALREADY been merged into `agentkit-keycloak` and soft-deleted on the
+ * live instance (pair 1 of 5, 2026-08-02). Applying this stack would RECREATE it and re-establish
+ * exactly the component-per-environment duplication ADR-0026 was written to remove — silently, since
+ * a recreated component looks like an ordinary create in the plan diff.
+ *
+ * Regenerate this file from the live graph AFTER all five pairs are merged (§6 step 3) and the
+ * bindings have moved onto placements (§6 step 2), then re-review. Until then this PR is a record of
+ * intent, not something to apply.
+ *
  * KNOWN GAPS — things the live graph has that this manifest cannot express:
+ *   - `placement` objects. ADR-0026's pair type has NO construct in `@scp/iac` — the exports are
+ *     Service/Component/Domain/Team/DeploymentTarget/Group/User/ServiceAccount/Campaign/Initiative/
+ *     ReleaseTopology and nothing else. post-import-configuration.md §8 lists placements as "yes —
+ *     a graph object, free", which is not true today: free on the WIRE (the manifest carries
+ *     arbitrary `objects`), but there is no typed construct, so the 61 live placements are
+ *     unmanaged by IaC and an apply cannot express them.
  *   - `source_mappings` and `executor_bindings`. `DesiredStateManifestSchema`
  *     (packages/schemas/src/iac.ts) carries only `objects` and `relationships`, so the ArgoCD
  *     bindings and change-source mappings that actually wire these components to their executors
@@ -28,7 +53,16 @@
  *     family of gap; worth a fluent method when C1 lands.
  */
 
-import { App, Component, DeploymentTarget, ReleaseTopology, Service, Stack, Team, synthToFile } from "@scp/iac";
+import {
+  App,
+  Component,
+  DeploymentTarget,
+  ReleaseTopology,
+  Service,
+  Stack,
+  Team,
+  synthToFile,
+} from "@scp/iac";
 import { fileURLToPath } from "node:url";
 
 export const STACK_NAME = "agentkit-monorepo";
@@ -39,21 +73,34 @@ export function buildStack(app: App = new App()): Stack {
   const agentkit = new Service(stack, "agentkit", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:service:agentkit",
     name: "agentkit",
-    properties: {}
+    properties: {},
   });
 
   // Deployment targets. `gamma` is the homelab k3s canary (its Applications live in the
   // homelab-gitops repo, whose stack references this object by URN); `prod` is DOKS.
+  //
+  // `environment` IS LOAD-BEARING, and omitting it fails silently (ADR-0026 D1). It is what makes a
+  // place-role deployment-target derive a stage name at all — "Not every deployment-target is a
+  // stage. Only those carrying `environment` derive a name". Plan compilation does NOT need it
+  // (`resolveStagePlacements` only requires the wave target be type `deployment-target`), so a stack
+  // that drops it keeps releasing perfectly while stage names quietly stop deriving.
+  //
+  // Both values were added to the LIVE objects by hand on 2026-08-02 (post-import-configuration.md
+  // §6 step 1). They are declared here so an apply of this stack matches the live state instead of
+  // reverting it — these objects are label-scoped to a stack and an apply overwrites what it
+  // declares. `region` on prod was already present and is the optional middle segment of the
+  // `<domain>-[<region>-]<environment>` grammar, giving `commercial-nyc3-prod`.
   const gamma = new DeploymentTarget(stack, "gamma", {
     urn: "urn:scp:agentkit-org:deployment-target:gamma",
     name: "gamma (self-host canary)",
     properties: {
       billing: "free",
       cluster: "homelab-k3s",
+      environment: "gamma",
       gitops: "jag8765-personal/homelab-gitops",
       ingress: "tailf14b5e.ts.net",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const prod = new DeploymentTarget(stack, "prod", {
     urn: "urn:scp:agentkit-org:deployment-target:prod",
@@ -62,32 +109,37 @@ export function buildStack(app: App = new App()): Stack {
       billing: "managed",
       cluster: "do-nyc3-agentkitproject-prod",
       domain: "agentkitproject.com",
+      environment: "prod",
       gitops: "AgentKitProject/agentkit-hosting",
       namespace: "agentkit",
-      region: "nyc3"
-    }
+      region: "nyc3",
+    },
   });
 
   const maintainers = new Team(stack, "agentkit-maintainers", {
     urn: "urn:scp:agentkit-org:team:agentkit-maintainers",
     name: "AgentKit Maintainers",
-    properties: {}
+    properties: {},
   });
 
   // The 17 agentkit components whose definitions live in this repo: the prod deployments
   // and the @agentkitforge/* workspace libraries.
-  const agentkitDbBootstrapProd = new Component(stack, "agentkit-db-bootstrap-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-db-bootstrap-prod",
-    name: "agentkit-db-bootstrap-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkit-db-bootstrap",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit"
-    }
-  });
+  const agentkitDbBootstrapProd = new Component(
+    stack,
+    "agentkit-db-bootstrap-prod",
+    {
+      urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-db-bootstrap-prod",
+      name: "agentkit-db-bootstrap-prod",
+      service: agentkit,
+      properties: {
+        argocdApplication: "agentkit-db-bootstrap",
+        argocdProject: "default",
+        discoveredFrom: "argocd:http://argocd-prod.commanderscp",
+        environment: "prod",
+        namespace: "agentkit",
+      },
+    },
+  );
   const agentkitHostedProd = new Component(stack, "agentkit-hosted-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-hosted-prod",
     name: "agentkit-hosted-prod",
@@ -97,8 +149,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "argocd"
-    }
+      namespace: "argocd",
+    },
   });
   const agentkitKeycloakProd = new Component(stack, "agentkit-keycloak-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-keycloak-prod",
@@ -109,21 +161,25 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
-  const agentkitSealedSecretsProd = new Component(stack, "agentkit-sealed-secrets-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-sealed-secrets-prod",
-    name: "agentkit-sealed-secrets-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkit-sealed-secrets",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "kube-system"
-    }
-  });
+  const agentkitSealedSecretsProd = new Component(
+    stack,
+    "agentkit-sealed-secrets-prod",
+    {
+      urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-sealed-secrets-prod",
+      name: "agentkit-sealed-secrets-prod",
+      service: agentkit,
+      properties: {
+        argocdApplication: "agentkit-sealed-secrets",
+        argocdProject: "default",
+        discoveredFrom: "argocd:http://argocd-prod.commanderscp",
+        environment: "prod",
+        namespace: "kube-system",
+      },
+    },
+  );
   const agentkitUmamiProd = new Component(stack, "agentkit-umami-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-umami-prod",
     name: "agentkit-umami-prod",
@@ -133,8 +189,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const agentkitautoProd = new Component(stack, "agentkitauto-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitauto-prod",
@@ -145,8 +201,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const agentkitforgeWebProd = new Component(stack, "agentkitforge-web-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitforge-web-prod",
@@ -157,8 +213,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const agentkitgatewayProd = new Component(stack, "agentkitgateway-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
@@ -169,8 +225,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const agentkitmarketProd = new Component(stack, "agentkitmarket-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitmarket-prod",
@@ -181,8 +237,8 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
   const agentkitprofileProd = new Component(stack, "agentkitprofile-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitprofile-prod",
@@ -193,29 +249,33 @@ export function buildStack(app: App = new App()): Stack {
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
-      namespace: "agentkit"
-    }
+      namespace: "agentkit",
+    },
   });
-  const agentkitprojectSiteProd = new Component(stack, "agentkitproject-site-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitproject-site-prod",
-    name: "agentkitproject-site-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkitproject-site",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit"
-    }
-  });
+  const agentkitprojectSiteProd = new Component(
+    stack,
+    "agentkitproject-site-prod",
+    {
+      urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitproject-site-prod",
+      name: "agentkitproject-site-prod",
+      service: agentkit,
+      properties: {
+        argocdApplication: "agentkitproject-site",
+        argocdProject: "default",
+        discoveredFrom: "argocd:http://argocd-prod.commanderscp",
+        environment: "prod",
+        namespace: "agentkit",
+      },
+    },
+  );
   const autoCore = new Component(stack, "auto-core", {
     urn: "urn:scp:agentkit-org:component:auto-core",
     name: "@agentkitforge/auto-core",
     service: agentkit,
     properties: {
       kind: "library",
-      role: "Auto sandbox executor + budgets"
-    }
+      role: "Auto sandbox executor + budgets",
+    },
   });
   const contracts = new Component(stack, "contracts", {
     urn: "urn:scp:agentkit-org:component:contracts",
@@ -223,8 +283,8 @@ export function buildStack(app: App = new App()): Stack {
     service: agentkit,
     properties: {
       kind: "library",
-      role: "cross-repo zod schemas + route builders"
-    }
+      role: "cross-repo zod schemas + route builders",
+    },
   });
   const core = new Component(stack, "core", {
     urn: "urn:scp:agentkit-org:component:core",
@@ -232,8 +292,8 @@ export function buildStack(app: App = new App()): Stack {
     service: agentkit,
     properties: {
       kind: "library",
-      role: "Agent Kit spec engine + market client + CLI"
-    }
+      role: "Agent Kit spec engine + market client + CLI",
+    },
   });
   const gatewayCore = new Component(stack, "gateway-core", {
     urn: "urn:scp:agentkit-org:component:gateway-core",
@@ -241,8 +301,8 @@ export function buildStack(app: App = new App()): Stack {
     service: agentkit,
     properties: {
       kind: "library",
-      role: "inference gateway ports"
-    }
+      role: "inference gateway ports",
+    },
   });
   const marketCore = new Component(stack, "market-core", {
     urn: "urn:scp:agentkit-org:component:market-core",
@@ -250,8 +310,8 @@ export function buildStack(app: App = new App()): Stack {
     service: agentkit,
     properties: {
       kind: "library",
-      role: "Market backend core"
-    }
+      role: "Market backend core",
+    },
   });
   const ui = new Component(stack, "ui", {
     urn: "urn:scp:agentkit-org:component:ui",
@@ -259,14 +319,15 @@ export function buildStack(app: App = new App()): Stack {
     service: agentkit,
     properties: {
       kind: "library",
-      role: "shared design system"
-    }
+      role: "shared design system",
+    },
   });
 
   // Shared infrastructure the service consumes. These two components carry no `contains`
   // edge in the live graph (they belong to no service), and `Component` would force one —
   // so they are referenced by URN and left owned by whatever created them.
-  const managedPostgresProd = "urn:scp:agentkit-org:component:managed-postgres-prod";
+  const managedPostgresProd =
+    "urn:scp:agentkit-org:component:managed-postgres-prod";
   const objectStorage = "urn:scp:agentkit-org:component:object-storage";
 
   agentkit.consumes(managedPostgresProd);
@@ -284,17 +345,61 @@ export function buildStack(app: App = new App()): Stack {
   maintainers.owns(ui);
 
   // `hosted_on` — see KNOWN GAPS above for why this is not a fluent method.
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitDbBootstrapProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitHostedProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitKeycloakProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitSealedSecretsProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitUmamiProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitautoProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitforgeWebProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitgatewayProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitmarketProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitprofileProd, to: prod });
-  stack._registerRelationship({ typeId: "hosted_on", from: agentkitprojectSiteProd, to: prod });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitDbBootstrapProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitHostedProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitKeycloakProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitSealedSecretsProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitUmamiProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitautoProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitforgeWebProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitgatewayProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitmarketProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitprofileProd,
+    to: prod,
+  });
+  stack._registerRelationship({
+    typeId: "hosted_on",
+    from: agentkitprojectSiteProd,
+    to: prod,
+  });
 
   // Release topologies. `properties.waves[].targets` hold RAW OBJECT IDS, exactly as the
   // live instance stores them. URNs would also resolve, but writing them here would rewrite
@@ -314,8 +419,8 @@ export function buildStack(app: App = new App()): Stack {
           "019f662a-93f4-75b9-a60a-1f39f070ab4a",
           "019f662a-9401-727b-be73-c92d1153f2fe",
           "019f662a-9406-777d-9f3d-1f1db2598394",
-          "019f662a-93fa-75f8-b297-772560c25fd4"
-        ]
+          "019f662a-93fa-75f8-b297-772560c25fd4",
+        ],
       },
       {
         mode: "parallel",
@@ -331,10 +436,10 @@ export function buildStack(app: App = new App()): Stack {
           "019f6fb7-5aa9-7439-bdc0-36a732e48366",
           "019f6fb7-5aad-71d8-a619-ec1b5bf4edae",
           "019f6fb7-5a8c-772c-8e99-23e9f48fd40b",
-          "019f6fb7-5a91-77af-989f-4eeaf31d7502"
-        ]
-      }
-    ]
+          "019f6fb7-5a91-77af-989f-4eeaf31d7502",
+        ],
+      },
+    ],
   });
   new ReleaseTopology(stack, "forge-gamma-then-prod", {
     urn: "urn:scp:agentkit-org:release-topology:forge-gamma-then-prod",
@@ -343,18 +448,14 @@ export function buildStack(app: App = new App()): Stack {
       {
         mode: "sequential",
         name: "gamma",
-        targets: [
-          "019f5790-9b75-7488-824f-d9efed328ba8"
-        ]
+        targets: ["019f5790-9b75-7488-824f-d9efed328ba8"],
       },
       {
         mode: "sequential",
         name: "prod",
-        targets: [
-          "019f5790-9b7c-70a2-b06c-fc26a3e6bd02"
-        ]
-      }
-    ]
+        targets: ["019f5790-9b7c-70a2-b06c-fc26a3e6bd02"],
+      },
+    ],
   });
 
   return stack;
@@ -362,5 +463,8 @@ export function buildStack(app: App = new App()): Stack {
 
 // `tsx <this file> [out.json]` writes the manifest `scp plan --manifest <out.json>` reads.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await synthToFile(buildStack(), process.argv[2] ?? "agentkit-monorepo.manifest.json");
+  await synthToFile(
+    buildStack(),
+    process.argv[2] ?? "agentkit-monorepo.manifest.json",
+  );
 }
