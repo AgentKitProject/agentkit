@@ -47,11 +47,12 @@
  *     a graph object, free", which is not true today: free on the WIRE (the manifest carries
  *     arbitrary `objects`), but there is no typed construct, so the 61 live placements are
  *     unmanaged by IaC and an apply cannot express them.
- *   - `source_mappings`. The manifest CAN carry them (§8 item C1 shipped), and this estate has 25
- *     for the components declared here. They are deliberately NOT declared yet, because the
- *     collection is all-or-nothing per owned component: an ABSENT collection means "declares no
- *     mappings" and prunes nothing, but a PARTIAL one prunes every mapping it omits. Declaring them
- *     is the next increment and must enumerate all 25 in one go.
+ *   - (RESOLVED) `source_mappings` — all 25 are now declared below. The earlier revision left them
+ *     out and claimed an absent collection "prunes nothing". THAT WAS WRONG: `Stack.synth()` omits
+ *     an empty collection, so ABSENT is the only way to say "none" and it prunes exactly like an
+ *     empty one. Applying that revision would have deleted all 25. Verified after declaring them:
+ *     the declared set equals the live set exactly, both directions — an apply creates nothing and
+ *     prunes nothing.
  *   - `executor_bindings`. Carried by the manifest too, but unusable here: after the §6 migration 61
  *     of this estate's 66 bindings hang off a PLACEMENT, and a binding's `targetUrn` must name an
  *     object that exists. See docs/proposals/iac-placements.md.
@@ -351,6 +352,208 @@ export function buildStack(app: App = new App()): Stack {
   // live instance stores them. URNs would also resolve, but writing them here would rewrite
   // a live coordination object's properties for cosmetics — so the ids are kept verbatim and
   // this stays a pure adoption.
+
+  // ---------------------------------------------------------------------------------------
+  // SOURCE MAPPINGS — all 25 for the components this stack owns.
+  //
+  // ALL OR NOTHING, and that is not a style choice. The collection is authoritative for the
+  // components this stack owns: whatever it does not list gets PRUNED. An ABSENT collection is
+  // the same as an empty one — `Stack.synth()` omits an empty collection, so absent is the only
+  // way to say "none" — which is why the previous revision, declaring no mappings at all, would
+  // have deleted every one of these on apply.
+  //
+  // Declared via `stack.addSourceMapping(<urn>, ...)` rather than `component.mapsSource(...)`
+  // deliberately: keying on the URN makes these independent of how the component declarations
+  // above happen to be formatted, and the URNs are read from the live graph.
+  // ---------------------------------------------------------------------------------------
+  stack.addSourceMapping("urn:scp:agentkit-org:component:auto-core", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping("urn:scp:agentkit-org:component:contracts", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping("urn:scp:agentkit-org:component:core", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping("urn:scp:agentkit-org:component:gateway-core", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping("urn:scp:agentkit-org:component:market-core", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping("urn:scp:agentkit-org:component:ui", {
+    sourceKind: "github",
+    repoPattern: "AgentKitProject/agentkit",
+    type: "configuration",
+  });
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-db-bootstrap-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-db-bootstrap-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-db-bootstrap-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      pathPattern: "deploy/db-bootstrap/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-hosted-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-hosted-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-hosted-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      pathPattern: "deploy/argocd/apps/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-sealed-secrets-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-sealed-secrets-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-sealed-secrets-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      pathPattern: "deploy/sealed-secrets/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-umami-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-umami-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-umami-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      pathPattern: "deploy/umami/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      pathPattern: "deploy/charts/agentkitgateway/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-commercial",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitproject-site-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitproject-site-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit",
+      pathPattern: "deploy/charts/agentkitproject-site/**",
+      type: "configuration",
+    },
+  );
+  stack.addSourceMapping(
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitproject-site-prod",
+    {
+      sourceKind: "github",
+      repoPattern: "AgentKitProject/agentkit-hosting",
+      type: "configuration",
+    },
+  );
 
   return stack;
 }
