@@ -57,9 +57,14 @@
  *     of this estate's 66 bindings hang off a PLACEMENT, and a binding's `targetUrn` must name an
  *     object that exists. See docs/proposals/iac-placements.md.
  *   - the OLD note, kept for the part that is still true: `DesiredStateManifestSchema`
- *     (packages/schemas/src/iac.ts) carries only `objects` and `relationships`, so the ArgoCD
- *     bindings and change-source mappings that actually wire these components to their executors
- *     live outside IaC and are NOT reproduced here. Tracked as proposal §8 item C1.
+ *     (packages/schemas/src/iac.ts) now carries `sourceMappings`, `executorBindings` and (since C1)
+ *     `placements`, so the wiring that was previously outside IaC IS reproduced here. Every one of
+ *     those collections PRUNES when absent, so declaring them is not optional bookkeeping — see the
+ *     comments at each block. The one thing still NOT expressible is an executor binding whose
+ *     target is a PLACEMENT: those are refused as "on object(s) this stack does not manage", because
+ *     ownership is inherited from the object a row hangs off and a placement cannot be declared in
+ *     `objects[]` (#207 refuses pair-bound types at that door). The six Argo CD bindings on this
+ *     stack's placements are therefore still managed outside IaC.
  *   - `hosted_on` has no fluent method on `ResourceConstruct` (only `dependsOn`/`consumes`/`owns`
  *     exist), so those edges are declared through `stack._registerRelationship` below. Same
  *     family of gap; worth a fluent method when C1 lands.
@@ -309,10 +314,6 @@ export function buildStack(app: App = new App()): Stack {
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    to: prod,
-  });
-  stack._registerRelationship({
-    typeId: "hosted_on",
     from: agentkitSealedSecretsProd,
     to: prod,
   });
@@ -323,23 +324,7 @@ export function buildStack(app: App = new App()): Stack {
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    to: prod,
-  });
-  stack._registerRelationship({
-    typeId: "hosted_on",
-    to: prod,
-  });
-  stack._registerRelationship({
-    typeId: "hosted_on",
     from: agentkitgatewayProd,
-    to: prod,
-  });
-  stack._registerRelationship({
-    typeId: "hosted_on",
-    to: prod,
-  });
-  stack._registerRelationship({
-    typeId: "hosted_on",
     to: prod,
   });
   stack._registerRelationship({
@@ -366,6 +351,88 @@ export function buildStack(app: App = new App()): Stack {
   // deliberately: keying on the URN makes these independent of how the component declarations
   // above happen to be formatted, and the URNs are read from the live graph.
   // ---------------------------------------------------------------------------------------
+  // PLACEMENTS (ADR-0026 / proposal §8 C1). NOT optional bookkeeping: a `placements` collection that
+  // is ABSENT means "this stack declares none", which PRUNES every live placement of a component
+  // this stack owns. All six of these carry an Argo CD executor binding, so an apply of a stack
+  // that stayed silent would be REFUSED (409, decision Q2) rather than converge. Silence is a
+  // statement here, and the only correct statement is the true one.
+  //
+  // These are the DERIVED `places`/`placed_at` edges, which is a different fact from the `hosted_on`
+  // edges above — those stay, and are not produced by a placement.
+  agentkitDbBootstrapProd.placeAt(prod);
+  agentkitHostedProd.placeAt(prod);
+  agentkitSealedSecretsProd.placeAt(prod);
+  agentkitUmamiProd.placeAt(prod);
+  agentkitgatewayProd.placeAt(prod);
+  agentkitprojectSiteProd.placeAt(prod);
+
+  // EXECUTOR BINDINGS on the two deployment-targets. Like `placements` above, an ABSENT collection
+  // means "this stack declares none" and PRUNES — and these four are what actually drive the
+  // github image/configuration pipelines, so a stack that stayed silent would delete them on apply.
+  //
+  // `config` carries the github App coordinates and the NAME of a secret key, never a secret value
+  // (`privateKeySecretKey` / `secretRefs` are references; the material lives in SCP's encrypted
+  // secret store). That is what makes these safe to commit.
+  //
+  // NOTE the two axes: each target is bound once per executor TYPE (ADR-0007) — `image` and
+  // `configuration` are different pipelines pointing at different repos, not a duplicate.
+  stack.addExecutorBinding(gamma, {
+    type: "configuration",
+    pluginModule: "github",
+    pluginInstanceId: "github-homelab-gitops",
+    config: {
+      owner: "jag8765-personal",
+      repo: "homelab-gitops",
+      appId: "4324854",
+      installationId: "147227885",
+      privateKeySecretKey: "github-homelab-key",
+    },
+    secretRefs: { "github-homelab-key": "github-homelab-key" },
+    allowedHosts: [],
+  });
+  stack.addExecutorBinding(gamma, {
+    type: "image",
+    pluginModule: "github",
+    pluginInstanceId: "github-agentkit",
+    config: {
+      owner: "AgentKitProject",
+      repo: "agentkit",
+      appId: "4324822",
+      installationId: "147227180",
+      privateKeySecretKey: "github-agentkit-key",
+    },
+    secretRefs: { "github-agentkit-key": "github-agentkit-key" },
+    allowedHosts: [],
+  });
+  stack.addExecutorBinding(prod, {
+    type: "configuration",
+    pluginModule: "github",
+    pluginInstanceId: "github-agentkit-hosting",
+    config: {
+      owner: "AgentKitProject",
+      repo: "agentkit-hosting",
+      appId: "4324822",
+      installationId: "147227180",
+      privateKeySecretKey: "github-agentkit-key",
+    },
+    secretRefs: { "github-agentkit-key": "github-agentkit-key" },
+    allowedHosts: [],
+  });
+  stack.addExecutorBinding(prod, {
+    type: "image",
+    pluginModule: "github",
+    pluginInstanceId: "github-agentkit-commercial",
+    config: {
+      owner: "AgentKitProject",
+      repo: "agentkit-commercial",
+      appId: "4324822",
+      installationId: "147227180",
+      privateKeySecretKey: "github-agentkit-key",
+    },
+    secretRefs: { "github-agentkit-key": "github-agentkit-key" },
+    allowedHosts: [],
+  });
+
   stack.addSourceMapping("urn:scp:agentkit-org:component:auto-core", {
     sourceKind: "github",
     repoPattern: "AgentKitProject/agentkit",
