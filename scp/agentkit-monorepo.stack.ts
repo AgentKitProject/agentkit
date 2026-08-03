@@ -63,8 +63,13 @@
  *     comments at each block. The one thing still NOT expressible is an executor binding whose
  *     target is a PLACEMENT: those are refused as "on object(s) this stack does not manage", because
  *     ownership is inherited from the object a row hangs off and a placement cannot be declared in
- *     `objects[]` (#207 refuses pair-bound types at that door). The six Argo CD bindings on this
- *     stack's placements are therefore still managed outside IaC.
+ *     `objects[]` (#207 refuses pair-bound types at that door). That gap is now CLOSED
+ *     (commanderscp#216): a binding on a placement is addressed by the PAIR, via
+ *     `component.placeAt(target).bindsExecutor(...)`, and all six Argo CD bindings are declared below.
+ *
+ *     THIS FILE THEREFORE REQUIRES commanderscp#216. Synthesizing it against an older @scp/iac
+ *     fails on `bindsExecutor` not existing; applying it against a server without #216 would be
+ *     refused as "on object(s) this stack does not manage".
  *   - `hosted_on` has no fluent method on `ResourceConstruct` (only `dependsOn`/`consumes`/`owns`
  *     exist), so those edges are declared through `stack._registerRelationship` below. Same
  *     family of gap; worth a fluent method when C1 lands.
@@ -351,6 +356,14 @@ export function buildStack(app: App = new App()): Stack {
   // deliberately: keying on the URN makes these independent of how the component declarations
   // above happen to be formatted, and the URNs are read from the live graph.
   // ---------------------------------------------------------------------------------------
+  // The Argo CD instance that releases everything at `prod`. Referenced by URN, NOT declared as an
+  // object: this stack does not own it, and an execution-system-backed binding derives its module,
+  // credentials and egress reach FROM it — which is why the specs below carry only a type and the
+  // Argo CD Application name. The token itself lives in SCP's encrypted secret store and appears
+  // nowhere in git.
+  const ARGOCD_PROD =
+    "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:execution-system:argocd-prod";
+
   // PLACEMENTS (ADR-0026 / proposal §8 C1). NOT optional bookkeeping: a `placements` collection that
   // is ABSENT means "this stack declares none", which PRUNES every live placement of a component
   // this stack owns. All six of these carry an Argo CD executor binding, so an apply of a stack
@@ -359,12 +372,36 @@ export function buildStack(app: App = new App()): Stack {
   //
   // These are the DERIVED `places`/`placed_at` edges, which is a different fact from the `hosted_on`
   // edges above — those stay, and are not produced by a placement.
-  agentkitDbBootstrapProd.placeAt(prod);
-  agentkitHostedProd.placeAt(prod);
-  agentkitSealedSecretsProd.placeAt(prod);
-  agentkitUmamiProd.placeAt(prod);
-  agentkitgatewayProd.placeAt(prod);
-  agentkitprojectSiteProd.placeAt(prod);
+  agentkitDbBootstrapProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkit-db-bootstrap",
+  });
+  agentkitHostedProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkit-hosted",
+  });
+  agentkitSealedSecretsProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkit-sealed-secrets",
+  });
+  agentkitUmamiProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkit-umami",
+  });
+  agentkitgatewayProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkitgateway",
+  });
+  agentkitprojectSiteProd.placeAt(prod).bindsExecutor({
+    type: "configuration",
+    executionSystem: ARGOCD_PROD,
+    externalRef: "agentkitproject-site",
+  });
 
   // EXECUTOR BINDINGS on the two deployment-targets. Like `placements` above, an ABSENT collection
   // means "this stack declares none" and PRUNES — and these four are what actually drive the
