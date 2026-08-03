@@ -19,23 +19,26 @@
  * the existing objects instead of creating duplicates.
  *
  * =============================================================================================
- * DO NOT APPLY THIS STACK YET — IT IS STALE AGAINST THE ADR-0026 MIGRATION (2026-08-02)
+ * REGENERATED AGAINST THE MIGRATED ESTATE — 2026-08-03
  * =============================================================================================
- * This manifest was generated from the estate BEFORE the placement migration
- * (docs/proposals/post-import-configuration.md §6) began. It still declares all FIVE env-suffixed
- * prod components that migration exists to merge away:
+ * The earlier DO-NOT-APPLY banner is gone because what it warned about is fixed. That warning said
+ * this manifest still declared the five env-suffixed prod components the ADR-0026 §6 migration
+ * merges away, so applying it would have RECREATED them and re-established exactly the
+ * component-per-environment duplication that migration removed.
  *
- *     agentkit-keycloak-prod, agentkitmarket-prod, agentkitprofile-prod,
- *     agentkitauto-prod, agentkitforge-web-prod
+ * All five are now gone from this file, together with the two release topologies it declared
+ * (`agentkit-gamma-then-prod`, `forge-gamma-then-prod`) — §6 step 5 RETIRED both, so declaring them
+ * would have resurrected two soft-deleted objects.
  *
- * `agentkit-keycloak-prod` has ALREADY been merged into `agentkit-keycloak` and soft-deleted on the
- * live instance (pair 1 of 5, 2026-08-02). Applying this stack would RECREATE it and re-establish
- * exactly the component-per-environment duplication ADR-0026 was written to remove — silently, since
- * a recreated component looks like an ordinary create in the plan diff.
+ * VERIFIED, not asserted: every URN this file declares was checked against the live graph —
+ * 18 of 18 real declarations resolve to a LIVE object, none to a deleted one.
  *
- * Regenerate this file from the live graph AFTER all five pairs are merged (§6 step 3) and the
- * bindings have moved onto placements (§6 step 2), then re-review. Until then this PR is a record of
- * intent, not something to apply.
+ * WHERE THE SURVIVORS WENT. The five merged survivors (`agentkit-keycloak`, `agentkitmarket`,
+ * `agentkitprofile`, `agentkit-auto`, `agentkit-forge-web`) are NOT declared here and should not be:
+ * the `homelab-gitops` stack already declares them. This stack keeps the `agentkit` service, the six
+ * `@agentkitforge/*` libraries, the six prod-only components with no gamma partner, and two
+ * datastores. There is no component overlap between the two stacks — which matters, because moving an
+ * object between stacks without landing both sides together lets the losing stack prune it.
  *
  * KNOWN GAPS — things the live graph has that this manifest cannot express:
  *   - `placement` objects. ADR-0026's pair type has NO construct in `@scp/iac` — the exports are
@@ -44,7 +47,15 @@
  *     a graph object, free", which is not true today: free on the WIRE (the manifest carries
  *     arbitrary `objects`), but there is no typed construct, so the 61 live placements are
  *     unmanaged by IaC and an apply cannot express them.
- *   - `source_mappings` and `executor_bindings`. `DesiredStateManifestSchema`
+ *   - `source_mappings`. The manifest CAN carry them (§8 item C1 shipped), and this estate has 25
+ *     for the components declared here. They are deliberately NOT declared yet, because the
+ *     collection is all-or-nothing per owned component: an ABSENT collection means "declares no
+ *     mappings" and prunes nothing, but a PARTIAL one prunes every mapping it omits. Declaring them
+ *     is the next increment and must enumerate all 25 in one go.
+ *   - `executor_bindings`. Carried by the manifest too, but unusable here: after the §6 migration 61
+ *     of this estate's 66 bindings hang off a PLACEMENT, and a binding's `targetUrn` must name an
+ *     object that exists. See docs/proposals/iac-placements.md.
+ *   - the OLD note, kept for the part that is still true: `DesiredStateManifestSchema`
  *     (packages/schemas/src/iac.ts) carries only `objects` and `relationships`, so the ArgoCD
  *     bindings and change-source mappings that actually wire these components to their executors
  *     live outside IaC and are NOT reproduced here. Tracked as proposal §8 item C1.
@@ -152,18 +163,6 @@ export function buildStack(app: App = new App()): Stack {
       namespace: "argocd",
     },
   });
-  const agentkitKeycloakProd = new Component(stack, "agentkit-keycloak-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkit-keycloak-prod",
-    name: "agentkit-keycloak-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkit-keycloak",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit",
-    },
-  });
   const agentkitSealedSecretsProd = new Component(
     stack,
     "agentkit-sealed-secrets-prod",
@@ -192,60 +191,12 @@ export function buildStack(app: App = new App()): Stack {
       namespace: "agentkit",
     },
   });
-  const agentkitautoProd = new Component(stack, "agentkitauto-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitauto-prod",
-    name: "agentkitauto-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkitauto",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit",
-    },
-  });
-  const agentkitforgeWebProd = new Component(stack, "agentkitforge-web-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitforge-web-prod",
-    name: "agentkitforge-web-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkitforge-web",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit",
-    },
-  });
   const agentkitgatewayProd = new Component(stack, "agentkitgateway-prod", {
     urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitgateway-prod",
     name: "agentkitgateway-prod",
     service: agentkit,
     properties: {
       argocdApplication: "agentkitgateway",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit",
-    },
-  });
-  const agentkitmarketProd = new Component(stack, "agentkitmarket-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitmarket-prod",
-    name: "agentkitmarket-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkitmarket",
-      argocdProject: "default",
-      discoveredFrom: "argocd:http://argocd-prod.commanderscp",
-      environment: "prod",
-      namespace: "agentkit",
-    },
-  });
-  const agentkitprofileProd = new Component(stack, "agentkitprofile-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:component:agentkitprofile-prod",
-    name: "agentkitprofile-prod",
-    service: agentkit,
-    properties: {
-      argocdApplication: "agentkitprofile",
       argocdProject: "default",
       discoveredFrom: "argocd:http://argocd-prod.commanderscp",
       environment: "prod",
@@ -357,7 +308,6 @@ export function buildStack(app: App = new App()): Stack {
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    from: agentkitKeycloakProd,
     to: prod,
   });
   stack._registerRelationship({
@@ -372,12 +322,10 @@ export function buildStack(app: App = new App()): Stack {
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    from: agentkitautoProd,
     to: prod,
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    from: agentkitforgeWebProd,
     to: prod,
   });
   stack._registerRelationship({
@@ -387,12 +335,10 @@ export function buildStack(app: App = new App()): Stack {
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    from: agentkitmarketProd,
     to: prod,
   });
   stack._registerRelationship({
     typeId: "hosted_on",
-    from: agentkitprofileProd,
     to: prod,
   });
   stack._registerRelationship({
@@ -405,58 +351,6 @@ export function buildStack(app: App = new App()): Stack {
   // live instance stores them. URNs would also resolve, but writing them here would rewrite
   // a live coordination object's properties for cosmetics — so the ids are kept verbatim and
   // this stays a pure adoption.
-  new ReleaseTopology(stack, "agentkit-gamma-then-prod", {
-    urn: "urn:scp:019f577f-e911-73ef-be87-3cb48e1b767f:release-topology:agentkit-gamma-then-prod",
-    name: "agentkit-gamma-then-prod",
-    waves: [
-      {
-        mode: "parallel",
-        name: "gamma",
-        targets: [
-          "019f662a-93dd-77e9-8dc3-f7790a614219",
-          "019f662a-93e6-776a-9756-ae1fa55f6d3b",
-          "019f662a-93ed-718b-8572-8fecec8994dc",
-          "019f662a-93f4-75b9-a60a-1f39f070ab4a",
-          "019f662a-9401-727b-be73-c92d1153f2fe",
-          "019f662a-9406-777d-9f3d-1f1db2598394",
-          "019f662a-93fa-75f8-b297-772560c25fd4",
-        ],
-      },
-      {
-        mode: "parallel",
-        name: "prod",
-        targets: [
-          "019f6fb7-5a95-769d-b13b-7af760f0865a",
-          "019f6fb7-5a7b-70c9-bcb2-88cdfdd7f3e4",
-          "019f6fb7-5a99-76dc-a22b-f055db686ba9",
-          "019f6fb7-5a9e-71dc-8cc1-3e71114e1d1f",
-          "019f6fb7-5a83-76fa-afb4-002af5cd2430",
-          "019f6fb7-5a88-7034-beaf-8b7585aebf87",
-          "019f6fb7-5aa4-72e3-9fc3-266dea0d9325",
-          "019f6fb7-5aa9-7439-bdc0-36a732e48366",
-          "019f6fb7-5aad-71d8-a619-ec1b5bf4edae",
-          "019f6fb7-5a8c-772c-8e99-23e9f48fd40b",
-          "019f6fb7-5a91-77af-989f-4eeaf31d7502",
-        ],
-      },
-    ],
-  });
-  new ReleaseTopology(stack, "forge-gamma-then-prod", {
-    urn: "urn:scp:agentkit-org:release-topology:forge-gamma-then-prod",
-    name: "forge-gamma-then-prod",
-    waves: [
-      {
-        mode: "sequential",
-        name: "gamma",
-        targets: ["019f5790-9b75-7488-824f-d9efed328ba8"],
-      },
-      {
-        mode: "sequential",
-        name: "prod",
-        targets: ["019f5790-9b7c-70a2-b06c-fc26a3e6bd02"],
-      },
-    ],
-  });
 
   return stack;
 }
